@@ -1,0 +1,181 @@
+
+import React from "react";
+import { Toaster } from "@/components/ui/toaster";
+import { Toaster as Sonner } from "@/components/ui/sonner";
+import { TooltipProvider } from "@/components/ui/tooltip";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
+import Index from "./pages/Index";
+import NotFound from "./pages/NotFound";
+import Patients from "./pages/Patients";
+import Presensi from "./pages/Presensi";
+import BookingOperasi from "./pages/BookingOperasi";
+import TarifINA from "./pages/TarifINA";
+import MasterICD from "./pages/MasterICD";
+import Statistik from "./pages/Statistik";
+import Login from "./pages/Login";
+import MedicalRecord from "./pages/MedicalRecord";
+import ClinicalPathway from "./pages/ClinicalPathway";
+import Sidebar from "./components/Sidebar";
+
+// Helper function to format no_rawat
+export const formatNoRawat = (noRawat: string) => {
+  return noRawat.replace(/\//g, '');
+};
+
+// Helper function to unformat no_rawat
+export const unformatNoRawat = (noRawat: string) => {
+  return noRawat.replace(/\//g, '');
+};
+import Header from "./components/Header";
+import { useIsMobile } from "./hooks/use-mobile";
+import { Sheet, SheetContent } from "@/components/ui/sheet";
+import { AuthProvider, useAuth } from "./contexts/AuthContext";
+import ProtectedRoute from "./components/ProtectedRoute";
+
+const queryClient = new QueryClient();
+
+// Custom hook to detect iPad and mobile devices
+const useIsTabletOrMobile = () => {
+  const [isTabletOrMobile, setIsTabletOrMobile] = React.useState<boolean | undefined>(undefined);
+
+  React.useEffect(() => {
+    const checkDevice = () => {
+      const userAgent = navigator.userAgent;
+      const isIPad = /iPad/.test(userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+      const isMobile = window.innerWidth < 768;
+      setIsTabletOrMobile(isIPad || isMobile);
+    };
+
+    const handleResize = () => {
+      checkDevice();
+    };
+
+    checkDevice();
+    window.addEventListener("resize", handleResize);
+    return () => window.removeEventListener("resize", handleResize);
+  }, []);
+
+  return !!isTabletOrMobile;
+};
+
+const AppContent = () => {
+  const [loading, setLoading] = React.useState(true);
+  const isMobile = useIsMobile();
+  const isTabletOrMobile = useIsTabletOrMobile();
+  const [sidebarOpen, setSidebarOpen] = React.useState(false);
+  const { user, isAuthenticated, logout } = useAuth();
+
+  React.useEffect(() => {
+    // Simulate loading delay for smooth transitions
+    const timer = setTimeout(() => {
+      setLoading(false);
+    }, 800);
+    return () => clearTimeout(timer);
+  }, []);
+
+  if (loading) {
+    return (
+      <div className="h-screen w-screen flex items-center justify-center bg-background">
+        <div className="animate-pulse text-primary text-2xl font-bold">
+          Loading...
+        </div>
+      </div>
+    );
+  }
+
+  if (!isAuthenticated) {
+    return (
+      <Routes>
+        <Route path="/login" element={<Login />} />
+        <Route path="*" element={<Navigate to="/login" replace />} />
+      </Routes>
+    );
+  }
+
+  return (
+    <div className="min-h-screen flex flex-col bg-gray-100 pt-16">
+      <Header 
+        hospitalName="RSUD H. DAMANHURI" 
+        onMenuClick={() => setSidebarOpen(true)}
+        isMobile={isTabletOrMobile}
+        username={user?.name}
+        onLogout={logout}
+      />
+      
+      <div className="flex flex-1 w-full">
+        {!isTabletOrMobile && (
+          <div className="w-64 shrink-0">
+            <Sidebar 
+              doctorName={user?.name || ""} 
+              doctorId={user?.username || ""}
+              gender={user?.jk || "L"}
+              onLogout={logout}
+            />
+          </div>
+        )}
+        
+        <div className="flex-1 p-2 sm:p-4 overflow-auto">
+          <Routes>
+            <Route path="/" element={<Index />} />
+            <Route path="/pasien" element={<Patients />} />
+            <Route path="/pasien/booking" element={<Patients />} />
+            <Route path="/pasien/igd" element={<Patients />} />
+            <Route path="/pasien/rawat-jalan" element={<Patients />} />
+            <Route path="/pasien/rawat-inap" element={<Patients />} />
+            <Route path="/pasien/hemodialisa" element={<Patients />} />
+            <Route path="/presensi" element={<Presensi />} />
+            <Route path="/booking" element={<BookingOperasi />} />
+            <Route path="/tarif" element={<TarifINA />} />
+            <Route path="/icd" element={<MasterICD />} />
+            <Route path="/statistik" element={<Statistik />} />
+            <Route path="/signature" element={<Index />} />
+            <Route path="/srq" element={<Index />} />
+            <Route path="/ebook" element={<Index />} />
+            <Route path="/icd10" element={<MasterICD />} />
+            <Route path="/icd9" element={<MasterICD />} />
+            <Route path="/igd" element={<Index />} />
+            <Route path="/rekam-medik" element={<MedicalRecord />} />
+            <Route path="/rekam-medik/:no_rkm_medis" element={<MedicalRecord />} />
+            <Route path="/rekam-medik/:no_rkm_medis/:no_rawat" element={<MedicalRecord />} />
+            <Route path="/clinical-pathway" element={<ClinicalPathway />} />
+            <Route path="/clinical-pathway/:no_rkm_medis/:no_rawat" element={<ClinicalPathway />} />
+            <Route path="*" element={<NotFound />} />
+          </Routes>
+        </div>
+        
+        {isTabletOrMobile && (
+          <Sheet open={sidebarOpen} onOpenChange={setSidebarOpen}>
+            <SheetContent side="left" className="p-0 w-64 [&>button]:hidden">
+              <Sidebar 
+                doctorName={user?.name || ""} 
+                doctorId={user?.username || ""} 
+                gender={user?.jk || "L"}
+                onClose={() => setSidebarOpen(false)}
+                onLogout={logout}
+              />
+            </SheetContent>
+          </Sheet>
+        )}
+      </div>
+    </div>
+  );
+};
+
+const App = () => {
+  return (
+    <QueryClientProvider client={queryClient}>
+      <AuthProvider>
+        <TooltipProvider>
+          <Toaster />
+          <Sonner />
+          <BrowserRouter>
+            <AppContent />
+          </BrowserRouter>
+        </TooltipProvider>
+      </AuthProvider>
+    </QueryClientProvider>
+  );
+};
+
+export default App;

@@ -1,0 +1,56 @@
+// API Configuration
+export const API_CONFIG = {
+  BASE_URL: 'http://localhost:3000/api',
+  BASE_URL_WITHOUT_API: 'http://localhost:3000',
+  ENDPOINTS: {
+    STATISTICS_DATA: '/statistics-data',
+    AUTH: '/auth',
+    MEDICAL: '/medical',
+    SAVE_EXAMINATION: '/save-examination',
+    UPDATE_EXAMINATION: '/update-examination',
+    WHATSAPP_OTP: '/whatsapp-otp',
+    BOOKING_REGISTRASI: '/booking-registrasi',
+    BOOKING_OPERASI_DATA: '/booking-operasi-data',
+    RAWAT_JALAN_PATIENTS: '/rawat-jalan-patients',
+    RAWAT_INAP_DATA: '/rawat-inap-data',
+    RESUME_PASIEN_DATA: '/resume-pasien-data',
+    IGD_DATA: '/igd-data',
+    GET_MEDICAL_RECORD: '/get-medical-record',
+    DELETE_EXAMINATION: '/delete-examination',
+    DASHBOARD_DATA: '/dashboard-data',
+    ICD_DATA: '/icd-data',
+    ATTENDANCE_DATA: '/attendance-data',
+    HEMODIALISA_DATA: '/hemodialisa-data',
+    MEDICAL_SCRIBE: '/medical-scribe',
+    CLINICAL_PATHWAY: '/clinical-pathway'
+  }
+};
+
+// Helper function to build full API URLs
+export const buildApiUrl = (endpoint: string) => {
+  return `${API_CONFIG.BASE_URL}${endpoint}`;
+};
+
+// Specific API URLs
+export const API_URLS = {
+  STATISTICS_DATA: buildApiUrl(API_CONFIG.ENDPOINTS.STATISTICS_DATA),
+  AUTH: buildApiUrl(API_CONFIG.ENDPOINTS.AUTH),
+  MEDICAL: buildApiUrl(API_CONFIG.ENDPOINTS.MEDICAL),
+  SAVE_EXAMINATION: buildApiUrl(API_CONFIG.ENDPOINTS.SAVE_EXAMINATION),
+  UPDATE_EXAMINATION: buildApiUrl(API_CONFIG.ENDPOINTS.UPDATE_EXAMINATION),
+  WHATSAPP_OTP: buildApiUrl(API_CONFIG.ENDPOINTS.WHATSAPP_OTP),
+  BOOKING_REGISTRASI: buildApiUrl(API_CONFIG.ENDPOINTS.BOOKING_REGISTRASI),
+  BOOKING_OPERASI_DATA: buildApiUrl(API_CONFIG.ENDPOINTS.BOOKING_OPERASI_DATA),
+  RAWAT_JALAN_PATIENTS: buildApiUrl(API_CONFIG.ENDPOINTS.RAWAT_JALAN_PATIENTS),
+  RAWAT_INAP_DATA: buildApiUrl(API_CONFIG.ENDPOINTS.RAWAT_INAP_DATA),
+  RESUME_PASIEN_DATA: buildApiUrl(API_CONFIG.ENDPOINTS.RESUME_PASIEN_DATA),
+  IGD_DATA: buildApiUrl(API_CONFIG.ENDPOINTS.IGD_DATA),
+  GET_MEDICAL_RECORD: buildApiUrl(API_CONFIG.ENDPOINTS.GET_MEDICAL_RECORD),
+  DELETE_EXAMINATION: buildApiUrl(API_CONFIG.ENDPOINTS.DELETE_EXAMINATION),
+  DASHBOARD_DATA: buildApiUrl(API_CONFIG.ENDPOINTS.DASHBOARD_DATA),
+  ICD_DATA: buildApiUrl(API_CONFIG.ENDPOINTS.ICD_DATA),
+  ATTENDANCE_DATA: buildApiUrl(API_CONFIG.ENDPOINTS.ATTENDANCE_DATA),
+  HEMODIALISA_DATA: buildApiUrl(API_CONFIG.ENDPOINTS.HEMODIALISA_DATA),
+  MEDICAL_SCRIBE: buildApiUrl(API_CONFIG.ENDPOINTS.MEDICAL_SCRIBE),
+  CLINICAL_PATHWAY: buildApiUrl(API_CONFIG.ENDPOINTS.CLINICAL_PATHWAY)
+};

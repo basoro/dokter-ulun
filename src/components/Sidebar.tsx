@@ -1,0 +1,213 @@
+
+import React, { useState } from 'react';
+import { Link, useLocation } from 'react-router-dom';
+import { 
+  Users, 
+  FileCheck, 
+  CalendarClock, 
+  DollarSign, 
+  FileBarChart, 
+  BarChart2,
+  Pencil,
+  HelpCircle,
+  Book,
+  Activity,
+  AlarmClock,
+  LogOut,
+  ChevronDown,
+  ChevronUp
+} from 'lucide-react';
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
+import bgImage from '@/assets/profile-bg.png';
+import { AboutModal } from '@/components/ui/about-modal';
+
+interface SidebarProps {
+  doctorName: string;
+  doctorId: string;
+  gender: 'L' | 'P'; 
+  onClose?: () => void;
+  onLogout?: () => void;
+}
+
+// Define an interface for pasien submenu items that includes the optional 'exact' property
+interface PasienSubmenuItem {
+  name: string;
+  path: string;
+  exact?: boolean;
+}
+
+const Sidebar: React.FC<SidebarProps> = ({ doctorName, doctorId, gender, onClose, onLogout }) => {
+  const location = useLocation();
+  const [pasienOpen, setPasienOpen] = useState(() => {
+    return location.pathname.startsWith('/pasien');
+  });
+  
+  const [aboutOpen, setAboutOpen] = useState(false);
+
+  const isActive = (path: string) => {
+    if (path === '/') return location.pathname === '/';
+    return location.pathname.startsWith(path);
+  };
+  
+  const isPasienActive = () => {
+    return location.pathname.startsWith('/pasien');
+  };
+  
+  const menuItems = [
+    { name: 'Dashboard', path: '/', icon: <BarChart2 className="h-5 w-5" /> },
+    { name: 'Presensi', path: '/presensi', icon: <FileCheck className="h-5 w-5" /> },
+    { name: 'Booking Operasi', path: '/booking', icon: <CalendarClock className="h-5 w-5" /> },
+    { name: 'Tarif INA-CBGs', path: '/tarif', icon: <DollarSign className="h-5 w-5" /> },
+    { name: 'Master ICD', path: '/icd', icon: <FileBarChart className="h-5 w-5" /> },
+    { name: 'Statistik', path: '/statistik', icon: <Activity className="h-5 w-5" /> },
+    // { name: 'TTD Elektronik', path: '/signature', icon: <Pencil className="h-5 w-5" /> },
+    // { name: 'SRQ', path: '/srq', icon: <HelpCircle className="h-5 w-5" /> },
+    // { name: 'E-Book', path: '/ebook', icon: <Book className="h-5 w-5" /> },
+    // { name: 'IGD', path: '/igd', icon: <AlarmClock className="h-5 w-5" /> },
+  ];
+
+  // Update the type to use the defined interface with the 'exact' property
+  const pasienSubmenuItems: PasienSubmenuItem[] = [
+    // { name: 'Semua Pasien', path: '/pasien', exact: true },
+    { name: 'Booking', path: '/pasien/booking' },
+    { name: 'IGD', path: '/pasien/igd' },
+    { name: 'Rawat Jalan', path: '/pasien/rawat-jalan' },
+    { name: 'Rawat Inap', path: '/pasien/rawat-inap' },
+    { name: 'Hemodialisa', path: '/pasien/hemodialisa' },
+  ];
+
+  const handleLogout = () => {
+    if (onLogout) {
+      onLogout();
+    }
+    if (onClose) {
+      onClose();
+    }
+  };
+
+  return (
+    <aside className="fixed left-0 top-0 sm:top-16 h-[calc(100vh)] sm:h-[calc(100vh-4rem)] w-64 bg-white shadow-sm flex flex-col z-30">
+        <div 
+          className="p-4 border-b relative"
+          style={{
+            backgroundImage: `url(${bgImage})`,
+            backgroundSize: 'cover',
+            backgroundPosition: 'center',
+          }}
+        >
+        <div>
+          <div className="flex">
+            <div className="h-16 w-16 rounded-full bg-white/90 flex items-center justify-center">
+              {gender === 'P' ? (
+                <svg viewBox="0 0 24 24" className="h-12 w-12 text-primary">
+                  <path fill="currentColor" d="M12 2a2 2 0 0 1 2 2a2 2 0 0 1-2 2a2 2 0 0 1-2-2a2 2 0 0 1 2-2m-1.5 20v-6h-3l2.59-7.59C10.34 7.59 11.1 7 12 7c.9 0 1.66.59 1.91 1.41L16.5 16h-3v6h-3Z"/>
+                </svg>
+              ) : (
+                <svg viewBox="0 0 24 24" className="h-12 w-12 text-primary">
+                  <path fill="currentColor" d="M12 4a4 4 0 014 4 4 4 0 01-4 4 4 4 0 01-4-4 4 4 0 014-4m0 10c4.42 0 8 1.79 8 4v2H4v-2c0-2.21 3.58-4 8-4z"/>
+                </svg>
+              )}
+            </div>
+          </div>
+          <h3 className="mt-2 font-semibold text-white">{doctorName}</h3>
+          <p className="text-xs text-white">{doctorId}</p>
+        </div>
+      </div>
+      
+      <div className="flex-1 overflow-y-auto py-4">
+        <nav className="px-2 space-y-1">
+          <Link
+            to="/"
+            className={`flex items-center px-3 py-2 rounded-md text-sm font-medium transition-colors ${
+              isActive('/')
+                ? 'bg-primary/10 text-primary'
+                : 'text-gray-600 hover:bg-gray-100'
+            }`}
+            onClick={onClose}
+          >
+            <span className={`mr-3 ${isActive('/') ? 'text-primary' : 'text-gray-500'}`}>
+              <BarChart2 className="h-5 w-5" />
+            </span>
+            Dashboard
+          </Link>
+
+          <div>
+            <Collapsible
+              open={pasienOpen}
+              onOpenChange={setPasienOpen}
+              className="w-full"
+            >
+              <CollapsibleTrigger
+                className={`flex items-center justify-between w-full px-3 py-2 rounded-md text-sm font-medium transition-colors ${
+                  isPasienActive()
+                    ? 'bg-primary/10 text-primary'
+                    : 'text-gray-600 hover:bg-gray-100'
+                }`}
+              >
+                <div className="flex items-center">
+                  <span className={`mr-3 ${isPasienActive() ? 'text-primary' : 'text-gray-500'}`}>
+                    <Users className="h-5 w-5" />
+                  </span>
+                  Pasien
+                </div>
+                <span className="text-gray-500">
+                  {pasienOpen ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
+                </span>
+              </CollapsibleTrigger>
+              <CollapsibleContent className="ml-8 mt-1 space-y-1">
+                {pasienSubmenuItems.map((item) => (
+                  <Link
+                    key={item.path}
+                    to={item.path}
+                    className={`flex items-center px-3 py-2 rounded-md text-sm font-medium transition-colors ${
+                      item.exact 
+                        ? (location.pathname === item.path ? 'bg-primary/10 text-primary' : 'text-gray-600 hover:bg-gray-100')
+                        : (location.pathname.startsWith(item.path) ? 'bg-primary/10 text-primary' : 'text-gray-600 hover:bg-gray-100')
+                    }`}
+                    onClick={onClose}
+                  >
+                    {item.name}
+                  </Link>
+                ))}
+              </CollapsibleContent>
+            </Collapsible>
+          </div>
+
+          {menuItems.slice(1).map((item) => (
+            <Link
+              key={item.path}
+              to={item.path}
+              className={`flex items-center px-3 py-2 rounded-md text-sm font-medium transition-colors ${
+                isActive(item.path)
+                  ? 'bg-primary/10 text-primary'
+                  : 'text-gray-600 hover:bg-gray-100'
+              }`}
+              onClick={onClose}
+            >
+              <span className={`mr-3 ${isActive(item.path) ? 'text-primary' : 'text-gray-500'}`}>
+                {item.icon}
+              </span>
+              {item.name}
+            </Link>
+          ))}
+        </nav>
+      </div>
+      
+      <div className="p-4 border-t mt-auto bg-white">
+        <p className="text-sm">
+          © 2017 - {new Date().getFullYear()}{" "}
+          <button 
+            onClick={() => setAboutOpen(true)}
+            className="text-primary hover:none focus:outline-none"
+          >
+            ICT RSHD Barabai
+          </button>
+        </p>
+      </div>
+      <AboutModal open={aboutOpen} onOpenChange={setAboutOpen} />
+    </aside>
+  );
+};
+
+export default Sidebar;
+
