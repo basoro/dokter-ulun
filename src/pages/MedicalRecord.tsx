@@ -209,6 +209,7 @@ type MedicalRecordFetchOptions = {
   includeFocusedMedications?: boolean;
   includeFocusedLaboratory?: boolean;
   includeFocusedRadiology?: boolean;
+  requestScope?: 'visits' | 'focused';
 };
 
 const getFocusedFetchOptionsForTab = (tab: string): Pick<
@@ -551,7 +552,9 @@ const MedicalRecord = () => {
   const formattedNoRawat = formatRouteNoRawat(rawatParam);
   const [medicalData, setMedicalData] = useState<MedicalRecordData | null>(null);
   const [loading, setLoading] = useState(true);
-  const [loadingMore, setLoadingMore] = useState(false);
+  const [loadingMoreVisits, setLoadingMoreVisits] = useState(false);
+  const [loadingFocusedTab, setLoadingFocusedTab] = useState(false);
+  const [loadingMoreExaminations, setLoadingMoreExaminations] = useState(false);
   const [searchResults, setSearchResults] = useState([]);
   const [isLoading, setIsLoading] = useState(false);
   const [statusRawat, setStatusRawat] = useState<string>('Ralan');
@@ -675,6 +678,12 @@ const MedicalRecord = () => {
   const loadMoreExaminationRef = useRef<HTMLDivElement | null>(null);
   const pacsPreviewRequestRef = useRef(0);
   const prefetchedPacsPreviewUrlsRef = useRef<Set<string>>(new Set());
+  const medicalRecordRequestRef = useRef<{ visits: number; focused: number }>({
+    visits: 0,
+    focused: 0
+  });
+  const examinationHistoryRequestRef = useRef(0);
+  const dataContextVersionRef = useRef(0);
   const [expandedVisitKeys, setExpandedVisitKeys] = useState<Record<string, boolean>>({});
   const [loadingVisitDetailsKeys, setLoadingVisitDetailsKeys] = useState<Record<string, boolean>>({});
   const hasMoreCurrentVisitTab = visitHistoryTab === 'outpatient'
@@ -699,6 +708,12 @@ const MedicalRecord = () => {
   const scopedInpatientVisits = formattedNoRawat
     ? sortedInpatientVisits.filter((visit) => visit.no_rawat === formattedNoRawat)
     : sortedInpatientVisits;
+  const currentVisitCount = visitHistoryTab === 'outpatient'
+    ? sortedOutpatientVisits.length
+    : sortedInpatientVisits.length;
+  const currentVisitTotal = visitHistoryTab === 'outpatient'
+    ? pagination.outpatient.total
+    : pagination.inpatient.total;
   const vitalChartData = React.useMemo(() => {
     if (formattedNoRawat) {
       const focusedExamHistory = [
@@ -1663,11 +1678,20 @@ const MedicalRecord = () => {
       </div>
     ));
   };
-  const renderDeferredTabState = (label: string) => (
+  const renderDeferredTabState = (label: string, isTabLoading = loadingFocusedTab) => (
     <div className="rounded-lg border border-dashed bg-muted/20 px-4 py-6 text-sm text-muted-foreground">
-      {loadingMore ? `Memuat data ${label}...` : `Data ${label} akan dimuat saat tab ini dibuka.`}
+      {isTabLoading ? `Memuat data ${label}...` : `Data ${label} akan dimuat saat tab ini dibuka.`}
     </div>
   );
+
+  useEffect(() => {
+    dataContextVersionRef.current += 1;
+    medicalRecordRequestRef.current = {
+      visits: 0,
+      focused: 0
+    };
+    examinationHistoryRequestRef.current = 0;
+  }, [formattedNoRawat, no_rkm_medis]);
   
   useEffect(() => {
     const searchQuery = searchParams.get('search');
@@ -1687,17 +1711,23 @@ const MedicalRecord = () => {
     includeFocusedProcedures = false,
     includeFocusedMedications = false,
     includeFocusedLaboratory = false,
-    includeFocusedRadiology = false
+    includeFocusedRadiology = false,
+    requestScope = includeOutpatient || includeInpatient ? 'visits' : 'focused'
   }: MedicalRecordFetchOptions = {}) => {
-    try {
-      if (!no_rkm_medis) {
-        return;
-      }
+    if (!no_rkm_medis) {
+      return;
+    }
 
-      if (reset) {
+    const contextVersion = dataContextVersionRef.current;
+    const requestId = ++medicalRecordRequestRef.current[requestScope];
+
+    try {
+      if (requestScope === 'visits' && reset) {
         setLoading(true);
+      } else if (requestScope === 'focused') {
+        setLoadingFocusedTab(true);
       } else {
-        setLoadingMore(true);
+        setLoadingMoreVisits(true);
       }
 
       console.log('Fetching medical record for no_rm:', no_rkm_medis);
@@ -1729,6 +1759,12 @@ const MedicalRecord = () => {
       }
       
       const responseJson = await response.json();
+      if (
+        contextVersion !== dataContextVersionRef.current ||
+        requestId !== medicalRecordRequestRef.current[requestScope]
+      ) {
+        return;
+      }
       const responseData = Array.isArray(responseJson) ? responseJson[0] : responseJson?.data;
       const responsePagination = Array.isArray(responseJson)
         ? {
@@ -1802,10 +1838,21 @@ const MedicalRecord = () => {
         }
       }
     } catch (error) {
-      console.error('Error fetching medical record:', error);
+      if (requestId === medicalRecordRequestRef.current[requestScope]) {
+        console.error('Error fetching medical record:', error);
+      }
     } finally {
-      setLoading(false);
-      setLoadingMore(false);
+      if (
+        dataContextVersionRef.current === contextVersion &&
+        requestId === medicalRecordRequestRef.current[requestScope]
+      ) {
+        if (requestScope === 'visits') {
+          setLoading(false);
+          setLoadingMoreVisits(false);
+        } else {
+          setLoadingFocusedTab(false);
+        }
+      }
     }
   }, [formattedNoRawat, no_rkm_medis]);
 
@@ -1814,6 +1861,7 @@ const MedicalRecord = () => {
       return;
     }
 
+    const contextVersion = dataContextVersionRef.current;
     setLoadingVisitDetailsKeys((previous) => ({ ...previous, [noRawat]: true }));
     try {
       const response = await fetch(API_URLS.GET_MEDICAL_RECORD_VISIT_DETAILS, {
@@ -1829,6 +1877,9 @@ const MedicalRecord = () => {
       }
 
       const responseJson = await response.json();
+      if (contextVersion !== dataContextVersionRef.current) {
+        return;
+      }
       const visitData = responseJson?.data;
       if (!visitData) {
         return;
@@ -1846,9 +1897,13 @@ const MedicalRecord = () => {
         };
       });
     } catch (error) {
-      console.error('Error fetching visit details:', error);
+      if (contextVersion === dataContextVersionRef.current) {
+        console.error('Error fetching visit details:', error);
+      }
     } finally {
-      setLoadingVisitDetailsKeys((previous) => ({ ...previous, [noRawat]: false }));
+      if (contextVersion === dataContextVersionRef.current) {
+        setLoadingVisitDetailsKeys((previous) => ({ ...previous, [noRawat]: false }));
+      }
     }
   }, []);
 
@@ -1869,7 +1924,9 @@ const MedicalRecord = () => {
       return;
     }
 
-    setLoadingMore(true);
+    const contextVersion = dataContextVersionRef.current;
+    const requestId = ++examinationHistoryRequestRef.current;
+    setLoadingMoreExaminations(true);
     try {
       const response = await fetch(API_URLS.GET_MEDICAL_RECORD_EXAMINATIONS, {
         method: 'POST',
@@ -1892,6 +1949,12 @@ const MedicalRecord = () => {
       }
 
       const responseJson = await response.json();
+      if (
+        contextVersion !== dataContextVersionRef.current ||
+        requestId !== examinationHistoryRequestRef.current
+      ) {
+        return;
+      }
       const responseData = responseJson?.data;
       const responsePagination = responseJson?.pagination;
 
@@ -1913,9 +1976,16 @@ const MedicalRecord = () => {
         }));
       }
     } catch (error) {
-      console.error('Error fetching examination history:', error);
+      if (requestId === examinationHistoryRequestRef.current) {
+        console.error('Error fetching examination history:', error);
+      }
     } finally {
-      setLoadingMore(false);
+      if (
+        dataContextVersionRef.current === contextVersion &&
+        requestId === examinationHistoryRequestRef.current
+      ) {
+        setLoadingMoreExaminations(false);
+      }
     }
   }, [formattedNoRawat, no_rkm_medis]);
 
@@ -1952,7 +2022,7 @@ const MedicalRecord = () => {
   }, [fetchMedicalRecord, no_rkm_medis]);
 
   useEffect(() => {
-    if (!formattedNoRawat || loading || loadingMore) {
+    if (!formattedNoRawat || loading || loadingFocusedTab) {
       return;
     }
 
@@ -1995,13 +2065,13 @@ const MedicalRecord = () => {
     isFocusedProceduresLoaded,
     isFocusedRadiologyLoaded,
     loading,
-    loadingMore,
+    loadingFocusedTab,
     pagination.inpatient.page,
     pagination.outpatient.page
   ]);
 
   useEffect(() => {
-    if (activeTab !== 'examinations' || formattedNoRawat || loading || loadingMore) {
+    if (activeTab !== 'examinations' || formattedNoRawat || loading || loadingMoreExaminations) {
       return;
     }
 
@@ -2017,11 +2087,11 @@ const MedicalRecord = () => {
     fetchExaminationHistory,
     formattedNoRawat,
     loading,
-    loadingMore
+    loadingMoreExaminations
   ]);
 
   useEffect(() => {
-    if (formattedNoRawat || loading || loadingMore) {
+    if (formattedNoRawat || loading || loadingMoreVisits) {
       return;
     }
 
@@ -2030,26 +2100,26 @@ const MedicalRecord = () => {
     }
 
     const currentVisits = [...allOutpatientVisits, ...allInpatientVisits];
-    if (!currentVisits.length || currentVisits.some((visit) => visit?.details_loaded)) {
+    const missingVisitNoRawats = Array.from(new Set(
+      currentVisits
+        .filter((visit) => visit?.no_rawat && !visit?.details_loaded && !loadingVisitDetailsKeys[visit.no_rawat])
+        .map((visit) => visit.no_rawat)
+    ));
+
+    if (!currentVisits.length || missingVisitNoRawats.length === 0) {
       return;
     }
 
-    fetchMedicalRecord({
-      reset: true,
-      outpatientPage: pagination.outpatient.page,
-      inpatientPage: pagination.inpatient.page,
-      includeVisitDetails: true
-    });
+    void Promise.allSettled(missingVisitNoRawats.map((noRawat) => fetchVisitDetails(noRawat)));
   }, [
     activeTab,
     allInpatientVisits,
     allOutpatientVisits,
-    fetchMedicalRecord,
+    fetchVisitDetails,
     formattedNoRawat,
     loading,
-    loadingMore,
-    pagination.inpatient.page,
-    pagination.outpatient.page
+    loadingMoreVisits,
+    loadingVisitDetailsKeys
   ]);
 
   useEffect(() => {
@@ -2131,7 +2201,7 @@ const MedicalRecord = () => {
   }, [isCtPacsPreview, pacsPreviewModal.currentIndex, pacsPreviewModal.images, pacsPreviewModal.open]);
 
   const loadMoreMedicalRecord = useCallback(() => {
-    if (loading || loadingMore || activeTab !== 'visits' || formattedNoRawat) {
+    if (loading || loadingMoreVisits || activeTab !== 'visits') {
       return;
     }
 
@@ -2163,12 +2233,12 @@ const MedicalRecord = () => {
       includeInpatient: true,
       includeVisitDetails: false
     });
-  }, [activeTab, fetchMedicalRecord, formattedNoRawat, loading, loadingMore, pagination, visitHistoryTab]);
+  }, [activeTab, fetchMedicalRecord, loading, loadingMoreVisits, pagination, visitHistoryTab]);
 
   useEffect(() => {
     const currentTarget = loadMoreRef.current;
 
-    if (!currentTarget || !no_rkm_medis || activeTab !== 'visits' || formattedNoRawat || !hasMoreCurrentVisitTab) {
+    if (!currentTarget || !no_rkm_medis || activeTab !== 'visits' || !hasMoreCurrentVisitTab) {
       return;
     }
 
@@ -2188,10 +2258,32 @@ const MedicalRecord = () => {
     return () => {
       observer.disconnect();
     };
-  }, [activeTab, formattedNoRawat, hasMoreCurrentVisitTab, loadMoreMedicalRecord, no_rkm_medis]);
+  }, [activeTab, hasMoreCurrentVisitTab, loadMoreMedicalRecord, no_rkm_medis]);
+
+  useEffect(() => {
+    if (activeTab !== 'visits' || !formattedNoRawat || loading || loadingMoreVisits || !hasMoreCurrentVisitTab) {
+      return;
+    }
+
+    const targetInitialCount = Math.min(currentVisitTotal, PAGE_SIZE);
+    if (targetInitialCount === 0 || currentVisitCount >= targetInitialCount) {
+      return;
+    }
+
+    loadMoreMedicalRecord();
+  }, [
+    activeTab,
+    currentVisitCount,
+    currentVisitTotal,
+    formattedNoRawat,
+    hasMoreCurrentVisitTab,
+    loadMoreMedicalRecord,
+    loading,
+    loadingMoreVisits
+  ]);
 
   const loadMoreExaminationHistory = useCallback(() => {
-    if (loading || loadingMore || activeTab !== 'examinations' || formattedNoRawat) {
+    if (loading || loadingMoreExaminations || activeTab !== 'examinations' || formattedNoRawat) {
       return;
     }
 
@@ -2221,7 +2313,7 @@ const MedicalRecord = () => {
       includeOutpatient: false,
       includeInpatient: true
     });
-  }, [activeTab, examinationHistoryTab, examinationPagination, fetchExaminationHistory, formattedNoRawat, loading, loadingMore]);
+  }, [activeTab, examinationHistoryTab, examinationPagination, fetchExaminationHistory, formattedNoRawat, loading, loadingMoreExaminations]);
 
   useEffect(() => {
     const currentTarget = loadMoreExaminationRef.current;
@@ -7084,12 +7176,12 @@ const MedicalRecord = () => {
         </TabsContent>
       </Tabs>
 
-      {activeTab === 'visits' && !formattedNoRawat ? (
+      {activeTab === 'visits' ? (
         <div
           ref={loadMoreRef}
           className="rounded-lg border border-dashed bg-white/70 px-4 py-5 text-center text-sm text-muted-foreground"
         >
-          {loadingMore ? (
+          {loadingMoreVisits ? (
             <div className="flex items-center justify-center gap-3">
               <div className="h-5 w-5 animate-spin rounded-full border-2 border-gray-200 border-t-primary"></div>
               <span>Memuat riwayat {visitHistoryTab === 'outpatient' ? 'rawat jalan' : 'rawat inap'} berikutnya...</span>
@@ -7107,7 +7199,7 @@ const MedicalRecord = () => {
           ref={loadMoreExaminationRef}
           className="rounded-lg border border-dashed bg-white/70 px-4 py-5 text-center text-sm text-muted-foreground"
         >
-          {loadingMore ? (
+          {loadingMoreExaminations ? (
             <div className="flex items-center justify-center gap-3">
               <div className="h-5 w-5 animate-spin rounded-full border-2 border-gray-200 border-t-primary"></div>
               <span>Memuat data pemeriksaan {examinationHistoryTab === 'outpatient' ? 'rawat jalan' : 'rawat inap'} berikutnya...</span>
