@@ -401,7 +401,18 @@ class ResumePasienDataService {
         GROUP_CONCAT(DISTINCT CONCAT(d.nm_dokter, ' (', COALESCE(dr.jenis_dpjp, 'Tidak Diketahui'), ')') SEPARATOR ', ') as dokter_dpjp,
         rpr.kd_dokter,
         COALESCE(penulis.nm_dokter, rpr.kd_dokter, '') AS dokter_penulis,
-        COALESCE(rpr.diagnosa_awal, '') AS diagnosa_awal,
+        COALESCE(
+          NULLIF(rpr.diagnosa_awal, ''),
+          NULLIF(
+            SUBSTRING_INDEX(
+              GROUP_CONCAT(COALESCE(ki.diagnosa_awal, '') ORDER BY ki.tgl_masuk ASC SEPARATOR '||'),
+              '||',
+              1
+            ),
+            ''
+          ),
+          ''
+        ) AS diagnosa_awal,
         COALESCE(rpr.alasan, '') AS alasan,
         COALESCE(rpr.keluhan_utama, '') AS keluhan_utama,
         COALESCE(rpr.pemeriksaan_fisik, '') AS pemeriksaan_fisik,

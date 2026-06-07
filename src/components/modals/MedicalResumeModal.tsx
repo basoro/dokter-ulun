@@ -6,7 +6,14 @@ import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { FileText, Loader2, Trash2 } from 'lucide-react';
+import { Checkbox } from "@/components/ui/checkbox";
+import { Calendar as CalendarComponent } from '@/components/ui/calendar';
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
+import { cn } from '@/lib/utils';
+import { indonesianLocale } from '@/lib/date-utils';
+import { format } from 'date-fns';
+import { CalendarIcon, Check, ChevronsUpDown, FileText, Loader2, Paperclip, Search, Trash2 } from 'lucide-react';
 import { useToast } from "@/hooks/use-toast";
 import { API_URLS } from '@/config/api';
 import { useAuth } from '@/contexts/AuthContext';
@@ -75,6 +82,243 @@ interface MedicalResumeModalProps {
   noRawat: string;
 }
 
+interface ResumeRanapExamination {
+  tanggal?: string;
+  tgl_perawatan?: string;
+  jam_rawat?: string;
+  tekanan_darah?: string;
+  nadi?: string;
+  respirasi?: string;
+  suhu?: string;
+  gcs?: string;
+  s?: string;
+  o?: string;
+  a?: string;
+  p?: string;
+  i?: string;
+  e?: string;
+  pegawai?: string;
+}
+
+interface ResumeSourceData {
+  examinations: ResumeRanapExamination[];
+  outpatientExaminations: ResumeRanapExamination[];
+  laboratoryResults: any[];
+  radiologyResults: any[];
+  operationData: any[];
+  inpatientMedications: any[];
+  dischargeMedicationRequests: any[];
+}
+
+type ResumePickerTarget =
+  | 'keluhan_utama'
+  | 'pemeriksaan_fisik'
+  | 'jalannya_penyakit'
+  | 'pemeriksaan_penunjang'
+  | 'hasil_laborat'
+  | 'tindakan_dan_operasi'
+  | 'obat_di_rs';
+
+interface ResumePickerItem {
+  id: string;
+  title: string;
+  subtitle?: string;
+  description?: string;
+  value: string;
+  code?: string;
+}
+
+interface ResumePickerConfig {
+  target: ResumePickerTarget;
+  title: string;
+  description: string;
+  emptyMessage: string;
+  multiple: boolean;
+  items: ResumePickerItem[];
+}
+
+interface MedicalCodeOption {
+  code: string;
+  label: string;
+  description?: string;
+}
+
+interface SearchableMedicalCodeFieldProps {
+  label: string;
+  placeholder: string;
+  emptyMessage: string;
+  selectedName: string;
+  selectedCode: string;
+  type: 'icd10' | 'icd9';
+  onSelect: (name: string, code: string) => void;
+  onClear: () => void;
+}
+
+const SearchableMedicalCodeField: React.FC<SearchableMedicalCodeFieldProps> = ({
+  label,
+  placeholder,
+  emptyMessage,
+  selectedName,
+  selectedCode,
+  type,
+  onSelect,
+  onClear,
+}) => {
+  const [open, setOpen] = useState(false);
+  const [search, setSearch] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [options, setOptions] = useState<MedicalCodeOption[]>([]);
+
+  useEffect(() => {
+    if (!open) {
+      return;
+    }
+
+    const controller = new AbortController();
+    const timer = window.setTimeout(async () => {
+      try {
+        setLoading(true);
+        const response = await fetch(API_URLS.ICD_DATA, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            page: '1',
+            itemsPerPage: '20',
+            search,
+            icdType: type,
+          }),
+          signal: controller.signal,
+        });
+
+        const result = await response.json();
+        if (!response.ok) {
+          throw new Error(result.error || 'Gagal memuat data kode medis');
+        }
+
+        const mappedOptions = (result.data || []).map((item: any) => {
+          if (type === 'icd9') {
+            return {
+              code: String(item.kode || '').trim(),
+              label: String(item.deskripsi_panjang || item.deskripsi_pendek || '').trim(),
+              description: String(item.deskripsi_pendek || '').trim(),
+            };
+          }
+
+          return {
+            code: String(item.kd_penyakit || '').trim(),
+            label: String(item.nm_penyakit || '').trim(),
+            description: String(item.keterangan || item.ciri_ciri || '').trim(),
+          };
+        }).filter((item: MedicalCodeOption) => item.code && item.label);
+
+        setOptions(mappedOptions);
+      } catch (error) {
+        if ((error as Error).name !== 'AbortError') {
+          console.error('Error fetching medical code options:', error);
+          setOptions([]);
+        }
+      } finally {
+        setLoading(false);
+      }
+    }, 300);
+
+    return () => {
+      controller.abort();
+      window.clearTimeout(timer);
+    };
+  }, [open, search, type]);
+
+  const displayValue = selectedName
+    ? `${selectedCode ? `${selectedCode} - ` : ''}${selectedName}`
+    : '';
+
+  return (
+    <div className="space-y-2">
+      <Label>{label}</Label>
+      <div className="flex gap-2">
+        <Popover open={open} onOpenChange={setOpen}>
+          <PopoverTrigger asChild>
+            <Button
+              variant="outline"
+              role="combobox"
+              aria-expanded={open}
+              className="flex-1 justify-between"
+            >
+              <span className="truncate text-left">
+                {displayValue || placeholder}
+              </span>
+              <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+            </Button>
+          </PopoverTrigger>
+          <PopoverContent className="w-[420px] p-0" align="start">
+            <Command shouldFilter={false}>
+              <CommandInput
+                placeholder="Ketik kode atau nama..."
+                value={search}
+                onValueChange={setSearch}
+              />
+              <CommandList>
+                {loading ? (
+                  <div className="flex items-center gap-2 px-3 py-3 text-sm text-muted-foreground">
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                    Mencari data...
+                  </div>
+                ) : null}
+                {!loading ? <CommandEmpty>{emptyMessage}</CommandEmpty> : null}
+                <CommandGroup>
+                  {options.map((option) => (
+                    <CommandItem
+                      key={`${type}-${option.code}`}
+                      value={`${option.code} ${option.label}`}
+                      onSelect={() => {
+                        onSelect(option.label, option.code);
+                        setOpen(false);
+                      }}
+                    >
+                      <Check
+                        className={cn(
+                          "mr-2 h-4 w-4",
+                          selectedCode === option.code ? "opacity-100" : "opacity-0"
+                        )}
+                      />
+                      <div className="flex flex-col">
+                        <span>{option.code} - {option.label}</span>
+                        {option.description ? (
+                          <span className="text-xs text-muted-foreground">{option.description}</span>
+                        ) : null}
+                      </div>
+                    </CommandItem>
+                  ))}
+                </CommandGroup>
+              </CommandList>
+            </Command>
+          </PopoverContent>
+        </Popover>
+        <Button
+          type="button"
+          variant="outline"
+          onClick={onClear}
+          disabled={!selectedName && !selectedCode}
+        >
+          Hapus
+        </Button>
+      </div>
+    </div>
+  );
+};
+
+const createEmptySourceData = (): ResumeSourceData => ({
+  examinations: [],
+  outpatientExaminations: [],
+  laboratoryResults: [],
+  radiologyResults: [],
+  operationData: [],
+  inpatientMedications: [],
+  dischargeMedicationRequests: [],
+});
+
 export const MedicalResumeModal: React.FC<MedicalResumeModalProps> = ({ isOpen, onClose, noRawat }) => {
   const { user } = useAuth();
   const { toast } = useToast();
@@ -136,6 +380,11 @@ export const MedicalResumeModal: React.FC<MedicalResumeModalProps> = ({ isOpen, 
   }, [currentDoctorCode, currentDoctorName, noRawat]);
 
   const [formData, setFormData] = useState<MedicalResume>(createDefaultForm);
+  const [sourceData, setSourceData] = useState<ResumeSourceData>(createEmptySourceData());
+  const [sourceLoading, setSourceLoading] = useState(false);
+  const [pickerTarget, setPickerTarget] = useState<ResumePickerTarget | null>(null);
+  const [pickerSearch, setPickerSearch] = useState('');
+  const [selectedPickerItems, setSelectedPickerItems] = useState<string[]>([]);
 
   useEffect(() => {
     if (isOpen) {
@@ -181,6 +430,8 @@ export const MedicalResumeModal: React.FC<MedicalResumeModalProps> = ({ isOpen, 
         kontrol: result.data.kontrol || '',
         has_resume: Number(result.data.has_resume || 0),
       });
+
+      void fetchResumeSources(result.data.no_rkm_medis || '');
     } catch (error) {
       console.error('Error fetching resumes:', error);
       toast({
@@ -189,8 +440,61 @@ export const MedicalResumeModal: React.FC<MedicalResumeModalProps> = ({ isOpen, 
         variant: "destructive",
       });
       setFormData(createDefaultForm());
+      setSourceData(createEmptySourceData());
     } finally {
       setLoading(false);
+    }
+  };
+
+  const fetchResumeSources = async (noRm: string) => {
+    const normalizedNoRm = String(noRm || '').trim();
+    if (!noRawat || !normalizedNoRm) {
+      setSourceData(createEmptySourceData());
+      return;
+    }
+
+    setSourceLoading(true);
+    try {
+      const medicalResponse = await fetch(API_URLS.GET_MEDICAL_RECORD, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          no_rm: normalizedNoRm,
+          limit: 5,
+          outpatientPage: 1,
+          inpatientPage: 1,
+          focus_no_rawat: noRawat
+        }),
+      });
+
+      if (!medicalResponse.ok) {
+        throw new Error(`Gagal memuat sumber data resume: HTTP ${medicalResponse.status}`);
+      }
+
+      const medicalResult = await medicalResponse.json();
+      const medicalData = Array.isArray(medicalResult) ? medicalResult[0] : medicalResult?.data;
+
+      setSourceData({
+        examinations: medicalData?.focused_examinations?.ranap || [],
+        outpatientExaminations: medicalData?.focused_examinations?.ralan || [],
+        laboratoryResults: medicalData?.focused_laboratory?.ranap || [],
+        radiologyResults: medicalData?.focused_radiology?.ranap || [],
+        operationData: medicalData?.focused_operation_reports || [],
+        inpatientMedications: medicalData?.focused_medications?.ranap || [],
+        dischargeMedicationRequests: medicalData?.focused_medications_request?.pulang || [],
+      });
+    } catch (error) {
+      console.error('Error fetching resume source data:', error);
+      toast({
+        title: "Peringatan",
+        description: error instanceof Error ? error.message : "Gagal memuat sumber data picker resume",
+        variant: "destructive",
+      });
+      setSourceData(createEmptySourceData());
+    } finally {
+      setSourceLoading(false);
     }
   };
 
@@ -286,6 +590,489 @@ export const MedicalResumeModal: React.FC<MedicalResumeModalProps> = ({ isOpen, 
     setFormData((previous) => ({ ...previous, [field]: value }));
   };
 
+  const updateDiagnosisFields = (
+    nameField: keyof Pick<MedicalResume, 'diagnosa_utama' | 'diagnosa_sekunder' | 'diagnosa_sekunder2' | 'diagnosa_sekunder3' | 'diagnosa_sekunder4'>,
+    codeField: keyof Pick<MedicalResume, 'kd_diagnosa_utama' | 'kd_diagnosa_sekunder' | 'kd_diagnosa_sekunder2' | 'kd_diagnosa_sekunder3' | 'kd_diagnosa_sekunder4'>,
+    name: string,
+    code: string
+  ) => {
+    setFormData((previous) => ({
+      ...previous,
+      [nameField]: name,
+      [codeField]: code,
+    }));
+  };
+
+  const updateProcedureFields = (
+    nameField: keyof Pick<MedicalResume, 'prosedur_utama' | 'prosedur_sekunder' | 'prosedur_sekunder2' | 'prosedur_sekunder3'>,
+    codeField: keyof Pick<MedicalResume, 'kd_prosedur_utama' | 'kd_prosedur_sekunder' | 'kd_prosedur_sekunder2' | 'kd_prosedur_sekunder3'>,
+    name: string,
+    code: string
+  ) => {
+    setFormData((previous) => ({
+      ...previous,
+      [nameField]: name,
+      [codeField]: code,
+    }));
+  };
+
+  const parseKontrolDate = (value: string) => {
+    if (!value) {
+      return undefined;
+    }
+
+    const normalized = String(value).trim();
+    const parsed = new Date(normalized);
+    if (!Number.isNaN(parsed.getTime())) {
+      return parsed;
+    }
+
+    const [datePart] = normalized.split('T');
+    if (!datePart) {
+      return undefined;
+    }
+
+    const fallbackParsed = new Date(`${datePart}T00:00`);
+    return Number.isNaN(fallbackParsed.getTime()) ? undefined : fallbackParsed;
+  };
+
+  const getKontrolTimeValue = (value: string) => {
+    if (!value) {
+      return '00:00';
+    }
+
+    const normalized = String(value).trim();
+    const timePart = normalized.includes('T') ? normalized.split('T')[1] : normalized.split(' ')[1];
+    if (!timePart) {
+      return '00:00';
+    }
+
+    return timePart.slice(0, 5) || '00:00';
+  };
+
+  const formatKontrolDisplay = (value: string) => {
+    const parsed = parseKontrolDate(value);
+    if (!parsed) {
+      return 'Pilih tanggal kontrol';
+    }
+
+    return `${format(parsed, 'dd MMMM yyyy', { locale: indonesianLocale })} ${getKontrolTimeValue(value)}`;
+  };
+
+  const updateKontrolDate = (date?: Date) => {
+    if (!date) {
+      updateField('kontrol', '');
+      return;
+    }
+
+    const datePart = format(date, 'yyyy-MM-dd');
+    updateField('kontrol', `${datePart}T${getKontrolTimeValue(formData.kontrol)}`);
+  };
+
+  const updateKontrolTime = (time: string) => {
+    const currentDate = parseKontrolDate(formData.kontrol);
+    const datePart = currentDate ? format(currentDate, 'yyyy-MM-dd') : format(new Date(), 'yyyy-MM-dd');
+    updateField('kontrol', `${datePart}T${time || '00:00'}`);
+  };
+
+  const mergeTextBlocks = (currentValue: string, nextBlocks: string[]) => {
+    const normalizedBlocks = nextBlocks
+      .map((item) => String(item || '').trim())
+      .filter(Boolean);
+
+    if (normalizedBlocks.length === 0) {
+      return currentValue;
+    }
+
+    const existingBlocks = String(currentValue || '')
+      .split(/\n\s*\n/)
+      .map((item) => item.trim())
+      .filter(Boolean);
+
+    const merged = [...existingBlocks];
+    normalizedBlocks.forEach((item) => {
+      if (!merged.includes(item)) {
+        merged.push(item);
+      }
+    });
+
+    return merged.join('\n\n');
+  };
+
+  const buildVitalsText = (exam: any) => {
+    return [
+      exam.tekanan_darah ? `Tekanan Darah: ${exam.tekanan_darah}` : '',
+      exam.nadi ? `Nadi: ${exam.nadi}` : '',
+      exam.respirasi ? `Respirasi: ${exam.respirasi}` : '',
+      exam.suhu ? `Suhu: ${exam.suhu}` : '',
+      exam.gcs ? `GCS: ${exam.gcs}` : '',
+    ].filter(Boolean).join('\n');
+  };
+
+  const buildLaboratoryResultText = (item: any) => {
+    const detailLines = (item.pemeriksaan || [])
+      .map((detail: any) => {
+        const resultText = detail.hasil ? `: ${detail.hasil}` : '';
+        const referenceText = detail.rujukan ? ` (Rujukan: ${detail.rujukan})` : '';
+        const noteText = detail.keterangan ? ` - ${detail.keterangan}` : '';
+        return `${detail.nama}${detail.pemeriksaan ? ` - ${detail.pemeriksaan}` : ''}${resultText}${referenceText}${noteText}`;
+      })
+      .filter(Boolean)
+      .join('\n');
+
+    return [
+      item.tanggal ? `Tanggal: ${item.tanggal}` : '',
+      detailLines ? `Laboratorium:\n${detailLines}` : ''
+    ].filter(Boolean).join('\n');
+  };
+
+  const buildRadiologyResultText = (item: any) => {
+    return [
+      item.tanggal ? `Tanggal: ${item.tanggal}` : '',
+      item.pemeriksaan ? `Radiologi: ${item.pemeriksaan}` : '',
+      item.hasil ? `Hasil:\n${item.hasil}` : '',
+      item.kesan && item.kesan !== item.hasil ? `Kesan:\n${item.kesan}` : ''
+    ].filter(Boolean).join('\n');
+  };
+
+  const buildExaminationProcedureText = (item: ResumeRanapExamination, sourceLabel: string) => {
+    return [
+      item.tanggal || item.tgl_perawatan ? `Tanggal: ${item.tanggal || item.tgl_perawatan}` : '',
+      item.jam_rawat ? `Jam: ${item.jam_rawat}` : '',
+      `Sumber: ${sourceLabel}`,
+      item.pegawai ? `Petugas: ${item.pegawai}` : '',
+      item.a ? `Assessment: ${item.a}` : '',
+      item.p ? `Plan: ${item.p}` : '',
+      item.i ? `Instruksi/Intervensi: ${item.i}` : '',
+      item.e ? `Evaluasi: ${item.e}` : ''
+    ].filter(Boolean).join('\n');
+  };
+
+  const buildOperationText = (item: any) => {
+    return [
+      item.tanggal_op ? `Tanggal Operasi: ${item.tanggal_op}` : '',
+      item.nm_op ? `Nama Operasi: ${item.nm_op}` : '',
+      item.pre_op ? `Pre Operasi: ${item.pre_op}` : '',
+      item.post_op ? `Post Operasi: ${item.post_op}` : '',
+      item.implan ? `Implan: ${item.implan}` : '',
+      item.kirim_pa ? `Kirim PA: ${item.kirim_pa}` : '',
+      item.hasil_op ? `Hasil Operasi:\n${item.hasil_op}` : ''
+    ].filter(Boolean).join('\n');
+  };
+
+  const buildMedicationListText = (item: any, sourceLabel: string) => {
+    const detailLines = (item.obat || [])
+      .map((obat: any) => {
+        const jumlah = obat.jumlah ? `, Jumlah: ${obat.jumlah}` : '';
+        const aturan = obat.aturan_pakai ? `, Aturan Pakai: ${obat.aturan_pakai}` : '';
+        return `${obat.nama || '-'}${jumlah}${aturan}`;
+      })
+      .filter(Boolean)
+      .join('\n');
+
+    return [
+      item.tanggal ? `Tanggal: ${item.tanggal}` : '',
+      item.no_resep ? `No. Resep: ${item.no_resep}` : '',
+      `Sumber: ${sourceLabel}`,
+      detailLines ? `Obat:\n${detailLines}` : ''
+    ].filter(Boolean).join('\n');
+  };
+
+  const buildPickerConfig = (target: ResumePickerTarget): ResumePickerConfig => {
+    switch (target) {
+      case 'keluhan_utama':
+        return {
+          target,
+          title: 'Pilih Keluhan Utama',
+          description: 'Tampilkan semua data subjektif dari tabel pemeriksaan ranap sesuai nomor rawat, lalu pilih yang ingin dimasukkan.',
+          emptyMessage: 'Belum ada data keluhan utama dari pemeriksaan ranap.',
+          multiple: true,
+          items: sourceData.examinations
+            .filter((item) => String(item.s || '').trim())
+            .map((item, index) => ({
+              id: `keluhan-${index}-${item.tanggal}`,
+              title: item.tanggal || `Pemeriksaan ${index + 1}`,
+              subtitle: item.pegawai || 'Pemeriksaan Ranap',
+              description: item.s,
+              value: item.s
+            }))
+        };
+      case 'pemeriksaan_fisik':
+        return {
+          target,
+          title: 'Pilih Pemeriksaan Fisik',
+          description: 'Tampilkan semua data objektif dan tanda vital dari tabel pemeriksaan ranap sesuai nomor rawat.',
+          emptyMessage: 'Belum ada data pemeriksaan fisik dari pemeriksaan ranap.',
+          multiple: true,
+          items: sourceData.examinations
+            .filter((item) => String(item.o || buildVitalsText(item) || '').trim())
+            .map((item, index) => ({
+              id: `objektif-${index}-${item.tanggal}`,
+              title: item.tanggal || `Pemeriksaan ${index + 1}`,
+              subtitle: item.pegawai || 'Pemeriksaan Ranap',
+              description: [item.o, buildVitalsText(item)].filter(Boolean).join('\n'),
+              value: [item.o, buildVitalsText(item)].filter(Boolean).join('\n')
+            }))
+        };
+      case 'jalannya_penyakit':
+        return {
+          target,
+          title: 'Pilih Jalannya Penyakit',
+          description: 'Tampilkan semua entri SOAPIE dari tabel pemeriksaan ranap sesuai nomor rawat, lalu pilih data yang diperlukan.',
+          emptyMessage: 'Belum ada data jalannya penyakit dari pemeriksaan ranap.',
+          multiple: true,
+          items: sourceData.examinations
+            .map((item, index) => ({
+              id: `soap-${index}-${item.tanggal}`,
+              title: item.tanggal || `Pemeriksaan ${index + 1}`,
+              subtitle: item.pegawai || 'Pemeriksaan Ranap',
+              description: [item.s, item.o, item.a, item.p, item.i, item.e].filter(Boolean).join('\n'),
+              value: [
+                item.tanggal ? `Tanggal: ${item.tanggal}` : '',
+                buildVitalsText(item),
+                item.s ? `S: ${item.s}` : '',
+                item.o ? `O: ${item.o}` : '',
+                item.a ? `A: ${item.a}` : '',
+                item.p ? `P: ${item.p}` : '',
+                item.i ? `I: ${item.i}` : '',
+                item.e ? `E: ${item.e}` : ''
+              ].filter(Boolean).join('\n')
+            }))
+            .filter((item) => item.value.trim())
+        };
+      case 'pemeriksaan_penunjang':
+        return {
+          target,
+          title: 'Pilih Pemeriksaan Penunjang',
+          description: 'Tampilkan semua data pemeriksaan laboratorium dan radiologi sesuai nomor rawat, lalu pilih yang ingin dimasukkan.',
+          emptyMessage: 'Belum ada data pemeriksaan lab atau radiologi untuk nomor rawat ini.',
+          multiple: true,
+          items: [
+            ...sourceData.laboratoryResults.map((item, index) => ({
+              id: `penunjang-lab-${index}-${item.tanggal}`,
+              title: item.tanggal || `Laboratorium ${index + 1}`,
+              subtitle: 'Pemeriksaan Laboratorium',
+              description: buildLaboratoryResultText(item),
+              value: buildLaboratoryResultText(item)
+            })),
+            ...sourceData.radiologyResults.map((item, index) => ({
+              id: `penunjang-rad-${index}-${item.tanggal}`,
+              title: item.tanggal || `Radiologi ${index + 1}`,
+              subtitle: 'Pemeriksaan Radiologi',
+              description: buildRadiologyResultText(item),
+              value: buildRadiologyResultText(item)
+            }))
+          ].filter((item) => item.value.trim())
+        };
+      case 'hasil_laborat':
+        return {
+          target,
+          title: 'Pilih Hasil Laborat',
+          description: 'Tampilkan semua hasil pemeriksaan laboratorium sesuai nomor rawat, lalu pilih yang ingin dimasukkan.',
+          emptyMessage: 'Belum ada hasil pemeriksaan laboratorium untuk nomor rawat ini.',
+          multiple: true,
+          items: sourceData.laboratoryResults
+            .map((item, index) => ({
+              id: `hasil-lab-${index}-${item.tanggal}`,
+              title: item.tanggal || `Hasil Laboratorium ${index + 1}`,
+              subtitle: 'Hasil Pemeriksaan Lab',
+              description: buildLaboratoryResultText(item),
+              value: buildLaboratoryResultText(item)
+            }))
+            .filter((item) => item.value.trim())
+        };
+      case 'tindakan_dan_operasi':
+        return {
+          target,
+          title: 'Pilih Tindakan dan Operasi',
+          description: 'Tampilkan semua data dari pemeriksaan rawat jalan, pemeriksaan rawat inap, dan laporan operasi sesuai nomor rawat, lalu pilih yang ingin dimasukkan.',
+          emptyMessage: 'Belum ada data tindakan atau operasi untuk nomor rawat ini.',
+          multiple: true,
+          items: [
+            ...sourceData.outpatientExaminations
+              .map((item, index) => ({
+                id: `tindakan-ralan-${index}-${item.tgl_perawatan || item.tanggal || ''}-${item.jam_rawat || ''}`,
+                title: item.tanggal || item.tgl_perawatan || `Pemeriksaan Ralan ${index + 1}`,
+                subtitle: item.pegawai || 'Pemeriksaan Rawat Jalan',
+                description: buildExaminationProcedureText(item, 'Pemeriksaan Ralan'),
+                value: buildExaminationProcedureText(item, 'Pemeriksaan Ralan')
+              }))
+              .filter((item) => item.value.trim()),
+            ...sourceData.examinations
+              .map((item, index) => ({
+                id: `tindakan-ranap-${index}-${item.tgl_perawatan || item.tanggal || ''}-${item.jam_rawat || ''}`,
+                title: item.tanggal || item.tgl_perawatan || `Pemeriksaan Ranap ${index + 1}`,
+                subtitle: item.pegawai || 'Pemeriksaan Rawat Inap',
+                description: buildExaminationProcedureText(item, 'Pemeriksaan Ranap'),
+                value: buildExaminationProcedureText(item, 'Pemeriksaan Ranap')
+              }))
+              .filter((item) => item.value.trim()),
+            ...sourceData.operationData
+              .map((item, index) => ({
+                id: `operasi-${item.id || index}`,
+                title: item.nm_op || item.tanggal_op || `Operasi ${index + 1}`,
+                subtitle: item.post_op || item.pre_op || 'Laporan Operasi',
+                description: buildOperationText(item),
+                value: buildOperationText(item)
+              }))
+              .filter((item) => item.value.trim())
+          ]
+        };
+      case 'obat_di_rs':
+        return {
+          target,
+          title: 'Pilih Obat di RS',
+          description: 'Tampilkan data obat pulang dan pemberian obat selama perawatan sesuai nomor rawat, lalu pilih yang ingin dimasukkan.',
+          emptyMessage: 'Belum ada data obat pulang atau pemberian obat selama perawatan untuk nomor rawat ini.',
+          multiple: true,
+          items: [
+            ...sourceData.dischargeMedicationRequests
+              .map((item, index) => ({
+                id: `obat-pulang-${index}-${item.no_resep || ''}-${item.tanggal || ''}`,
+                title: item.tanggal || `Obat Pulang ${index + 1}`,
+                subtitle: 'Obat Pulang',
+                description: buildMedicationListText(item, 'Obat Pulang'),
+                value: buildMedicationListText(item, 'Obat Pulang')
+              }))
+              .filter((item) => item.value.trim()),
+            ...sourceData.inpatientMedications
+              .map((item, index) => ({
+                id: `obat-ranap-${index}-${item.no_resep || ''}-${item.tanggal || ''}`,
+                title: item.tanggal || `Pemberian Obat ${index + 1}`,
+                subtitle: 'Pemberian Obat Selama Perawatan',
+                description: buildMedicationListText(item, 'Pemberian Obat Selama Perawatan'),
+                value: buildMedicationListText(item, 'Pemberian Obat Selama Perawatan')
+              }))
+              .filter((item) => item.value.trim())
+          ]
+        };
+      default:
+        return {
+          target,
+          title: 'Pilih Data',
+          description: '',
+          emptyMessage: 'Belum ada data.',
+          multiple: true,
+          items: []
+        };
+    }
+  };
+
+  const pickerConfig = pickerTarget ? buildPickerConfig(pickerTarget) : null;
+  const filteredPickerItems = (pickerConfig?.items || []).filter((item) => {
+    const keyword = pickerSearch.trim().toLowerCase();
+    if (!keyword) {
+      return true;
+    }
+
+    return [item.title, item.subtitle, item.description, item.value, item.code]
+      .filter(Boolean)
+      .some((text) => String(text).toLowerCase().includes(keyword));
+  });
+
+  const openPicker = (target: ResumePickerTarget) => {
+    if (sourceLoading) {
+      toast({
+        title: "Memuat Data",
+        description: "Sumber data resume masih dimuat, silakan tunggu sebentar.",
+      });
+      return;
+    }
+
+    const config = buildPickerConfig(target);
+    if (config.items.length === 0) {
+      toast({
+        title: "Data Belum Tersedia",
+        description: config.emptyMessage,
+      });
+      return;
+    }
+
+    setPickerTarget(target);
+    setPickerSearch('');
+    setSelectedPickerItems([]);
+  };
+
+  const closePicker = () => {
+    setPickerTarget(null);
+    setPickerSearch('');
+    setSelectedPickerItems([]);
+  };
+
+  const togglePickerItem = (itemId: string) => {
+    if (!pickerConfig) {
+      return;
+    }
+
+    setSelectedPickerItems((previous) => {
+      if (pickerConfig.multiple) {
+        return previous.includes(itemId)
+          ? previous.filter((id) => id !== itemId)
+          : [...previous, itemId];
+      }
+
+      return previous[0] === itemId ? [] : [itemId];
+    });
+  };
+
+  const applyPickerSelection = () => {
+    if (!pickerConfig || selectedPickerItems.length === 0) {
+      return;
+    }
+
+    const selectedItems = pickerConfig.items.filter((item) => selectedPickerItems.includes(item.id));
+    if (selectedItems.length === 0) {
+      return;
+    }
+
+    switch (pickerConfig.target) {
+      case 'keluhan_utama':
+        updateField('keluhan_utama', mergeTextBlocks(formData.keluhan_utama, selectedItems.map((item) => item.value)));
+        break;
+      case 'pemeriksaan_fisik':
+        updateField('pemeriksaan_fisik', mergeTextBlocks(formData.pemeriksaan_fisik, selectedItems.map((item) => item.value)));
+        break;
+      case 'jalannya_penyakit':
+        updateField('jalannya_penyakit', mergeTextBlocks(formData.jalannya_penyakit, selectedItems.map((item) => item.value)));
+        break;
+      case 'pemeriksaan_penunjang':
+        updateField('pemeriksaan_penunjang', mergeTextBlocks(formData.pemeriksaan_penunjang, selectedItems.map((item) => item.value)));
+        break;
+      case 'hasil_laborat':
+        updateField('hasil_laborat', mergeTextBlocks(formData.hasil_laborat, selectedItems.map((item) => item.value)));
+        break;
+      case 'tindakan_dan_operasi':
+        updateField('tindakan_dan_operasi', mergeTextBlocks(formData.tindakan_dan_operasi, selectedItems.map((item) => item.value)));
+        break;
+      case 'obat_di_rs':
+        updateField('obat_di_rs', mergeTextBlocks(formData.obat_di_rs, selectedItems.map((item) => item.value)));
+        break;
+      default:
+        break;
+    }
+
+    closePicker();
+  };
+
+  const renderFieldLabel = (htmlFor: string, label: string, target?: ResumePickerTarget) => (
+    <div className="mb-2 flex items-center justify-between gap-2">
+      <Label htmlFor={htmlFor}>{label}</Label>
+      {target ? (
+        <Button
+          type="button"
+          size="icon"
+          variant="outline"
+          className="h-8 w-8 shrink-0"
+          onClick={() => openPicker(target)}
+          disabled={loading || saving || sourceLoading}
+          title="Ambil data dari tabel terkait"
+        >
+          {sourceLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Paperclip className="h-4 w-4" />}
+        </Button>
+      ) : null}
+    </div>
+  );
+
   return (
     <Dialog open={isOpen} onOpenChange={onClose}>
       <DialogContent className="max-w-6xl max-h-[90vh] overflow-y-auto">
@@ -364,116 +1151,134 @@ export const MedicalResumeModal: React.FC<MedicalResumeModalProps> = ({ isOpen, 
                     <Input id="alasan" value={formData.alasan} onChange={(e) => updateField('alasan', e.target.value)} />
                   </div>
                   <div className="md:col-span-2">
-                    <Label htmlFor="keluhan_utama">Keluhan Utama</Label>
+                    {renderFieldLabel('keluhan_utama', 'Keluhan Utama', 'keluhan_utama')}
                     <Textarea id="keluhan_utama" rows={3} value={formData.keluhan_utama} onChange={(e) => updateField('keluhan_utama', e.target.value)} />
                   </div>
                   <div className="md:col-span-2">
-                    <Label htmlFor="pemeriksaan_fisik">Pemeriksaan Fisik</Label>
+                    {renderFieldLabel('pemeriksaan_fisik', 'Pemeriksaan Fisik', 'pemeriksaan_fisik')}
                     <Textarea id="pemeriksaan_fisik" rows={3} value={formData.pemeriksaan_fisik} onChange={(e) => updateField('pemeriksaan_fisik', e.target.value)} />
                   </div>
                   <div className="md:col-span-2">
-                    <Label htmlFor="jalannya_penyakit">Jalannya Penyakit</Label>
+                    {renderFieldLabel('jalannya_penyakit', 'Jalannya Penyakit', 'jalannya_penyakit')}
                     <Textarea id="jalannya_penyakit" rows={3} value={formData.jalannya_penyakit} onChange={(e) => updateField('jalannya_penyakit', e.target.value)} />
                   </div>
                   <div>
-                    <Label htmlFor="pemeriksaan_penunjang">Pemeriksaan Penunjang</Label>
+                    {renderFieldLabel('pemeriksaan_penunjang', 'Pemeriksaan Penunjang', 'pemeriksaan_penunjang')}
                     <Textarea id="pemeriksaan_penunjang" rows={3} value={formData.pemeriksaan_penunjang} onChange={(e) => updateField('pemeriksaan_penunjang', e.target.value)} />
                   </div>
                   <div>
-                    <Label htmlFor="hasil_laborat">Hasil Laborat</Label>
+                    {renderFieldLabel('hasil_laborat', 'Hasil Laborat', 'hasil_laborat')}
                     <Textarea id="hasil_laborat" rows={3} value={formData.hasil_laborat} onChange={(e) => updateField('hasil_laborat', e.target.value)} />
                   </div>
                   <div>
-                    <Label htmlFor="tindakan_dan_operasi">Tindakan dan Operasi</Label>
+                    {renderFieldLabel('tindakan_dan_operasi', 'Tindakan dan Operasi', 'tindakan_dan_operasi')}
                     <Textarea id="tindakan_dan_operasi" rows={3} value={formData.tindakan_dan_operasi} onChange={(e) => updateField('tindakan_dan_operasi', e.target.value)} />
                   </div>
                   <div>
-                    <Label htmlFor="obat_di_rs">Obat di RS</Label>
+                    {renderFieldLabel('obat_di_rs', 'Obat di RS', 'obat_di_rs')}
                     <Textarea id="obat_di_rs" rows={3} value={formData.obat_di_rs} onChange={(e) => updateField('obat_di_rs', e.target.value)} />
                   </div>
                 </div>
 
                 <div className="space-y-4">
                   <h3 className="font-semibold">Diagnosa</h3>
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <div>
-                      <Label htmlFor="diagnosa_utama">Diagnosa Utama</Label>
-                      <Input id="diagnosa_utama" value={formData.diagnosa_utama} onChange={(e) => updateField('diagnosa_utama', e.target.value)} />
-                    </div>
-                    <div>
-                      <Label htmlFor="kd_diagnosa_utama">Kode Diagnosa Utama</Label>
-                      <Input id="kd_diagnosa_utama" value={formData.kd_diagnosa_utama} onChange={(e) => updateField('kd_diagnosa_utama', e.target.value)} />
-                    </div>
-                    <div>
-                      <Label htmlFor="diagnosa_sekunder">Diagnosa Sekunder 1</Label>
-                      <Input id="diagnosa_sekunder" value={formData.diagnosa_sekunder} onChange={(e) => updateField('diagnosa_sekunder', e.target.value)} />
-                    </div>
-                    <div>
-                      <Label htmlFor="kd_diagnosa_sekunder">Kode Diagnosa Sekunder 1</Label>
-                      <Input id="kd_diagnosa_sekunder" value={formData.kd_diagnosa_sekunder} onChange={(e) => updateField('kd_diagnosa_sekunder', e.target.value)} />
-                    </div>
-                    <div>
-                      <Label htmlFor="diagnosa_sekunder2">Diagnosa Sekunder 2</Label>
-                      <Input id="diagnosa_sekunder2" value={formData.diagnosa_sekunder2} onChange={(e) => updateField('diagnosa_sekunder2', e.target.value)} />
-                    </div>
-                    <div>
-                      <Label htmlFor="kd_diagnosa_sekunder2">Kode Diagnosa Sekunder 2</Label>
-                      <Input id="kd_diagnosa_sekunder2" value={formData.kd_diagnosa_sekunder2} onChange={(e) => updateField('kd_diagnosa_sekunder2', e.target.value)} />
-                    </div>
-                    <div>
-                      <Label htmlFor="diagnosa_sekunder3">Diagnosa Sekunder 3</Label>
-                      <Input id="diagnosa_sekunder3" value={formData.diagnosa_sekunder3} onChange={(e) => updateField('diagnosa_sekunder3', e.target.value)} />
-                    </div>
-                    <div>
-                      <Label htmlFor="kd_diagnosa_sekunder3">Kode Diagnosa Sekunder 3</Label>
-                      <Input id="kd_diagnosa_sekunder3" value={formData.kd_diagnosa_sekunder3} onChange={(e) => updateField('kd_diagnosa_sekunder3', e.target.value)} />
-                    </div>
-                    <div>
-                      <Label htmlFor="diagnosa_sekunder4">Diagnosa Sekunder 4</Label>
-                      <Input id="diagnosa_sekunder4" value={formData.diagnosa_sekunder4} onChange={(e) => updateField('diagnosa_sekunder4', e.target.value)} />
-                    </div>
-                    <div>
-                      <Label htmlFor="kd_diagnosa_sekunder4">Kode Diagnosa Sekunder 4</Label>
-                      <Input id="kd_diagnosa_sekunder4" value={formData.kd_diagnosa_sekunder4} onChange={(e) => updateField('kd_diagnosa_sekunder4', e.target.value)} />
-                    </div>
+                  <div className="grid grid-cols-1 gap-4">
+                    <SearchableMedicalCodeField
+                      label="Diagnosa Utama"
+                      placeholder="Pilih diagnosa utama"
+                      emptyMessage="Tidak ada diagnosa ditemukan."
+                      selectedName={formData.diagnosa_utama}
+                      selectedCode={formData.kd_diagnosa_utama}
+                      type="icd10"
+                      onSelect={(name, code) => updateDiagnosisFields('diagnosa_utama', 'kd_diagnosa_utama', name, code)}
+                      onClear={() => updateDiagnosisFields('diagnosa_utama', 'kd_diagnosa_utama', '', '')}
+                    />
+                    <SearchableMedicalCodeField
+                      label="Diagnosa Sekunder 1"
+                      placeholder="Pilih diagnosa sekunder 1"
+                      emptyMessage="Tidak ada diagnosa ditemukan."
+                      selectedName={formData.diagnosa_sekunder}
+                      selectedCode={formData.kd_diagnosa_sekunder}
+                      type="icd10"
+                      onSelect={(name, code) => updateDiagnosisFields('diagnosa_sekunder', 'kd_diagnosa_sekunder', name, code)}
+                      onClear={() => updateDiagnosisFields('diagnosa_sekunder', 'kd_diagnosa_sekunder', '', '')}
+                    />
+                    <SearchableMedicalCodeField
+                      label="Diagnosa Sekunder 2"
+                      placeholder="Pilih diagnosa sekunder 2"
+                      emptyMessage="Tidak ada diagnosa ditemukan."
+                      selectedName={formData.diagnosa_sekunder2}
+                      selectedCode={formData.kd_diagnosa_sekunder2}
+                      type="icd10"
+                      onSelect={(name, code) => updateDiagnosisFields('diagnosa_sekunder2', 'kd_diagnosa_sekunder2', name, code)}
+                      onClear={() => updateDiagnosisFields('diagnosa_sekunder2', 'kd_diagnosa_sekunder2', '', '')}
+                    />
+                    <SearchableMedicalCodeField
+                      label="Diagnosa Sekunder 3"
+                      placeholder="Pilih diagnosa sekunder 3"
+                      emptyMessage="Tidak ada diagnosa ditemukan."
+                      selectedName={formData.diagnosa_sekunder3}
+                      selectedCode={formData.kd_diagnosa_sekunder3}
+                      type="icd10"
+                      onSelect={(name, code) => updateDiagnosisFields('diagnosa_sekunder3', 'kd_diagnosa_sekunder3', name, code)}
+                      onClear={() => updateDiagnosisFields('diagnosa_sekunder3', 'kd_diagnosa_sekunder3', '', '')}
+                    />
+                    <SearchableMedicalCodeField
+                      label="Diagnosa Sekunder 4"
+                      placeholder="Pilih diagnosa sekunder 4"
+                      emptyMessage="Tidak ada diagnosa ditemukan."
+                      selectedName={formData.diagnosa_sekunder4}
+                      selectedCode={formData.kd_diagnosa_sekunder4}
+                      type="icd10"
+                      onSelect={(name, code) => updateDiagnosisFields('diagnosa_sekunder4', 'kd_diagnosa_sekunder4', name, code)}
+                      onClear={() => updateDiagnosisFields('diagnosa_sekunder4', 'kd_diagnosa_sekunder4', '', '')}
+                    />
                   </div>
                 </div>
 
                 <div className="space-y-4">
                   <h3 className="font-semibold">Prosedur</h3>
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <div>
-                      <Label htmlFor="prosedur_utama">Prosedur Utama</Label>
-                      <Input id="prosedur_utama" value={formData.prosedur_utama} onChange={(e) => updateField('prosedur_utama', e.target.value)} />
-                    </div>
-                    <div>
-                      <Label htmlFor="kd_prosedur_utama">Kode Prosedur Utama</Label>
-                      <Input id="kd_prosedur_utama" value={formData.kd_prosedur_utama} onChange={(e) => updateField('kd_prosedur_utama', e.target.value)} />
-                    </div>
-                    <div>
-                      <Label htmlFor="prosedur_sekunder">Prosedur Sekunder 1</Label>
-                      <Input id="prosedur_sekunder" value={formData.prosedur_sekunder} onChange={(e) => updateField('prosedur_sekunder', e.target.value)} />
-                    </div>
-                    <div>
-                      <Label htmlFor="kd_prosedur_sekunder">Kode Prosedur Sekunder 1</Label>
-                      <Input id="kd_prosedur_sekunder" value={formData.kd_prosedur_sekunder} onChange={(e) => updateField('kd_prosedur_sekunder', e.target.value)} />
-                    </div>
-                    <div>
-                      <Label htmlFor="prosedur_sekunder2">Prosedur Sekunder 2</Label>
-                      <Input id="prosedur_sekunder2" value={formData.prosedur_sekunder2} onChange={(e) => updateField('prosedur_sekunder2', e.target.value)} />
-                    </div>
-                    <div>
-                      <Label htmlFor="kd_prosedur_sekunder2">Kode Prosedur Sekunder 2</Label>
-                      <Input id="kd_prosedur_sekunder2" value={formData.kd_prosedur_sekunder2} onChange={(e) => updateField('kd_prosedur_sekunder2', e.target.value)} />
-                    </div>
-                    <div>
-                      <Label htmlFor="prosedur_sekunder3">Prosedur Sekunder 3</Label>
-                      <Input id="prosedur_sekunder3" value={formData.prosedur_sekunder3} onChange={(e) => updateField('prosedur_sekunder3', e.target.value)} />
-                    </div>
-                    <div>
-                      <Label htmlFor="kd_prosedur_sekunder3">Kode Prosedur Sekunder 3</Label>
-                      <Input id="kd_prosedur_sekunder3" value={formData.kd_prosedur_sekunder3} onChange={(e) => updateField('kd_prosedur_sekunder3', e.target.value)} />
-                    </div>
+                  <div className="grid grid-cols-1 gap-4">
+                    <SearchableMedicalCodeField
+                      label="Prosedur Utama"
+                      placeholder="Pilih prosedur utama"
+                      emptyMessage="Tidak ada prosedur ditemukan."
+                      selectedName={formData.prosedur_utama}
+                      selectedCode={formData.kd_prosedur_utama}
+                      type="icd9"
+                      onSelect={(name, code) => updateProcedureFields('prosedur_utama', 'kd_prosedur_utama', name, code)}
+                      onClear={() => updateProcedureFields('prosedur_utama', 'kd_prosedur_utama', '', '')}
+                    />
+                    <SearchableMedicalCodeField
+                      label="Prosedur Sekunder 1"
+                      placeholder="Pilih prosedur sekunder 1"
+                      emptyMessage="Tidak ada prosedur ditemukan."
+                      selectedName={formData.prosedur_sekunder}
+                      selectedCode={formData.kd_prosedur_sekunder}
+                      type="icd9"
+                      onSelect={(name, code) => updateProcedureFields('prosedur_sekunder', 'kd_prosedur_sekunder', name, code)}
+                      onClear={() => updateProcedureFields('prosedur_sekunder', 'kd_prosedur_sekunder', '', '')}
+                    />
+                    <SearchableMedicalCodeField
+                      label="Prosedur Sekunder 2"
+                      placeholder="Pilih prosedur sekunder 2"
+                      emptyMessage="Tidak ada prosedur ditemukan."
+                      selectedName={formData.prosedur_sekunder2}
+                      selectedCode={formData.kd_prosedur_sekunder2}
+                      type="icd9"
+                      onSelect={(name, code) => updateProcedureFields('prosedur_sekunder2', 'kd_prosedur_sekunder2', name, code)}
+                      onClear={() => updateProcedureFields('prosedur_sekunder2', 'kd_prosedur_sekunder2', '', '')}
+                    />
+                    <SearchableMedicalCodeField
+                      label="Prosedur Sekunder 3"
+                      placeholder="Pilih prosedur sekunder 3"
+                      emptyMessage="Tidak ada prosedur ditemukan."
+                      selectedName={formData.prosedur_sekunder3}
+                      selectedCode={formData.kd_prosedur_sekunder3}
+                      type="icd9"
+                      onSelect={(name, code) => updateProcedureFields('prosedur_sekunder3', 'kd_prosedur_sekunder3', name, code)}
+                      onClear={() => updateProcedureFields('prosedur_sekunder3', 'kd_prosedur_sekunder3', '', '')}
+                    />
                   </div>
                 </div>
 
@@ -486,7 +1291,42 @@ export const MedicalResumeModal: React.FC<MedicalResumeModalProps> = ({ isOpen, 
                     </div>
                     <div>
                       <Label htmlFor="kontrol">Kontrol</Label>
-                      <Input id="kontrol" type="datetime-local" value={formData.kontrol || ''} onChange={(e) => updateField('kontrol', e.target.value)} />
+                      <Popover>
+                        <PopoverTrigger asChild>
+                          <Button
+                            id="kontrol"
+                            variant="outline"
+                            className={cn(
+                              "w-full justify-start text-left font-normal",
+                              !formData.kontrol && "text-muted-foreground"
+                            )}
+                          >
+                            <CalendarIcon className="mr-2 h-4 w-4" />
+                            {formatKontrolDisplay(formData.kontrol)}
+                          </Button>
+                        </PopoverTrigger>
+                        <PopoverContent className="w-96 p-0" align="start">
+                          <div className="space-y-3 p-3">
+                            <CalendarComponent
+                              mode="single"
+                              selected={parseKontrolDate(formData.kontrol)}
+                              onSelect={updateKontrolDate}
+                              locale={indonesianLocale}
+                              initialFocus
+                              className="pointer-events-auto w-full"
+                            />
+                            <div className="space-y-2">
+                              <Label htmlFor="kontrol-time">Jam Kontrol</Label>
+                              <Input
+                                id="kontrol-time"
+                                type="time"
+                                value={getKontrolTimeValue(formData.kontrol)}
+                                onChange={(e) => updateKontrolTime(e.target.value)}
+                              />
+                            </div>
+                          </div>
+                        </PopoverContent>
+                      </Popover>
                     </div>
                     <div>
                       <Label htmlFor="diet">Diet</Label>
@@ -549,6 +1389,78 @@ export const MedicalResumeModal: React.FC<MedicalResumeModalProps> = ({ isOpen, 
             </Card>
           )}
         </div>
+
+        <Dialog open={Boolean(pickerTarget)} onOpenChange={(open) => { if (!open) closePicker(); }}>
+          <DialogContent className="max-w-3xl max-h-[85vh] overflow-hidden flex flex-col">
+            <DialogHeader>
+              <DialogTitle>{pickerConfig?.title || 'Pilih Data Resume'}</DialogTitle>
+            </DialogHeader>
+
+            <div className="space-y-4 flex-1 min-h-0">
+              <p className="text-sm text-muted-foreground">
+                {pickerConfig?.description || 'Pilih data dari tabel terkait untuk dimasukkan ke field resume.'}
+              </p>
+
+              <div className="relative">
+                <Search className="absolute left-3 top-3.5 h-4 w-4 text-muted-foreground" />
+                <Input
+                  placeholder="Cari data..."
+                  className="pl-9"
+                  value={pickerSearch}
+                  onChange={(e) => setPickerSearch(e.target.value)}
+                />
+              </div>
+
+              <div className="border rounded-lg overflow-y-auto max-h-[50vh]">
+                {filteredPickerItems.length === 0 ? (
+                  <div className="p-6 text-sm text-muted-foreground text-center">
+                    {pickerConfig?.emptyMessage || 'Belum ada data yang bisa dipilih.'}
+                  </div>
+                ) : (
+                  <div className="divide-y">
+                    {filteredPickerItems.map((item) => {
+                      const checked = selectedPickerItems.includes(item.id);
+                      return (
+                        <button
+                          type="button"
+                          key={item.id}
+                          onClick={() => togglePickerItem(item.id)}
+                          className={`w-full p-4 text-left transition-colors hover:bg-muted/50 ${checked ? 'bg-muted/60' : ''}`}
+                        >
+                          <div className="flex items-start gap-3">
+                            <Checkbox
+                              checked={checked}
+                              onCheckedChange={() => togglePickerItem(item.id)}
+                              className="mt-1"
+                            />
+                            <div className="space-y-1">
+                              <p className="font-medium">{item.title}</p>
+                              {item.subtitle ? (
+                                <p className="text-xs text-muted-foreground">{item.subtitle}</p>
+                              ) : null}
+                              {item.description ? (
+                                <p className="text-sm whitespace-pre-line break-words text-muted-foreground">{item.description}</p>
+                              ) : null}
+                            </div>
+                          </div>
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+
+              <div className="flex justify-end gap-2">
+                <Button type="button" variant="outline" onClick={closePicker}>
+                  Batal
+                </Button>
+                <Button type="button" onClick={applyPickerSelection} disabled={selectedPickerItems.length === 0}>
+                  Masukkan ke Field
+                </Button>
+              </div>
+            </div>
+          </DialogContent>
+        </Dialog>
       </DialogContent>
     </Dialog>
   );

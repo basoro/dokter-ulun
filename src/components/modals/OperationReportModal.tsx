@@ -6,26 +6,23 @@ import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { Plus, Edit, Trash2, Scissors, Calendar } from 'lucide-react';
+import { Plus, Edit, Trash2, Scissors, Calendar, Loader2 } from 'lucide-react';
 import { useToast } from "@/hooks/use-toast";
+import { API_URLS } from '@/config/api';
+import { useAuth } from '@/contexts/AuthContext';
 
 interface OperationReport {
-  id?: string;
-  tanggal_operasi: string;
-  jam_mulai: string;
-  jam_selesai: string;
-  jenis_operasi: string;
-  diagnosa_pre_operasi: string;
-  diagnosa_post_operasi: string;
-  operator_utama: string;
-  asisten_operator: string;
-  dokter_anestesi: string;
-  jenis_anestesi: string;
-  laporan_operasi: string;
-  komplikasi: string;
-  kondisi_post_operasi: string;
-  instruksi_post_operasi: string;
-  status: 'Scheduled' | 'Ongoing' | 'Completed' | 'Cancelled';
+  id?: number;
+  no_rawat: string;
+  kd_dokter: string;
+  tanggal_op: string;
+  hasil_op: string;
+  pre_op: string;
+  post_op: string;
+  implan: string;
+  kirim_pa: 'Ya' | 'Tidak';
+  nm_op: string;
+  created_at?: string;
 }
 
 interface OperationReportModalProps {
@@ -35,69 +32,66 @@ interface OperationReportModalProps {
 }
 
 export const OperationReportModal: React.FC<OperationReportModalProps> = ({ isOpen, onClose, noRawat }) => {
+  const { user } = useAuth();
   const [reports, setReports] = useState<OperationReport[]>([]);
   const [loading, setLoading] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [deleting, setDeleting] = useState(false);
   const [editingItem, setEditingItem] = useState<OperationReport | null>(null);
   const [showForm, setShowForm] = useState(false);
   const [formData, setFormData] = useState<OperationReport>({
-    tanggal_operasi: new Date().toISOString().split('T')[0],
-    jam_mulai: '',
-    jam_selesai: '',
-    jenis_operasi: '',
-    diagnosa_pre_operasi: '',
-    diagnosa_post_operasi: '',
-    operator_utama: '',
-    asisten_operator: '',
-    dokter_anestesi: '',
-    jenis_anestesi: '',
-    laporan_operasi: '',
-    komplikasi: '',
-    kondisi_post_operasi: '',
-    instruksi_post_operasi: '',
-    status: 'Scheduled'
+    id: undefined,
+    no_rawat: noRawat,
+    kd_dokter: user?.kd_dokter || user?.username || '',
+    tanggal_op: new Date().toISOString().slice(0, 16),
+    hasil_op: '',
+    pre_op: '',
+    post_op: '',
+    implan: '',
+    kirim_pa: 'Tidak',
+    nm_op: '',
+    created_at: '',
   });
   const { toast } = useToast();
-
-  const anesthesiaTypes = [
-    'General Anesthesia', 'Spinal Anesthesia', 'Epidural Anesthesia', 
-    'Local Anesthesia', 'Regional Anesthesia', 'Sedation'
-  ];
 
   useEffect(() => {
     if (isOpen) {
       fetchReports();
     }
-  }, [isOpen]);
+  }, [isOpen, noRawat]);
+
+  useEffect(() => {
+    setFormData((prev) => ({ ...prev, no_rawat: noRawat }));
+  }, [noRawat]);
+
+  useEffect(() => {
+    setFormData((prev) => ({
+      ...prev,
+      kd_dokter: prev.kd_dokter || user?.kd_dokter || user?.username || '',
+    }));
+  }, [user]);
 
   const fetchReports = async () => {
+    if (!noRawat) {
+      setReports([]);
+      return;
+    }
+
     setLoading(true);
     try {
-      // Mock data for now - replace with real API call
-      setReports([
-        {
-          id: '1',
-          tanggal_operasi: '2025-01-15',
-          jam_mulai: '08:00',
-          jam_selesai: '10:30',
-          jenis_operasi: 'Appendectomy',
-          diagnosa_pre_operasi: 'Appendicitis Acute',
-          diagnosa_post_operasi: 'Post Appendectomy',
-          operator_utama: 'Dr. Ahmad Bedah',
-          asisten_operator: 'Dr. Sarah',
-          dokter_anestesi: 'Dr. Budi',
-          jenis_anestesi: 'General Anesthesia',
-          laporan_operasi: 'Operasi appendectomy laparoscopic dilakukan dengan sukses. Tidak ada komplikasi intraoperatif.',
-          komplikasi: 'Tidak ada',
-          kondisi_post_operasi: 'Stabil',
-          instruksi_post_operasi: 'NPO 6 jam, mobilisasi bertahap, antibiotik profilaksis',
-          status: 'Completed'
-        }
-      ]);
+      const response = await fetch(`${API_URLS.OPERATION_REPORTS}/${encodeURIComponent(noRawat)}`);
+      const result = await response.json();
+
+      if (!response.ok || !result.success) {
+        throw new Error(result.error || 'Gagal memuat laporan operasi');
+      }
+
+      setReports(result.data || []);
     } catch (error) {
       console.error('Error fetching operation reports:', error);
       toast({
         title: "Error",
-        description: "Gagal memuat laporan operasi",
+        description: error instanceof Error ? error.message : "Gagal memuat laporan operasi",
         variant: "destructive",
       });
     } finally {
@@ -107,19 +101,34 @@ export const OperationReportModal: React.FC<OperationReportModalProps> = ({ isOp
 
   const handleSave = async () => {
     try {
+      setSaving(true);
+
+      const requestBody = {
+        ...formData,
+        no_rawat: noRawat,
+        kd_dokter: formData.kd_dokter || user?.kd_dokter || user?.username || '',
+      };
+
+      const response = await fetch(API_URLS.OPERATION_REPORTS, {
+        method: editingItem ? 'PUT' : 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(requestBody),
+      });
+
+      const result = await response.json();
+      if (!response.ok || !result.success) {
+        throw new Error(result.error || 'Gagal menyimpan laporan operasi');
+      }
+
+      await fetchReports();
       if (editingItem) {
-        // Update existing item
-        setReports(prev => prev.map(item => 
-          item.id === editingItem.id ? { ...formData, id: editingItem.id } : item
-        ));
         toast({
           title: "Berhasil",
           description: "Laporan operasi berhasil diperbarui",
         });
       } else {
-        // Add new item
-        const newItem = { ...formData, id: Date.now().toString() };
-        setReports(prev => [newItem, ...prev]);
         toast({
           title: "Berhasil",
           description: "Laporan operasi berhasil ditambahkan",
@@ -129,59 +138,82 @@ export const OperationReportModal: React.FC<OperationReportModalProps> = ({ isOp
     } catch (error) {
       toast({
         title: "Error",
-        description: "Gagal menyimpan laporan operasi",
+        description: error instanceof Error ? error.message : "Gagal menyimpan laporan operasi",
         variant: "destructive",
       });
+    } finally {
+      setSaving(false);
     }
   };
 
   const handleEdit = (item: OperationReport) => {
     setEditingItem(item);
-    setFormData(item);
+    setFormData({
+      ...item,
+      no_rawat: noRawat,
+      original_tanggal: item.original_tanggal || item.tanggal,
+    });
     setShowForm(true);
   };
 
-  const handleDelete = async (id: string) => {
+  const handleDelete = async (item: OperationReport) => {
     if (confirm('Apakah Anda yakin ingin menghapus laporan operasi ini?')) {
-      setReports(prev => prev.filter(item => item.id !== id));
-      toast({
-        title: "Berhasil",
-        description: "Laporan operasi berhasil dihapus",
-      });
+      try {
+        setDeleting(true);
+        const response = await fetch(API_URLS.OPERATION_REPORTS, {
+          method: 'DELETE',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            no_rawat: noRawat,
+            id: item.id,
+          }),
+        });
+
+        const result = await response.json();
+        if (!response.ok || !result.success) {
+          throw new Error(result.error || 'Gagal menghapus laporan operasi');
+        }
+
+        await fetchReports();
+        toast({
+          title: "Berhasil",
+          description: "Laporan operasi berhasil dihapus",
+        });
+      } catch (error) {
+        toast({
+          title: "Error",
+          description: error instanceof Error ? error.message : "Gagal menghapus laporan operasi",
+          variant: "destructive",
+        });
+      } finally {
+        setDeleting(false);
+      }
     }
   };
 
   const resetForm = () => {
     setFormData({
-      tanggal_operasi: new Date().toISOString().split('T')[0],
-      jam_mulai: '',
-      jam_selesai: '',
-      jenis_operasi: '',
-      diagnosa_pre_operasi: '',
-      diagnosa_post_operasi: '',
-      operator_utama: '',
-      asisten_operator: '',
-      dokter_anestesi: '',
-      jenis_anestesi: '',
-      laporan_operasi: '',
-      komplikasi: '',
-      kondisi_post_operasi: '',
-      instruksi_post_operasi: '',
-      status: 'Scheduled'
+      id: undefined,
+      no_rawat: noRawat,
+      kd_dokter: user?.kd_dokter || user?.username || '',
+      tanggal_op: new Date().toISOString().slice(0, 16),
+      hasil_op: '',
+      pre_op: '',
+      post_op: '',
+      implan: '',
+      kirim_pa: 'Tidak',
+      nm_op: '',
+      created_at: '',
     });
     setEditingItem(null);
     setShowForm(false);
   };
 
-  const getStatusBadge = (status: string) => {
-    const variants = {
-      'Scheduled': 'outline',
-      'Ongoing': 'secondary',
-      'Completed': 'default',
-      'Cancelled': 'destructive'
-    } as const;
-    return <Badge variant={variants[status as keyof typeof variants] || 'outline'}>{status}</Badge>;
-  };
+  const getPaBadge = (permintaanPa: string) => (
+    <Badge variant={permintaanPa === 'Ya' ? 'default' : 'outline'}>{permintaanPa === 'Ya' ? 'PA: Ya' : 'PA: Tidak'}</Badge>
+  );
 
   return (
     <Dialog open={isOpen} onOpenChange={onClose}>
@@ -196,7 +228,7 @@ export const OperationReportModal: React.FC<OperationReportModalProps> = ({ isOp
         <div className="space-y-4">
           {/* Add Button */}
           <div className="flex justify-end">
-            <Button onClick={() => setShowForm(true)}>
+            <Button onClick={() => setShowForm(true)} disabled={loading || saving}>
               <Plus className="h-4 w-4 mr-2" />
               Tambah Laporan
             </Button>
@@ -211,153 +243,72 @@ export const OperationReportModal: React.FC<OperationReportModalProps> = ({ isOp
                 </CardTitle>
               </CardHeader>
               <CardContent className="space-y-4">
-                <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div>
                     <Label htmlFor="tanggal_operasi">Tanggal Operasi</Label>
-                    <input
-                      type="date"
+                    <Input
+                      type="datetime-local"
                       id="tanggal_operasi"
-                      value={formData.tanggal_operasi}
-                      onChange={(e) => setFormData(prev => ({ ...prev, tanggal_operasi: e.target.value }))}
-                      className="w-full p-2 border rounded"
+                      value={formData.tanggal_op}
+                      onChange={(e) => setFormData(prev => ({ ...prev, tanggal_op: e.target.value }))}
                     />
                   </div>
                   <div>
-                    <Label htmlFor="jam_mulai">Jam Mulai</Label>
-                    <input
-                      type="time"
-                      id="jam_mulai"
-                      value={formData.jam_mulai}
-                      onChange={(e) => setFormData(prev => ({ ...prev, jam_mulai: e.target.value }))}
-                      className="w-full p-2 border rounded"
-                    />
+                    <Label htmlFor="nm_op">Nama Operasi</Label>
+                    <Input id="nm_op" value={formData.nm_op} onChange={(e) => setFormData(prev => ({ ...prev, nm_op: e.target.value }))} />
                   </div>
                   <div>
-                    <Label htmlFor="jam_selesai">Jam Selesai</Label>
-                    <input
-                      type="time"
-                      id="jam_selesai"
-                      value={formData.jam_selesai}
-                      onChange={(e) => setFormData(prev => ({ ...prev, jam_selesai: e.target.value }))}
-                      className="w-full p-2 border rounded"
-                    />
-                  </div>
-                  <div>
-                    <Label htmlFor="status">Status</Label>
-                    <select
-                      id="status"
-                      value={formData.status}
-                      onChange={(e) => setFormData(prev => ({ ...prev, status: e.target.value as any }))}
-                      className="w-full p-2 border rounded"
-                    >
-                      <option value="Scheduled">Scheduled</option>
-                      <option value="Ongoing">Ongoing</option>
-                      <option value="Completed">Completed</option>
-                      <option value="Cancelled">Cancelled</option>
-                    </select>
-                  </div>
-                  <div className="md:col-span-2">
-                    <Label htmlFor="jenis_operasi">Jenis Operasi</Label>
-                    <Input
-                      id="jenis_operasi"
-                      value={formData.jenis_operasi}
-                      onChange={(e) => setFormData(prev => ({ ...prev, jenis_operasi: e.target.value }))}
-                    />
-                  </div>
-                  <div>
-                    <Label htmlFor="operator_utama">Operator Utama</Label>
-                    <Input
-                      id="operator_utama"
-                      value={formData.operator_utama}
-                      onChange={(e) => setFormData(prev => ({ ...prev, operator_utama: e.target.value }))}
-                    />
-                  </div>
-                  <div>
-                    <Label htmlFor="asisten_operator">Asisten Operator</Label>
-                    <Input
-                      id="asisten_operator"
-                      value={formData.asisten_operator}
-                      onChange={(e) => setFormData(prev => ({ ...prev, asisten_operator: e.target.value }))}
-                    />
-                  </div>
-                  <div>
-                    <Label htmlFor="dokter_anestesi">Dokter Anestesi</Label>
-                    <Input
-                      id="dokter_anestesi"
-                      value={formData.dokter_anestesi}
-                      onChange={(e) => setFormData(prev => ({ ...prev, dokter_anestesi: e.target.value }))}
-                    />
-                  </div>
-                  <div>
-                    <Label htmlFor="jenis_anestesi">Jenis Anestesi</Label>
-                    <select
-                      id="jenis_anestesi"
-                      value={formData.jenis_anestesi}
-                      onChange={(e) => setFormData(prev => ({ ...prev, jenis_anestesi: e.target.value }))}
-                      className="w-full p-2 border rounded"
-                    >
-                      <option value="">Pilih Jenis Anestesi</option>
-                      {anesthesiaTypes.map(type => (
-                        <option key={type} value={type}>{type}</option>
-                      ))}
-                    </select>
-                  </div>
-                  <div className="md:col-span-2">
                     <Label htmlFor="diagnosa_pre_operasi">Diagnosa Pre-Operasi</Label>
                     <Input
                       id="diagnosa_pre_operasi"
-                      value={formData.diagnosa_pre_operasi}
-                      onChange={(e) => setFormData(prev => ({ ...prev, diagnosa_pre_operasi: e.target.value }))}
+                      value={formData.pre_op}
+                      onChange={(e) => setFormData(prev => ({ ...prev, pre_op: e.target.value }))}
                     />
                   </div>
-                  <div className="md:col-span-2">
+                  <div>
                     <Label htmlFor="diagnosa_post_operasi">Diagnosa Post-Operasi</Label>
                     <Input
                       id="diagnosa_post_operasi"
-                      value={formData.diagnosa_post_operasi}
-                      onChange={(e) => setFormData(prev => ({ ...prev, diagnosa_post_operasi: e.target.value }))}
+                      value={formData.post_op}
+                      onChange={(e) => setFormData(prev => ({ ...prev, post_op: e.target.value }))}
                     />
                   </div>
-                  <div className="md:col-span-4">
-                    <Label htmlFor="laporan_operasi">Laporan Operasi</Label>
+                  <div>
+                    <Label htmlFor="implan">Implan</Label>
+                    <Input
+                      id="implan"
+                      value={formData.implan}
+                      onChange={(e) => setFormData(prev => ({ ...prev, implan: e.target.value }))}
+                    />
+                  </div>
+                  <div>
+                    <Label htmlFor="kirim_pa">Kirim PA</Label>
+                    <select
+                      id="kirim_pa"
+                      value={formData.kirim_pa}
+                      onChange={(e) => setFormData(prev => ({ ...prev, kirim_pa: e.target.value as 'Ya' | 'Tidak' }))}
+                      className="w-full p-2 border rounded"
+                    >
+                      <option value="Tidak">Tidak</option>
+                      <option value="Ya">Ya</option>
+                    </select>
+                  </div>
+                  <div className="md:col-span-2">
+                    <Label htmlFor="hasil_operasi">Hasil Operasi</Label>
                     <Textarea
-                      id="laporan_operasi"
-                      value={formData.laporan_operasi}
-                      onChange={(e) => setFormData(prev => ({ ...prev, laporan_operasi: e.target.value }))}
+                      id="hasil_operasi"
+                      value={formData.hasil_op}
+                      onChange={(e) => setFormData(prev => ({ ...prev, hasil_op: e.target.value }))}
                       rows={4}
-                    />
-                  </div>
-                  <div className="md:col-span-2">
-                    <Label htmlFor="komplikasi">Komplikasi</Label>
-                    <Textarea
-                      id="komplikasi"
-                      value={formData.komplikasi}
-                      onChange={(e) => setFormData(prev => ({ ...prev, komplikasi: e.target.value }))}
-                      rows={2}
-                    />
-                  </div>
-                  <div className="md:col-span-2">
-                    <Label htmlFor="kondisi_post_operasi">Kondisi Post-Operasi</Label>
-                    <Textarea
-                      id="kondisi_post_operasi"
-                      value={formData.kondisi_post_operasi}
-                      onChange={(e) => setFormData(prev => ({ ...prev, kondisi_post_operasi: e.target.value }))}
-                      rows={2}
-                    />
-                  </div>
-                  <div className="md:col-span-4">
-                    <Label htmlFor="instruksi_post_operasi">Instruksi Post-Operasi</Label>
-                    <Textarea
-                      id="instruksi_post_operasi"
-                      value={formData.instruksi_post_operasi}
-                      onChange={(e) => setFormData(prev => ({ ...prev, instruksi_post_operasi: e.target.value }))}
-                      rows={3}
                     />
                   </div>
                 </div>
                 <div className="flex gap-2">
-                  <Button onClick={handleSave}>Simpan</Button>
-                  <Button variant="outline" onClick={resetForm}>Batal</Button>
+                  <Button onClick={handleSave} disabled={saving}>
+                    {saving ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : null}
+                    Simpan
+                  </Button>
+                  <Button variant="outline" onClick={resetForm} disabled={saving}>Batal</Button>
                 </div>
               </CardContent>
             </Card>
@@ -365,20 +316,26 @@ export const OperationReportModal: React.FC<OperationReportModalProps> = ({ isOp
 
           {/* Reports List */}
           <div className="space-y-3">
+            {loading ? (
+              <div className="py-8 flex items-center justify-center text-sm text-muted-foreground">
+                <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                Memuat laporan operasi...
+              </div>
+            ) : null}
             {reports.map((report) => (
-              <Card key={report.id}>
+              <Card key={report.id || `${report.no_rawat}-${report.tanggal_op}`}>
                 <CardHeader>
                   <CardTitle className="flex items-center justify-between">
                     <div className="flex items-center gap-2">
                       <Calendar className="h-5 w-5" />
-                      {report.jenis_operasi} - {report.tanggal_operasi}
+                      {report.nm_op || report.post_op || report.pre_op || 'Laporan Operasi'} - {report.tanggal_op}
                     </div>
                     <div className="flex gap-2">
-                      {getStatusBadge(report.status)}
+                      {getPaBadge(report.kirim_pa)}
                       <Button size="sm" variant="outline" onClick={() => handleEdit(report)}>
                         <Edit className="h-4 w-4" />
                       </Button>
-                      <Button size="sm" variant="destructive" onClick={() => handleDelete(report.id!)}>
+                      <Button size="sm" variant="destructive" onClick={() => handleDelete(report)} disabled={deleting}>
                         <Trash2 className="h-4 w-4" />
                       </Button>
                     </div>
@@ -387,26 +344,42 @@ export const OperationReportModal: React.FC<OperationReportModalProps> = ({ isOp
                 <CardContent className="space-y-3">
                   <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                     <div>
-                      <p className="text-sm font-medium text-muted-foreground">Waktu Operasi</p>
-                      <p className="text-sm">{report.jam_mulai} - {report.jam_selesai}</p>
+                      <p className="text-sm font-medium text-muted-foreground">Tanggal Operasi</p>
+                      <p className="text-sm">{report.tanggal_op}</p>
                     </div>
                     <div>
-                      <p className="text-sm font-medium text-muted-foreground">Operator Utama</p>
-                      <p className="text-sm">{report.operator_utama}</p>
+                      <p className="text-sm font-medium text-muted-foreground">Nama Operasi</p>
+                      <p className="text-sm">{report.nm_op || '-'}</p>
                     </div>
                     <div>
-                      <p className="text-sm font-medium text-muted-foreground">Jenis Anestesi</p>
-                      <p className="text-sm">{report.jenis_anestesi}</p>
+                      <p className="text-sm font-medium text-muted-foreground">Kirim PA</p>
+                      <p className="text-sm">{report.kirim_pa}</p>
+                    </div>
+                    <div>
+                      <p className="text-sm font-medium text-muted-foreground">Diagnosa Pre-Operasi</p>
+                      <p className="text-sm">{report.pre_op}</p>
+                    </div>
+                    <div>
+                      <p className="text-sm font-medium text-muted-foreground">Diagnosa Post-Operasi</p>
+                      <p className="text-sm">{report.post_op}</p>
+                    </div>
+                    <div>
+                      <p className="text-sm font-medium text-muted-foreground">Implan</p>
+                      <p className="text-sm">{report.implan || '-'}</p>
                     </div>
                     <div className="md:col-span-3">
                       <p className="text-sm font-medium text-muted-foreground">Diagnosa</p>
-                      <p className="text-sm">{report.diagnosa_pre_operasi} → {report.diagnosa_post_operasi}</p>
+                      <p className="text-sm">{report.pre_op} → {report.post_op}</p>
+                    </div>
+                    <div className="md:col-span-3">
+                      <p className="text-sm font-medium text-muted-foreground">Hasil Operasi</p>
+                      <p className="text-sm whitespace-pre-line break-words">{report.hasil_op}</p>
                     </div>
                   </div>
                 </CardContent>
               </Card>
             ))}
-            {reports.length === 0 && (
+            {!loading && reports.length === 0 && (
               <div className="text-center py-8 text-muted-foreground">
                 Belum ada laporan operasi untuk pasien ini
               </div>

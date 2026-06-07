@@ -19,6 +19,7 @@ import IgdDataService from './services/igdDataService.js';
 import InacbgSimulationService from './services/inacbgSimulationService.js';
 import LaboratoryDataService from './services/laboratoryDataService.js';
 import MedicalScribeService from './services/medicalScribeService.js';
+import OperationReportService from './services/operationReportService.js';
 import PatientNotesService from './services/patientNotesService.js';
 import ProcedureService from './services/procedureService.js';
 import PrescriptionDataService from './services/prescriptionDataService.js';
@@ -506,6 +507,59 @@ app.post('/api/get-medical-record', async (req, res) => {
     console.error('Error in get-medical-record endpoint:', error);
     res.status(500).json({ 
       error: error.message 
+    });
+  }
+});
+
+app.get('/api/operation-reports/:no_rawat', async (req, res) => {
+  try {
+    const { no_rawat } = req.params;
+    const result = await OperationReportService.getReports(no_rawat);
+    res.json(result);
+  } catch (error) {
+    console.error('Error getting operation reports:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message || 'Gagal memuat laporan operasi'
+    });
+  }
+});
+
+app.post('/api/operation-reports', async (req, res) => {
+  try {
+    const result = await OperationReportService.createReport(req.body);
+    res.json(result);
+  } catch (error) {
+    console.error('Error creating operation report:', error);
+    res.status(400).json({
+      success: false,
+      error: error.message || 'Gagal menambahkan laporan operasi'
+    });
+  }
+});
+
+app.put('/api/operation-reports', async (req, res) => {
+  try {
+    const result = await OperationReportService.updateReport(req.body);
+    res.json(result);
+  } catch (error) {
+    console.error('Error updating operation report:', error);
+    res.status(400).json({
+      success: false,
+      error: error.message || 'Gagal memperbarui laporan operasi'
+    });
+  }
+});
+
+app.delete('/api/operation-reports', async (req, res) => {
+  try {
+    const result = await OperationReportService.deleteReport(req.body);
+    res.json(result);
+  } catch (error) {
+    console.error('Error deleting operation report:', error);
+    res.status(400).json({
+      success: false,
+      error: error.message || 'Gagal menghapus laporan operasi'
     });
   }
 });

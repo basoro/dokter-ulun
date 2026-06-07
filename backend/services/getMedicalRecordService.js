@@ -378,6 +378,42 @@ class GetMedicalRecordService {
     }));
   }
 
+  static async fetchOperationReports(noRawat) {
+    const operationQuery = `
+      SELECT
+        lo.id,
+        lo.no_rawat,
+        lo.kd_dokter,
+        lo.tanggal_op,
+        lo.hasil_op,
+        lo.pre_op,
+        lo.post_op,
+        lo.implan,
+        lo.kirim_pa,
+        lo.nm_op,
+        DATE_FORMAT(lo.created_at, '%Y-%m-%d %H:%i:%s') AS created_at
+      FROM mlite_lap_op lo
+      WHERE lo.no_rawat = ?
+        AND lo.deleted_at IS NULL
+      ORDER BY lo.created_at DESC, lo.id DESC
+    `;
+    const [rows] = await db.execute(operationQuery, [noRawat]);
+
+    return rows.map((row) => ({
+      id: row.id,
+      no_rawat: row.no_rawat,
+      kd_dokter: row.kd_dokter || '',
+      tanggal_op: row.tanggal_op || '',
+      hasil_op: row.hasil_op || '',
+      pre_op: row.pre_op || '',
+      post_op: row.post_op || '',
+      implan: row.implan || '',
+      kirim_pa: row.kirim_pa || '',
+      nm_op: row.nm_op || '',
+      created_at: row.created_at || ''
+    }));
+  }
+
   static async fetchRadiologyRequest(noRawat, status) {
     const radiologyRequestQuery = `
       SELECT
@@ -536,7 +572,8 @@ class GetMedicalRecordService {
       laboratory,
       laboratoryRequest,
       radiology,
-      radiologyRequest
+      radiologyRequest,
+      operationReports
     ] = await Promise.all([
       this.fetchExaminations(visit.no_rawat, 'ranap'),
       this.fetchProcedures(visit.no_rawat, 'ranap'),
@@ -547,7 +584,8 @@ class GetMedicalRecordService {
       this.fetchLaboratory(visit.no_rawat),
       this.fetchLaboratoryRequest(visit.no_rawat, 'ranap'),
       this.fetchRadiology(visit.no_rawat),
-      this.fetchRadiologyRequest(visit.no_rawat, 'ranap')
+      this.fetchRadiologyRequest(visit.no_rawat, 'ranap'),
+      this.fetchOperationReports(visit.no_rawat)
     ]);
 
     return {
@@ -571,7 +609,8 @@ class GetMedicalRecordService {
       laboratoryRequest,
       laboratory,
       radiology,
-      radiologyRequest
+      radiologyRequest,
+      operationReports
     };
   }
 
@@ -612,7 +651,8 @@ class GetMedicalRecordService {
         focusedRalanRadiologyRequests,
         focusedRanapRadiologyRequests,
         focusedRalanRadiology,
-        focusedRanapRadiology
+        focusedRanapRadiology,
+        focusedOperationReports
       ] = await Promise.all([
         db.execute(
           "SELECT * FROM pasien WHERE no_rkm_medis = ?",
@@ -647,7 +687,8 @@ class GetMedicalRecordService {
         focusNoRawat ? this.fetchRadiologyRequest(focusNoRawat, 'ralan') : Promise.resolve([]),
         focusNoRawat ? this.fetchRadiologyRequest(focusNoRawat, 'ranap') : Promise.resolve([]),
         focusNoRawat ? this.fetchRadiology(focusNoRawat, 'Ralan') : Promise.resolve([]),
-        focusNoRawat ? this.fetchRadiology(focusNoRawat, 'Ranap') : Promise.resolve([])
+        focusNoRawat ? this.fetchRadiology(focusNoRawat, 'Ranap') : Promise.resolve([]),
+        focusNoRawat ? this.fetchOperationReports(focusNoRawat) : Promise.resolve([])
       ]);
 
       const patientList = patientRows[0];
@@ -736,7 +777,8 @@ class GetMedicalRecordService {
         focused_radiology: {
           ralan: focusedRalanRadiology,
           ranap: focusedRanapRadiology
-        }
+        },
+        focused_operation_reports: focusedOperationReports
       };
 
       return {
