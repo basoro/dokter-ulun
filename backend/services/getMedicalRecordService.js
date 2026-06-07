@@ -28,6 +28,203 @@ class GetMedicalRecordService {
     }
   }
 
+  static normalizeSearchText(value) {
+    return String(value || '')
+      .toLowerCase()
+      .replace(/[^a-z0-9]/g, '');
+  }
+
+  static normalizePacsDate(dateStr) {
+    if (!dateStr) {
+      return '';
+    }
+
+    const rawValue = String(dateStr).trim();
+    if (/^\d{8}$/.test(rawValue)) {
+      return `${rawValue.slice(0, 4)}-${rawValue.slice(4, 6)}-${rawValue.slice(6, 8)}`;
+    }
+
+    return this.formatDateOnly(rawValue);
+  }
+
+  static async getOrthancConfig() {
+    const settingsQuery = `
+      SELECT field, value
+      FROM mlite_settings
+      WHERE module = 'orthanc'
+        AND field IN ('server', 'username', 'password')
+    `;
+    const [rows] = await db.execute(settingsQuery);
+
+    const configMap = Object.fromEntries(
+      rows.map((row) => [String(row.field || '').trim(), String(row.value || '').trim()])
+    );
+
+    return {
+      server: configMap.server || process.env.ORTHANC_SERVER || '',
+      username: configMap.username || process.env.ORTHANC_USERNAME || 'orthanc',
+      password: configMap.password || process.env.ORTHANC_PASSWORD || 'orthanc'
+    };
+  }
+
+  static async requestOrthanc(pathname, init = {}) {
+    const orthancConfig = await this.getOrthancConfig();
+    if (!orthancConfig.server) {
+      throw new Error('Konfigurasi server Orthanc belum tersedia');
+    }
+
+    const baseUrl = orthancConfig.server.replace(/\/+$/, '');
+    const authToken = Buffer.from(`${orthancConfig.username}:${orthancConfig.password}`).toString('base64');
+    const response = await fetch(`${baseUrl}${pathname}`, {
+      ...init,
+      headers: {
+        Authorization: `Basic ${authToken}`,
+        ...(init.headers || {})
+      }
+    });
+
+    if (!response.ok) {
+      throw new Error(`Orthanc request failed with status ${response.status}`);
+    }
+
+    return response;
+  }
+
+  static async fetchRadiologyPacsSeries(noRawat) {
+    const registrationQuery = `
+      SELECT no_rkm_medis, tgl_registrasi
+      FROM reg_periksa
+      WHERE no_rawat = ?
+      LIMIT 1
+    `;
+    const dateRangeQuery = `
+      SELECT
+        MIN(tgl_periksa) AS first_exam_date,
+        MAX(tgl_periksa) AS last_exam_date
+      FROM periksa_radiologi
+      WHERE no_rawat = ?
+    `;
+
+    const [[registrationRows], [dateRangeRows]] = await Promise.all([
+      db.execute(registrationQuery, [noRawat]),
+      db.execute(dateRangeQuery, [noRawat])
+    ]);
+
+    const registration = registrationRows[0];
+    const dateRange = dateRangeRows[0];
+    const patientId = String(registration?.no_rkm_medis || '').trim();
+    const studyStartDate = String(this.formatDateOnly(registration?.tgl_registrasi || '')).replace(/-/g, '');
+    const studyEndDate = String(this.formatDateOnly(dateRange?.last_exam_date || '')).replace(/-/g, '');
+
+    if (!patientId || !studyStartDate || !studyEndDate) {
+      return [];
+    }
+
+    try {
+      const findResponse = await this.requestOrthanc('/tools/find', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          Level: 'Study',
+          Expand: true,
+          Query: {
+            StudyDate: `${studyStartDate}-${studyEndDate}`,
+            PatientID: patientId
+          }
+        })
+      });
+
+      const studies = await findResponse.json();
+      if (!Array.isArray(studies) || studies.length === 0) {
+        return [];
+      }
+
+      const seriesIds = studies.flatMap((study) => Array.isArray(study?.Series) ? study.Series : []);
+      if (seriesIds.length === 0) {
+        return [];
+      }
+
+      const seriesResults = await Promise.all(
+        seriesIds.map(async (seriesId) => {
+          try {
+            const seriesResponse = await this.requestOrthanc(`/series/${seriesId}`);
+            const seriesData = await seriesResponse.json();
+            const seriesDate = this.normalizePacsDate(
+              seriesData?.MainDicomTags?.SeriesDate || seriesData?.MainDicomTags?.StudyDate || ''
+            );
+            const description =
+              seriesData?.MainDicomTags?.AcquisitionDeviceProcessingDescription ||
+              seriesData?.MainDicomTags?.SeriesDescription ||
+              '';
+            const modality = String(
+              seriesData?.MainDicomTags?.Modality ||
+              seriesData?.RequestedTags?.Modality ||
+              ''
+            ).trim().toUpperCase();
+            const instances = Array.isArray(seriesData?.Instances) ? seriesData.Instances : [];
+
+            return {
+              series_id: seriesId,
+              series_date: seriesDate,
+              description,
+              modality,
+              images: instances.map((instanceId) => ({
+                instance_id: instanceId,
+                series_id: seriesId
+              }))
+            };
+          } catch (error) {
+            console.error(`Error loading Orthanc series ${seriesId}:`, error);
+            return null;
+          }
+        })
+      );
+
+      return seriesResults.filter(Boolean);
+    } catch (error) {
+      console.error(`Error fetching PACS radiology series for ${noRawat}:`, error);
+      return [];
+    }
+  }
+
+  static matchRadiologyPacsSeries(seriesList, examDate, examName) {
+    const normalizedDate = this.formatDateOnly(examDate);
+    const datedSeries = (seriesList || []).filter((series) => series?.series_date === normalizedDate);
+
+    if (!datedSeries.length) {
+      return [];
+    }
+
+    const normalizedExam = this.normalizeSearchText(examName);
+    if (!normalizedExam) {
+      return datedSeries;
+    }
+
+    const matchedSeries = datedSeries.filter((series) => {
+      const normalizedDescription = this.normalizeSearchText(series?.description);
+      return normalizedDescription && (
+        normalizedDescription.includes(normalizedExam) ||
+        normalizedExam.includes(normalizedDescription)
+      );
+    });
+
+    return matchedSeries.length ? matchedSeries : datedSeries;
+  }
+
+  static async getOrthancRenderedImage(instanceId, width = 500) {
+    const normalizedWidth = Math.min(Math.max(parseInt(width, 10) || 500, 100), 2000);
+    const response = await this.requestOrthanc(`/instances/${encodeURIComponent(instanceId)}/rendered/?width=${normalizedWidth}`);
+    const contentType = response.headers.get('content-type') || 'image/png';
+    const arrayBuffer = await response.arrayBuffer();
+
+    return {
+      contentType,
+      buffer: Buffer.from(arrayBuffer)
+    };
+  }
+
   // Helper function to fetch examinations
   static async fetchExaminations(noRawat, type) {
     const table = type === 'ralan' ? 'pemeriksaan_ralan' : 'pemeriksaan_ranap';
@@ -368,14 +565,49 @@ class GetMedicalRecordService {
         AND (? IS NULL OR LOWER(pr.status) = LOWER(?))
       ORDER BY pr.tgl_periksa, pr.jam
     `;
-    const [rows] = await db.execute(radQuery, [noRawat, status, status]);
-    
-    return rows.map(row => ({
-      tanggal: this.formatDateOnly(row.tgl_periksa) + ' ' + row.jam,
-      pemeriksaan: row.nm_perawatan || '',
-      hasil: row.hasil || '',
-      kesan: row.hasil || ''
-    }));
+    const [[rows], pacsSeries] = await Promise.all([
+      db.execute(radQuery, [noRawat, status, status]),
+      this.fetchRadiologyPacsSeries(noRawat)
+    ]);
+
+    return rows.map(row => {
+      const matchedSeries = this.matchRadiologyPacsSeries(
+        pacsSeries,
+        row.tgl_periksa,
+        row.nm_perawatan
+      );
+      const pacsModality = matchedSeries.find((series) => series?.modality)?.modality || '';
+
+      return {
+        tanggal: this.formatDateOnly(row.tgl_periksa) + ' ' + row.jam,
+        pemeriksaan: row.nm_perawatan || '',
+        hasil: row.hasil || '',
+        kesan: row.hasil || '',
+        pacs_modality: pacsModality,
+        pacs_series: matchedSeries.map((series) => ({
+          series_id: series.series_id || '',
+          series_date: series.series_date || '',
+          description: series.description || '',
+          modality: series.modality || '',
+          image_count: Array.isArray(series.images) ? series.images.length : 0,
+          thumbnail_instance_id: Array.isArray(series.images) && series.images.length > 0 ? series.images[0].instance_id : '',
+          images: (series.images || []).map((image) => ({
+            ...image,
+            series_date: series.series_date || '',
+            description: series.description || '',
+            modality: series.modality || ''
+          }))
+        })),
+        pacs_images: matchedSeries.flatMap((series) =>
+          (series.images || []).map((image) => ({
+            ...image,
+            series_date: series.series_date || '',
+            description: series.description || '',
+            modality: series.modality || ''
+          }))
+        )
+      };
+    });
   }
 
   static async fetchOperationReports(noRawat) {

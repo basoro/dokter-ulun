@@ -511,6 +511,24 @@ app.post('/api/get-medical-record', async (req, res) => {
   }
 });
 
+app.get('/api/pacs/rendered/:instanceId', async (req, res) => {
+  try {
+    const { instanceId } = req.params;
+    const { width } = req.query;
+    const imageResult = await GetMedicalRecordService.getOrthancRenderedImage(instanceId, width);
+
+    res.setHeader('Content-Type', imageResult.contentType);
+    res.setHeader('Cache-Control', 'public, max-age=300');
+    res.send(imageResult.buffer);
+  } catch (error) {
+    console.error('Error proxying PACS rendered image:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message || 'Gagal memuat gambar PACS'
+    });
+  }
+});
+
 app.get('/api/operation-reports/:no_rawat', async (req, res) => {
   try {
     const { no_rawat } = req.params;

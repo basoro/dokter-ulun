@@ -10,7 +10,7 @@ import {
   User, Calendar, Stethoscope, Syringe, Pill, FlaskConical, Radio,
   Activity, ClipboardList, BedDouble, UserCircle, Building, MapPin,
   Phone, Heart, CalendarDays, FileText, Plus, X, Trash2, Image as ImageIcon, Clock,
-  Calendar as CalendarIcon, Copy, ChevronDown, ChevronUp, Brain, Check, ChevronsUpDown, Pencil
+  Calendar as CalendarIcon, Copy, ChevronDown, ChevronLeft, ChevronRight, ChevronUp, Brain, Check, ChevronsUpDown, Pause, Pencil, Play
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -21,14 +21,14 @@ import { Calendar as CalendarComponent } from "@/components/ui/calendar";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from '@/contexts/AuthContext';
 import { formatDateTimeWIB } from "@/lib/date-utils";
 import { cn } from "@/lib/utils";
 import { format } from "date-fns";
-import { API_URLS } from '@/config/api';
+import { API_CONFIG, API_URLS } from '@/config/api';
 
 type PrescriptionStatus = 'Ralan' | 'Ranap' | 'Pulang' | 'IBS';
 
@@ -533,6 +533,23 @@ const MedicalRecord = () => {
   const [isCompoundFormOpen, setIsCompoundFormOpen] = useState(false);
   const [isLabFormOpen, setIsLabFormOpen] = useState(false);
   const [isRadiologyFormOpen, setIsRadiologyFormOpen] = useState(false);
+  const [pacsPreviewModal, setPacsPreviewModal] = useState<{
+    open: boolean;
+    title: string;
+    images: any[];
+    currentIndex: number;
+    modality: string;
+  }>({
+    open: false,
+    title: '',
+    images: [],
+    currentIndex: 0,
+    modality: ''
+  });
+  const [isPacsPlaying, setIsPacsPlaying] = useState(false);
+  const [pacsPlaybackSpeed, setPacsPlaybackSpeed] = useState(180);
+  const activePacsImage = pacsPreviewModal.images[pacsPreviewModal.currentIndex] || null;
+  const isCtPacsPreview = String(pacsPreviewModal.modality || '').toUpperCase() === 'CT';
   const [visibleVitalSeries, setVisibleVitalSeries] = useState<Record<VitalChartSeriesKey, boolean>>(() => ({
     systolic: true,
     diastolic: true,
@@ -1466,13 +1483,17 @@ const MedicalRecord = () => {
           </div>
           <div>
             <p className="text-sm text-muted-foreground">Pemeriksaan</p>
-            <p className="font-medium">{rad.pemeriksaan}</p>
+            <div className="mt-1 flex flex-wrap items-center gap-2">
+              <p className="font-medium">{rad.pemeriksaan}</p>
+              {renderRadiologyModalityBadge(rad)}
+            </div>
           </div>
           <div>
             <p className="text-sm text-muted-foreground">Hasil</p>
             <p className="font-medium">{rad.hasil || '-'}</p>
           </div>
         </div>
+        {renderRadiologyPacsImages(rad)}
       </div>
     ));
   };
@@ -1633,6 +1654,28 @@ const MedicalRecord = () => {
   useEffect(() => {
     setRadiologyStatusRawat(statusRawat === 'Ranap' ? 'Ranap' : 'Ralan');
   }, [statusRawat]);
+
+  useEffect(() => {
+    if (!pacsPreviewModal.open || !isPacsPlaying || !isCtPacsPreview || pacsPreviewModal.images.length <= 1) {
+      return;
+    }
+
+    const playbackTimer = window.setInterval(() => {
+      setPacsPreviewModal((previous) => {
+        if (!previous.images.length) {
+          return previous;
+        }
+
+        const nextIndex = (previous.currentIndex + 1) % previous.images.length;
+        return {
+          ...previous,
+          currentIndex: nextIndex
+        };
+      });
+    }, pacsPlaybackSpeed);
+
+    return () => window.clearInterval(playbackTimer);
+  }, [isCtPacsPreview, isPacsPlaying, pacsPlaybackSpeed, pacsPreviewModal.images.length, pacsPreviewModal.open]);
 
   const loadMoreMedicalRecord = useCallback(() => {
     if (loading || loadingMore || !hasMoreRecords) {
@@ -2968,6 +3011,155 @@ const MedicalRecord = () => {
     }
   };
 
+  const openPacsPreviewModal = (rad: any, images: any[], currentIndex = 0, modality = '') => {
+    setPacsPreviewModal({
+      open: true,
+      title: rad?.pemeriksaan || 'Foto Radiologi PACS',
+      images,
+      currentIndex,
+      modality
+    });
+    setIsPacsPlaying(String(modality || '').toUpperCase() === 'CT');
+  };
+
+  const goToPacsImage = (nextIndex: number) => {
+    if (!pacsPreviewModal.images.length) {
+      return;
+    }
+
+    const totalImages = pacsPreviewModal.images.length;
+    const normalizedIndex = ((nextIndex % totalImages) + totalImages) % totalImages;
+    setPacsPreviewModal((previous) => ({
+      ...previous,
+      currentIndex: normalizedIndex
+    }));
+  };
+
+  const getRadiologyPacsThumbnailItems = (rad: any) => {
+    const pacsImages = Array.isArray(rad?.pacs_images) ? rad.pacs_images.filter(Boolean) : [];
+    const pacsSeries = Array.isArray(rad?.pacs_series) ? rad.pacs_series.filter(Boolean) : [];
+    const modality = String(rad?.pacs_modality || pacsSeries[0]?.modality || pacsImages[0]?.modality || '').toUpperCase();
+
+    if (modality === 'CT' && pacsImages.length > 0) {
+      return {
+        modality,
+        displayImages: [pacsImages[0]],
+        modalImages: pacsImages
+      };
+    }
+
+    return {
+      modality,
+      displayImages: pacsImages.slice(0, 6),
+      modalImages: pacsImages
+    };
+  };
+
+  const getRadiologyModalityLabel = (rad: any) => {
+    return String(rad?.pacs_modality || rad?.pacs_series?.[0]?.modality || '').trim().toUpperCase();
+  };
+
+  const renderRadiologyModalityBadge = (rad: any) => {
+    const modality = getRadiologyModalityLabel(rad);
+    if (!modality) {
+      return null;
+    }
+
+    return (
+      <span className="inline-flex items-center rounded-full border bg-primary/5 px-2.5 py-1 text-xs font-medium text-primary">
+        {modality}
+      </span>
+    );
+  };
+
+  const handleCtWheelNavigation = (event: React.WheelEvent<HTMLDivElement>) => {
+    if (!isCtPacsPreview || pacsPreviewModal.images.length <= 1) {
+      return;
+    }
+
+    event.preventDefault();
+    setIsPacsPlaying(false);
+
+    const direction = event.deltaY > 0 ? 1 : -1;
+    const step = event.shiftKey ? 5 : 1;
+    goToPacsImage(pacsPreviewModal.currentIndex + (direction * step));
+  };
+
+  const renderRadiologyPacsImages = (rad: any) => {
+    const { modality, displayImages, modalImages } = getRadiologyPacsThumbnailItems(rad);
+    if (modalImages.length === 0) {
+      return null;
+    }
+    const uniqueDescriptions = Array.from(
+      new Set(
+        modalImages
+          .map((image: any) => String(image?.description || '').trim())
+          .filter(Boolean)
+      )
+    );
+
+    return (
+      <div className="mt-4 border-t pt-4">
+        <div className="mb-3 flex items-start justify-between gap-3">
+          <div>
+            <p className="text-sm font-medium flex items-center gap-2">
+              <ImageIcon className="h-4 w-4" />
+              Foto Radiologi PACS
+            </p>
+            {uniqueDescriptions.length > 0 ? (
+              <p className="text-xs text-muted-foreground">
+                {uniqueDescriptions.join(' | ')}
+              </p>
+            ) : null}
+          </div>
+          {modality === 'CT' ? (
+            <p className="text-xs text-muted-foreground">
+              CT scan: {modalImages.length} slice, klik untuk play
+            </p>
+          ) : modalImages.length > displayImages.length ? (
+            <p className="text-xs text-muted-foreground">
+              Menampilkan {displayImages.length} dari {modalImages.length} gambar
+            </p>
+          ) : null}
+        </div>
+
+        <div className={cn(
+          "gap-3",
+          modality === 'CT' ? "grid grid-cols-1 max-w-sm" : "grid grid-cols-2 md:grid-cols-3"
+        )}>
+          {displayImages.map((image: any, index: number) => {
+            const previewUrl = `${API_CONFIG.BASE_URL_WITHOUT_API}/api/pacs/rendered/${encodeURIComponent(image.instance_id)}?width=600`;
+
+            return (
+              <button
+                type="button"
+                key={`${image.instance_id}-${index}`}
+                className="group relative overflow-hidden rounded-lg border bg-muted/20"
+                onClick={() => openPacsPreviewModal(rad, modalImages, index, modality)}
+              >
+                <img
+                  src={previewUrl}
+                  alt={`Foto Radiologi ${rad?.pemeriksaan || index + 1}`}
+                  loading="lazy"
+                  className="h-32 w-full object-cover transition-transform duration-200 group-hover:scale-105"
+                />
+                {modality === 'CT' ? (
+                  <div className="absolute inset-x-0 bottom-0 flex items-center justify-between bg-black/60 px-3 py-2 text-xs text-white">
+                    <span>{modalImages.length} slice</span>
+                    <span className="flex items-center gap-1">
+                      <Play className="h-3.5 w-3.5" />
+                      Play
+                    </span>
+                  </div>
+                ) : null}
+              </button>
+            );
+          })}
+        </div>
+      </div>
+    );
+  };
+
   const handleSaveForm = async (type: string) => {
     try {
       if (type === 'Pemeriksaan') {
@@ -3841,13 +4033,17 @@ const MedicalRecord = () => {
                                   </div>
                                   <div>
                                     <p className="text-sm text-muted-foreground">Pemeriksaan</p>
-                                    <p className="font-medium">{rad.pemeriksaan}</p>
+                                    <div className="mt-1 flex flex-wrap items-center gap-2">
+                                      <p className="font-medium">{rad.pemeriksaan}</p>
+                                      {renderRadiologyModalityBadge(rad)}
+                                    </div>
                                   </div>
                                   <div>
                                     <p className="text-sm text-muted-foreground">Hasil</p>
                                     <p className="font-medium">{rad.hasil}</p>
                                   </div>
                                 </div>
+                                {renderRadiologyPacsImages(rad)}
                               </div>
                             ))}
                           </div>
@@ -4185,13 +4381,17 @@ const MedicalRecord = () => {
                                   </div>
                                   <div>
                                     <p className="text-sm text-muted-foreground">Pemeriksaan</p>
-                                    <p className="font-medium">{rad.pemeriksaan}</p>
+                                    <div className="mt-1 flex flex-wrap items-center gap-2">
+                                      <p className="font-medium">{rad.pemeriksaan}</p>
+                                      {renderRadiologyModalityBadge(rad)}
+                                    </div>
                                   </div>
                                   <div>
                                     <p className="text-sm text-muted-foreground">Hasil</p>
                                     <p className="font-medium">{rad.hasil}</p>
                                   </div>
                                 </div>
+                                {renderRadiologyPacsImages(rad)}
                               </div>
                             ))}
                           </div>
@@ -6186,6 +6386,171 @@ const MedicalRecord = () => {
           <span>Belum ada data riwayat untuk ditampilkan.</span>
         )}
       </div>
+
+      <Dialog
+        open={pacsPreviewModal.open}
+        onOpenChange={(open) => {
+          setPacsPreviewModal((previous) => ({ ...previous, open }));
+          if (!open) {
+            setIsPacsPlaying(false);
+          }
+        }}
+      >
+        <DialogContent className="max-w-6xl max-h-[90vh] overflow-hidden p-0">
+          <DialogHeader className="border-b px-6 py-4">
+            <DialogTitle className="flex items-center justify-between gap-4">
+              <span className="flex items-center gap-2">
+                <ImageIcon className="h-5 w-5" />
+                {pacsPreviewModal.title}
+              </span>
+              {pacsPreviewModal.images.length > 0 ? (
+                <span className="text-sm font-normal text-muted-foreground">
+                  {isCtPacsPreview ? 'Slice' : 'Gambar'} {pacsPreviewModal.currentIndex + 1} dari {pacsPreviewModal.images.length}
+                </span>
+              ) : null}
+            </DialogTitle>
+          </DialogHeader>
+
+          <div className="space-y-4 p-6">
+            {activePacsImage ? (
+              <>
+                <div className="relative rounded-lg border bg-black/5 p-4">
+                  <div onWheel={handleCtWheelNavigation}>
+                    <img
+                      src={`${API_CONFIG.BASE_URL_WITHOUT_API}/api/pacs/rendered/${encodeURIComponent(activePacsImage.instance_id)}?width=1800`}
+                      alt={`Preview PACS ${pacsPreviewModal.currentIndex + 1}`}
+                      className="mx-auto max-h-[60vh] w-auto rounded-md object-contain"
+                    />
+                  </div>
+
+                  {pacsPreviewModal.images.length > 1 ? (
+                    <>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="icon"
+                        className="absolute left-4 top-1/2 -translate-y-1/2 bg-background/90"
+                        onClick={() => goToPacsImage(pacsPreviewModal.currentIndex - 1)}
+                      >
+                        <ChevronLeft className="h-5 w-5" />
+                      </Button>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="icon"
+                        className="absolute right-4 top-1/2 -translate-y-1/2 bg-background/90"
+                        onClick={() => goToPacsImage(pacsPreviewModal.currentIndex + 1)}
+                      >
+                        <ChevronRight className="h-5 w-5" />
+                      </Button>
+                    </>
+                  ) : null}
+                </div>
+
+                {isCtPacsPreview ? (
+                  <div className="flex flex-col gap-3 rounded-lg border bg-muted/20 p-4">
+                    <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+                      <div>
+                        <p className="font-medium">CT Stack Player</p>
+                        <p className="text-sm text-muted-foreground">
+                          Klik play untuk menelusuri slice secara otomatis. Scroll mouse untuk pindah slice, `Shift + scroll` untuk lompat lebih cepat.
+                        </p>
+                      </div>
+                      <div className="flex flex-wrap items-center gap-2">
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          onClick={() => setIsPacsPlaying((previous) => !previous)}
+                        >
+                          {isPacsPlaying ? (
+                            <>
+                              <Pause className="mr-2 h-4 w-4" />
+                              Pause
+                            </>
+                          ) : (
+                            <>
+                              <Play className="mr-2 h-4 w-4" />
+                              Play
+                            </>
+                          )}
+                        </Button>
+                        <span className="text-sm text-muted-foreground">
+                          {pacsPreviewModal.images.length} slice
+                        </span>
+                        <Select
+                          value={String(pacsPlaybackSpeed)}
+                          onValueChange={(value) => setPacsPlaybackSpeed(Number(value))}
+                        >
+                          <SelectTrigger className="w-[170px]">
+                            <SelectValue placeholder="Kecepatan" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="320">Lambat</SelectItem>
+                            <SelectItem value="180">Normal</SelectItem>
+                            <SelectItem value="90">Cepat</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </div>
+                    </div>
+                    <div className="flex items-center justify-between text-xs text-muted-foreground">
+                      <span>Slice 1</span>
+                      <span>Slice {pacsPreviewModal.currentIndex + 1}</span>
+                      <span>Slice {pacsPreviewModal.images.length}</span>
+                    </div>
+                    <input
+                      type="range"
+                      min={0}
+                      max={Math.max(pacsPreviewModal.images.length - 1, 0)}
+                      step={1}
+                      value={pacsPreviewModal.currentIndex}
+                      onChange={(e) => {
+                        setIsPacsPlaying(false);
+                        goToPacsImage(Number(e.target.value));
+                      }}
+                      className="w-full accent-primary"
+                    />
+                  </div>
+                ) : null}
+
+                {activePacsImage.description ? (
+                  <p className="text-sm text-muted-foreground">
+                    {activePacsImage.description}
+                  </p>
+                ) : null}
+
+                {pacsPreviewModal.images.length > 1 && !isCtPacsPreview ? (
+                  <ScrollArea className="w-full whitespace-nowrap rounded-md border">
+                    <div className="flex gap-3 p-3">
+                      {pacsPreviewModal.images.map((image: any, index: number) => (
+                        <button
+                          key={`${image.instance_id}-modal-${index}`}
+                          type="button"
+                          onClick={() => goToPacsImage(index)}
+                          className={cn(
+                            "overflow-hidden rounded-md border bg-muted/30",
+                            index === pacsPreviewModal.currentIndex && "ring-2 ring-primary"
+                          )}
+                        >
+                          <img
+                            src={`${API_CONFIG.BASE_URL_WITHOUT_API}/api/pacs/rendered/${encodeURIComponent(image.instance_id)}?width=300`}
+                            alt={`Thumbnail PACS ${index + 1}`}
+                            className="h-20 w-28 object-cover"
+                          />
+                        </button>
+                      ))}
+                    </div>
+                  </ScrollArea>
+                ) : null}
+              </>
+            ) : (
+              <div className="py-10 text-center text-sm text-muted-foreground">
+                Tidak ada gambar PACS untuk ditampilkan.
+              </div>
+            )}
+          </div>
+        </DialogContent>
+      </Dialog>
       
       {/* AI Scribe Modal */}
       <Dialog open={aiScribeModal} onOpenChange={setAiScribeModal}>
