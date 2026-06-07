@@ -379,7 +379,7 @@ const Presensi = () => {
   });
 
   return (
-    <div className="p-4 sm:p-6 w-full mx-auto">
+    <div className="p-2 md:p-6 space-y-6 md:space-y-8 w-full mx-auto animate-fade-in shadow-md bg-white rounded-md">
       <div className="flex items-center space-x-2 mb-6">
         <UserCheck size={24} className="text-primary" />
         <h1 className="text-xl sm:text-2xl font-bold text-gray-800">Presensi Dokter</h1>
