@@ -91,7 +91,7 @@ class RawatInapDataService {
           ki.stts_pulang,
           k.kd_kamar,
           b.nm_bangsal,
-          GROUP_CONCAT(DISTINCT d.nm_dokter SEPARATOR ', ') as dokter_dpjp,
+          GROUP_CONCAT(DISTINCT CONCAT(d.nm_dokter, ' (', COALESCE(dr.jenis_dpjp, 'Tidak Diketahui'), ')') SEPARATOR ', ') as dokter_dpjp,
           rp.tgl_registrasi,
           rp.jam_reg,
           rp.status_lanjut,
