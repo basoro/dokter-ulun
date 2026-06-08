@@ -461,6 +461,7 @@ export const InternalReferralModal: React.FC<InternalReferralModalProps> = ({ is
                       onChange={(e) => setFormData((prev) => ({ ...prev, konsul: e.target.value }))}
                       rows={3}
                       disabled={saving}
+                      readOnly={Boolean(editingItem)}
                     />
                   </div>
                   <div className="md:col-span-2">
