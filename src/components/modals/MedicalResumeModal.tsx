@@ -1189,31 +1189,31 @@ export const MedicalResumeModal: React.FC<MedicalResumeModalProps> = ({ isOpen, 
                   </div>
                   <div className="md:col-span-2">
                     {renderFieldLabel('keluhan_utama', 'Keluhan Utama', 'keluhan_utama')}
-                    <Textarea id="keluhan_utama" rows={3} value={formData.keluhan_utama} onChange={(e) => updateField('keluhan_utama', e.target.value)} />
+                    <Textarea id="keluhan_utama" rows={6} value={formData.keluhan_utama} onChange={(e) => updateField('keluhan_utama', e.target.value)} />
                   </div>
                   <div className="md:col-span-2">
                     {renderFieldLabel('pemeriksaan_fisik', 'Pemeriksaan Fisik', 'pemeriksaan_fisik')}
-                    <Textarea id="pemeriksaan_fisik" rows={3} value={formData.pemeriksaan_fisik} onChange={(e) => updateField('pemeriksaan_fisik', e.target.value)} />
+                    <Textarea id="pemeriksaan_fisik" rows={6} value={formData.pemeriksaan_fisik} onChange={(e) => updateField('pemeriksaan_fisik', e.target.value)} />
                   </div>
                   <div className="md:col-span-2">
                     {renderFieldLabel('jalannya_penyakit', 'Jalannya Penyakit', 'jalannya_penyakit')}
-                    <Textarea id="jalannya_penyakit" rows={3} value={formData.jalannya_penyakit} onChange={(e) => updateField('jalannya_penyakit', e.target.value)} />
+                    <Textarea id="jalannya_penyakit" rows={6} value={formData.jalannya_penyakit} onChange={(e) => updateField('jalannya_penyakit', e.target.value)} />
                   </div>
                   <div>
                     {renderFieldLabel('pemeriksaan_penunjang', 'Pemeriksaan Penunjang', 'pemeriksaan_penunjang')}
-                    <Textarea id="pemeriksaan_penunjang" rows={3} value={formData.pemeriksaan_penunjang} onChange={(e) => updateField('pemeriksaan_penunjang', e.target.value)} />
+                    <Textarea id="pemeriksaan_penunjang" rows={6} value={formData.pemeriksaan_penunjang} onChange={(e) => updateField('pemeriksaan_penunjang', e.target.value)} />
                   </div>
                   <div>
                     {renderFieldLabel('hasil_laborat', 'Hasil Laborat', 'hasil_laborat')}
-                    <Textarea id="hasil_laborat" rows={3} value={formData.hasil_laborat} onChange={(e) => updateField('hasil_laborat', e.target.value)} />
+                    <Textarea id="hasil_laborat" rows={6} value={formData.hasil_laborat} onChange={(e) => updateField('hasil_laborat', e.target.value)} />
                   </div>
                   <div>
                     {renderFieldLabel('tindakan_dan_operasi', 'Tindakan dan Operasi', 'tindakan_dan_operasi')}
-                    <Textarea id="tindakan_dan_operasi" rows={3} value={formData.tindakan_dan_operasi} onChange={(e) => updateField('tindakan_dan_operasi', e.target.value)} />
+                    <Textarea id="tindakan_dan_operasi" rows={6} value={formData.tindakan_dan_operasi} onChange={(e) => updateField('tindakan_dan_operasi', e.target.value)} />
                   </div>
                   <div>
                     {renderFieldLabel('obat_di_rs', 'Obat di RS', 'obat_di_rs')}
-                    <Textarea id="obat_di_rs" rows={3} value={formData.obat_di_rs} onChange={(e) => updateField('obat_di_rs', e.target.value)} />
+                    <Textarea id="obat_di_rs" rows={6} value={formData.obat_di_rs} onChange={(e) => updateField('obat_di_rs', e.target.value)} />
                   </div>
                 </div>
 
@@ -1367,19 +1367,19 @@ export const MedicalResumeModal: React.FC<MedicalResumeModalProps> = ({ isOpen, 
                     </div>
                     <div>
                       <Label htmlFor="diet">Diet</Label>
-                      <Textarea id="diet" rows={3} value={formData.diet} onChange={(e) => updateField('diet', e.target.value)} />
+                      <Textarea id="diet" rows={6} value={formData.diet} onChange={(e) => updateField('diet', e.target.value)} />
                     </div>
                     <div>
                       <Label htmlFor="lab_belum">Lab Belum</Label>
-                      <Textarea id="lab_belum" rows={3} value={formData.lab_belum} onChange={(e) => updateField('lab_belum', e.target.value)} />
+                      <Textarea id="lab_belum" rows={6} value={formData.lab_belum} onChange={(e) => updateField('lab_belum', e.target.value)} />
                     </div>
                     <div>
                       <Label htmlFor="edukasi">Edukasi</Label>
-                      <Textarea id="edukasi" rows={3} value={formData.edukasi} onChange={(e) => updateField('edukasi', e.target.value)} />
+                      <Textarea id="edukasi" rows={6} value={formData.edukasi} onChange={(e) => updateField('edukasi', e.target.value)} />
                     </div>
                     <div>
                       <Label htmlFor="obat_pulang">Obat Pulang</Label>
-                      <Textarea id="obat_pulang" rows={3} value={formData.obat_pulang} onChange={(e) => updateField('obat_pulang', e.target.value)} />
+                      <Textarea id="obat_pulang" rows={6} value={formData.obat_pulang} onChange={(e) => updateField('obat_pulang', e.target.value)} />
                     </div>
                     <div>
                       <Label>Cara Keluar</Label>
