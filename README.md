@@ -1,45 +1,184 @@
-# Welcome to Dokter
+# Dokter Ulun Frontend
 
-## How can I use this code?
+Frontend aplikasi Dokter Ulun dibangun dengan React, TypeScript, Vite, shadcn/ui, dan Tailwind CSS.
 
-There are several ways of use this application.
+Panduan deploy end-to-end tersedia di [README-DEPLOY.md](file:///Users/basoro/Server/data/www/dokter-ulun/README-DEPLOY.md).
 
-If you want to work locally you can clone this repo and follow these steps:
+## Stack
 
-```sh
-# Step 1: Clone the repository using the project's Git URL.
-git clone https://github.com/rshd-barabai/dokter
+- React 18
+- TypeScript
+- Vite
+- Tailwind CSS
+- shadcn/ui
+- React Router
 
-# Step 2: Navigate to the project directory.
-cd dokter
+## Struktur Singkat
 
-# Step 3: Install the necessary dependencies.
-npm i
+```text
+.
+├── src/
+│   ├── components/
+│   ├── contexts/
+│   ├── pages/
+│   └── config/api.ts
+├── public/
+├── .env.development.example
+├── .env.production.example
+├── package.json
+└── vite.config.ts
+```
 
-# Step 4: Start the development server with auto-reloading and an instant preview.
+## Konfigurasi Frontend
+
+Konfigurasi utama frontend ada di file berikut:
+
+- [`vite.config.ts`](file:///Users/basoro/Server/data/www/dokter-ulun/vite.config.ts)
+  - port development Vite
+  - proxy `/api` ke backend lokal
+- [`src/config/api.ts`](file:///Users/basoro/Server/data/www/dokter-ulun/src/config/api.ts)
+  - pembentukan base URL API
+  - fallback ke `/api` jika env tidak diisi
+
+### Port dan URL Default
+
+- Frontend dev: `http://localhost:8080`
+- Backend dev: `http://localhost:3000`
+- Proxy Vite:
+  - `/api` -> `http://localhost:3000`
+
+## Environment Variables
+
+Template env yang tersedia:
+
+- [`.env.development.example`](file:///Users/basoro/Server/data/www/dokter-ulun/.env.development.example)
+- [`.env.production.example`](file:///Users/basoro/Server/data/www/dokter-ulun/.env.production.example)
+
+### Variabel yang Dipakai
+
+```env
+VITE_API_BASE_URL=/api
+VITE_API_ORIGIN=http://localhost:8080
+```
+
+Keterangan:
+
+- `VITE_API_BASE_URL`
+  - base URL semua request API frontend
+  - default aman untuk production dengan Nginx adalah `/api`
+- `VITE_API_ORIGIN`
+  - origin tanpa suffix `/api`
+  - dipakai untuk beberapa kebutuhan URL absolut
+
+## Menjalankan Lokal
+
+1. Install dependency:
+
+```bash
+npm install
+```
+
+2. Siapkan env development:
+
+```bash
+cp .env.development.example .env
+```
+
+3. Jalankan dev server:
+
+```bash
 npm run dev
 ```
 
-**Edit a file directly in GitHub**
+4. Buka:
 
-- Navigate to the desired file(s).
-- Click the "Edit" button (pencil icon) at the top right of the file view.
-- Make your changes and commit the changes.
+```text
+http://localhost:8080
+```
 
-**Use GitHub Codespaces**
+## Build Production
 
-- Navigate to the main page of your repository.
-- Click on the "Code" button (green button) near the top right.
-- Select the "Codespaces" tab.
-- Click on "New codespace" to launch a new Codespace environment.
-- Edit files directly within the Codespace and commit and push your changes once you're done.
+1. Siapkan env production:
 
-## What technologies are used for this project?
+```bash
+cp .env.production.example .env.production
+```
 
-This project is built with .
+2. Build frontend:
 
-- Vite
-- TypeScript
-- React
-- shadcn-ui
-- Tailwind CSS
+```bash
+npm run build
+```
+
+3. Hasil build ada di folder `dist/`
+
+## Deploy Production
+
+Skema yang direkomendasikan:
+
+- frontend build disajikan oleh Nginx
+- backend Node berjalan terpisah
+- Nginx melakukan proxy `/api` ke backend
+
+Karena frontend default memakai `/api`, Anda tidak perlu hardcode domain backend di kode frontend selama Nginx sudah benar.
+
+### Contoh Alur Deploy
+
+```bash
+npm install
+cp .env.production.example .env.production
+npm run build
+```
+
+Lalu upload isi folder `dist/` ke document root web server.
+
+## Catatan Nginx
+
+Frontend production memerlukan dua hal:
+
+- fallback SPA ke `index.html`
+- proxy `/api` ke backend Node
+
+Contoh minimal:
+
+```nginx
+location /api/ {
+    proxy_pass http://127.0.0.1:3000/api/;
+    proxy_http_version 1.1;
+    proxy_set_header Host $host;
+    proxy_set_header X-Real-IP $remote_addr;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-Proto $scheme;
+}
+
+location / {
+    try_files $uri $uri/ /index.html;
+}
+```
+
+## Troubleshooting
+
+### Login gagal di production
+
+Periksa:
+
+- frontend sudah build terbaru
+- Nginx sudah proxy `/api`
+- backend berjalan di port yang benar
+- `FRONTEND_URL` backend sesuai domain frontend
+
+### Frontend bisa jalan, API gagal
+
+Periksa:
+
+- `VITE_API_BASE_URL`
+- proxy di `vite.config.ts` untuk lokal
+- konfigurasi `location /api/` di Nginx untuk production
+
+### Route React 404 saat reload
+
+Pastikan Nginx memakai:
+
+```nginx
+try_files $uri $uri/ /index.html;
+```
