@@ -443,12 +443,7 @@ export const InternalReferralModal: React.FC<InternalReferralModalProps> = ({ is
                                   />
                                   <div className="flex flex-col">
                                     <span>{doctor.nm_dokter}</span>
-                                    <span className="text-xs text-muted-foreground">
-                                      {doctor.kd_dokter}
-                                      {Array.isArray(doctor.poli_codes) && doctor.poli_codes.length > 0
-                                        ? ` • ${doctor.poli_codes.join(', ')}`
-                                        : ''}
-                                    </span>
+                                    <span className="text-xs text-muted-foreground">{doctor.kd_dokter}</span>
                                   </div>
                                 </CommandItem>
                               ))}
