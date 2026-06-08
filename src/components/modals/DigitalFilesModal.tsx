@@ -179,11 +179,9 @@ export const DigitalFilesModal: React.FC<DigitalFilesModalProps> = ({ isOpen, on
         </DialogHeader>
 
         <div className="space-y-4">
-          <div className="rounded-lg border bg-muted/20 px-4 py-3 text-sm text-muted-foreground">
             {uploadsBaseUrl
-              ? `Sumber file: ${uploadsBaseUrl}`
-              : 'Base URL berkas digital belum dikonfigurasi di backend .env.'}
-          </div>
+              ? ``
+              : '<div className="rounded-lg border bg-muted/20 px-4 py-3 text-sm text-muted-foreground">Base URL berkas digital belum dikonfigurasi di backend .env.</div>'}
 
           <div className="space-y-3">
             {loading ? (
