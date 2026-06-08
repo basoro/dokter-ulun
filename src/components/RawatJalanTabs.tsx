@@ -73,6 +73,9 @@ const RawatJalanTabs = () => {
   const [total, setTotal] = useState(0);
   const [itemsPerPage, setItemsPerPage] = useState(10);
   const effectiveDoctorFilter = doctorFilter || user?.username || "all";
+  const requestDoctorFilter = doctorFilter === "all"
+    ? "all"
+    : (doctorFilter || user?.username || undefined);
   
   const fetchRawatJalanPatients = async (tabFilter?: string) => {
     if (!user?.kd_poli || !date?.from || !date?.to) {
@@ -89,7 +92,7 @@ const RawatJalanTabs = () => {
         username: user.username,
         status: statusFilter,
         statusBayar: statusBayarFilter,
-        kd_dokter: effectiveDoctorFilter !== 'all' ? effectiveDoctorFilter : undefined,
+        kd_dokter: requestDoctorFilter,
         tabFilter: tabFilter || activeTab,
         page: currentPage.toString(),
         itemsPerPage: itemsPerPage.toString()
