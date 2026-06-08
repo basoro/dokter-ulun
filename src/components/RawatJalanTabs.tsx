@@ -65,13 +65,14 @@ const RawatJalanTabs = () => {
   
   const [statusFilter, setStatusFilter] = useState<string>("all");
   const [statusBayarFilter, setStatusBayarFilter] = useState<string>("all");
-  const [doctorFilter, setDoctorFilter] = useState<string>("all");
+  const [doctorFilter, setDoctorFilter] = useState<string>("");
   const [doctorOptions, setDoctorOptions] = useState<Array<{ kd_dokter: string; nm_dokter: string }>>([]);
   const [rawatJalanPatients, setRawatJalanPatients] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
   const [currentPage, setCurrentPage] = useState(1);
   const [total, setTotal] = useState(0);
   const [itemsPerPage, setItemsPerPage] = useState(10);
+  const effectiveDoctorFilter = doctorFilter || user?.username || "all";
   
   const fetchRawatJalanPatients = async (tabFilter?: string) => {
     if (!user?.kd_poli || !date?.from || !date?.to) {
@@ -88,7 +89,7 @@ const RawatJalanTabs = () => {
         username: user.username,
         status: statusFilter,
         statusBayar: statusBayarFilter,
-        kd_dokter: doctorFilter !== 'all' ? doctorFilter : undefined,
+        kd_dokter: effectiveDoctorFilter !== 'all' ? effectiveDoctorFilter : undefined,
         tabFilter: tabFilter || activeTab,
         page: currentPage.toString(),
         itemsPerPage: itemsPerPage.toString()
@@ -173,7 +174,7 @@ const RawatJalanTabs = () => {
     });
     setStatusFilter("all");
     setStatusBayarFilter("all");
-    setDoctorFilter("all");
+    setDoctorFilter("");
     setSearchQuery("");
     setCurrentPage(1);
   };
@@ -361,7 +362,7 @@ const RawatJalanTabs = () => {
                     </SelectContent>
                   </Select>
 
-                  <Select value={doctorFilter} onValueChange={setDoctorFilter}>
+                  <Select value={effectiveDoctorFilter} onValueChange={setDoctorFilter}>
                     <SelectTrigger className="w-full sm:w-56">
                       <SelectValue placeholder="Dokter" />
                     </SelectTrigger>

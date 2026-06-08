@@ -67,12 +67,16 @@ class RawatJalanPatientsService {
       params.push(...poliCodes);
       console.log('Poliklinik condition:', 'rp.kd_poli IN capability user', poliCodes);
 
-      // Doctor filter is optional. Default shows all patients in allowed poli.
+      // Default doctor filter follows the logged-in user, unless "all" is explicitly requested.
       const normalizedDoctorFilter = String(kd_dokter || '').trim();
-      if (normalizedDoctorFilter && normalizedDoctorFilter !== 'all') {
+      const effectiveDoctorFilter = normalizedDoctorFilter === 'all'
+        ? 'all'
+        : (normalizedDoctorFilter || username);
+
+      if (effectiveDoctorFilter !== 'all') {
         conditions.push('rp.kd_dokter = ?');
-        params.push(normalizedDoctorFilter);
-        console.log('Doctor filter applied:', normalizedDoctorFilter);
+        params.push(effectiveDoctorFilter);
+        console.log('Doctor filter applied:', effectiveDoctorFilter);
       } else {
         console.log('Doctor filter: showing all doctors in allowed poli');
       }
@@ -313,7 +317,7 @@ class RawatJalanPatientsService {
       console.log('Filter summary:', {
         dateRange: `${formattedStartDate} to ${formattedEndDate}`,
         requestedBy: username,
-        selectedDoctor: normalizedDoctorFilter || 'ALL',
+        selectedDoctor: effectiveDoctorFilter,
         poliklinik: kd_poli,
         status: status === 'all' ? 'ALL' : status,
         statusBayar: statusBayar === 'all' ? 'ALL' : statusBayar,
