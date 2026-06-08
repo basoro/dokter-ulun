@@ -16,6 +16,9 @@ class StatisticsDataService {
       let result = {};
 
       switch (statisticType) {
+        case 'overview':
+          result = await this.getOverviewStatistics(periodType, startDate, endDate, limit);
+          break;
         case 'visits':
           result = await this.getVisitStatistics(periodType, startDate, endDate);
           break;
@@ -42,6 +45,25 @@ class StatisticsDataService {
       console.error('Error in statistics service:', error);
       throw error;
     }
+  }
+
+  /**
+   * Get all statistics needed by the overview page in a single request.
+   */
+  static async getOverviewStatistics(periodType, startDate, endDate, limit = 10) {
+    const [visits, diagnosis, doctors, summary] = await Promise.all([
+      this.getVisitStatistics(periodType, startDate, endDate),
+      this.getDiagnosisStatistics(startDate, endDate, limit),
+      this.getDoctorStatistics(startDate, endDate, limit),
+      this.getSummaryStatistics(startDate, endDate)
+    ]);
+
+    return {
+      visits: visits?.visits || [],
+      diagnosis: diagnosis || [],
+      doctors: doctors || [],
+      summary: summary || null
+    };
   }
 
   /**
@@ -141,48 +163,63 @@ class StatisticsDataService {
         d.nm_dokter,
         d.kd_dokter,
         d.jk as gender,
-        (
-          SELECT COUNT(*)
-          FROM reg_periksa rp_ralan
-          WHERE rp_ralan.tgl_registrasi BETWEEN ? AND ?
-          AND rp_ralan.kd_dokter = d.kd_dokter
-          AND rp_ralan.status_lanjut = 'Ralan'
-        ) as rawat_jalan,
-        (
-          SELECT COUNT(*)
-          FROM kamar_inap ki
-          JOIN dpjp_ranap dr ON ki.no_rawat = dr.no_rawat
-          JOIN reg_periksa rp_ranap ON ki.no_rawat = rp_ranap.no_rawat
-          WHERE rp_ranap.tgl_registrasi BETWEEN ? AND ?
-          AND dr.kd_dokter = d.kd_dokter
-        ) as rawat_inap,
-        (
-          SELECT COUNT(*)
-          FROM resep_obat ro
-          WHERE ro.tgl_peresepan BETWEEN ? AND ?
-          AND ro.kd_dokter = d.kd_dokter
-        ) as resep,
-        ROUND(
-          (
-            SELECT SUM(CASE WHEN rp_bayar.status_bayar = 'Sudah Bayar' THEN 1 ELSE 0 END) * 100.0 / COUNT(rp_bayar.no_rawat)
-            FROM reg_periksa rp_bayar
-            WHERE rp_bayar.tgl_registrasi BETWEEN ? AND ?
-            AND rp_bayar.kd_dokter = d.kd_dokter
-          ), 
-          2
-        ) as payment_rate
-      FROM dokter d
-      WHERE d.kd_dokter IN (
-        SELECT DISTINCT kd_dokter 
-        FROM reg_periksa 
+        COALESCE(ralan.rawat_jalan, 0) as rawat_jalan,
+        COALESCE(ranap.rawat_inap, 0) as rawat_inap,
+        COALESCE(resep.resep, 0) as resep,
+        COALESCE(payment.payment_rate, 0) as payment_rate
+      FROM (
+        SELECT DISTINCT kd_dokter
+        FROM reg_periksa
         WHERE tgl_registrasi BETWEEN ? AND ?
-      )
+          AND kd_dokter IS NOT NULL
+      ) active_doctors
+      INNER JOIN dokter d ON d.kd_dokter = active_doctors.kd_dokter
+      LEFT JOIN (
+        SELECT kd_dokter, COUNT(*) as rawat_jalan
+        FROM reg_periksa
+        WHERE tgl_registrasi BETWEEN ? AND ?
+          AND status_lanjut = 'Ralan'
+          AND kd_dokter IS NOT NULL
+        GROUP BY kd_dokter
+      ) ralan ON ralan.kd_dokter = d.kd_dokter
+      LEFT JOIN (
+        SELECT dr.kd_dokter, COUNT(DISTINCT ki.no_rawat) as rawat_inap
+        FROM kamar_inap ki
+        INNER JOIN dpjp_ranap dr ON ki.no_rawat = dr.no_rawat
+        INNER JOIN reg_periksa rp_ranap ON ki.no_rawat = rp_ranap.no_rawat
+        WHERE rp_ranap.tgl_registrasi BETWEEN ? AND ?
+        GROUP BY dr.kd_dokter
+      ) ranap ON ranap.kd_dokter = d.kd_dokter
+      LEFT JOIN (
+        SELECT kd_dokter, COUNT(*) as resep
+        FROM resep_obat
+        WHERE tgl_peresepan BETWEEN ? AND ?
+          AND kd_dokter IS NOT NULL
+        GROUP BY kd_dokter
+      ) resep ON resep.kd_dokter = d.kd_dokter
+      LEFT JOIN (
+        SELECT
+          kd_dokter,
+          ROUND(
+            SUM(CASE WHEN status_bayar = 'Sudah Bayar' THEN 1 ELSE 0 END) * 100.0 / NULLIF(COUNT(no_rawat), 0),
+            2
+          ) as payment_rate
+        FROM reg_periksa
+        WHERE tgl_registrasi BETWEEN ? AND ?
+          AND kd_dokter IS NOT NULL
+        GROUP BY kd_dokter
+      ) payment ON payment.kd_dokter = d.kd_dokter
       ORDER BY d.nm_dokter ASC
+      LIMIT ?
     `;
 
     const [doctorResult] = await pool.execute(sql, [
-      startDate, endDate, startDate, endDate, startDate, endDate, 
-      startDate, endDate, startDate, endDate
+      startDate, endDate,
+      startDate, endDate,
+      startDate, endDate,
+      startDate, endDate,
+      startDate, endDate,
+      Number(limit) || 10
     ]);
     
     return doctorResult || [];

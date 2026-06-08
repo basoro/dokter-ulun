@@ -29,11 +29,11 @@ router.post('/', asyncHandler(async (req, res) => {
   }
 
   // Validate statistic type
-  const validTypes = ['visits', 'diagnosis', 'doctors', 'summary'];
+  const validTypes = ['overview', 'visits', 'diagnosis', 'doctors', 'summary'];
   if (!validTypes.includes(statisticType)) {
     return res.status(400).json({
       success: false,
-      message: 'Invalid statisticType. Must be one of: visits, diagnosis, doctors, summary'
+      message: 'Invalid statisticType. Must be one of: overview, visits, diagnosis, doctors, summary'
     });
   }
 
@@ -97,6 +97,11 @@ router.get('/types', (req, res) => {
     success: true,
     data: {
       statisticTypes: [
+        {
+          type: 'overview',
+          name: 'Overview',
+          description: 'Seluruh statistik untuk halaman dashboard statistik'
+        },
         {
           type: 'visits',
           name: 'Kunjungan Pasien',

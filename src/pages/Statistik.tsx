@@ -24,13 +24,20 @@ const Statistik = () => {
   const [periodType, setPeriodType] = useState<string>('bulan-ini');
   const [customStartDate, setCustomStartDate] = useState<Date>();
   const [customEndDate, setCustomEndDate] = useState<Date>();
+  const [appliedPeriodType, setAppliedPeriodType] = useState<string>('bulan-ini');
+  const [appliedCustomStartDate, setAppliedCustomStartDate] = useState<Date>();
+  const [appliedCustomEndDate, setAppliedCustomEndDate] = useState<Date>();
 
-  const getDateRange = () => {
+  const getDateRange = (
+    currentPeriodType: string = appliedPeriodType,
+    currentCustomStartDate: Date | undefined = appliedCustomStartDate,
+    currentCustomEndDate: Date | undefined = appliedCustomEndDate
+  ) => {
     const now = new Date();
     let startDate: string;
     let endDate: string;
 
-    switch (periodType) {
+    switch (currentPeriodType) {
       case 'hari-ini':
         startDate = format(startOfDay(now), 'yyyy-MM-dd');
         endDate = format(endOfDay(now), 'yyyy-MM-dd');
@@ -49,12 +56,12 @@ const Statistik = () => {
         endDate = format(new Date(now.getFullYear(), 11, 31), 'yyyy-MM-dd');
         break;
       case 'custom':
-        if (!customStartDate || !customEndDate) {
+        if (!currentCustomStartDate || !currentCustomEndDate) {
           startDate = format(startOfMonth(now), 'yyyy-MM-dd');
           endDate = format(endOfMonth(now), 'yyyy-MM-dd');
         } else {
-          startDate = format(customStartDate, 'yyyy-MM-dd');
-          endDate = format(customEndDate, 'yyyy-MM-dd');
+          startDate = format(currentCustomStartDate, 'yyyy-MM-dd');
+          endDate = format(currentCustomEndDate, 'yyyy-MM-dd');
         }
         break;
       default:
@@ -65,87 +72,37 @@ const Statistik = () => {
     return { startDate, endDate };
   };
 
-  const fetchStatistics = async () => {
+  const fetchStatistics = async (
+    currentPeriodType: string = appliedPeriodType,
+    currentCustomStartDate: Date | undefined = appliedCustomStartDate,
+    currentCustomEndDate: Date | undefined = appliedCustomEndDate
+  ) => {
     setLoading(true);
     try {
-      const { startDate, endDate } = getDateRange();
-      // Fetch all statistics using backend API
-      const [visitResponse, diagnosisResponse, doctorResponse, summaryResponse] = await Promise.all([
-        fetch(API_URLS.STATISTICS_DATA, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({ 
-            statisticType: 'visits', 
-            periodType: 'monthly', 
-            startDate, 
-            endDate 
-          })
-        }),
-        fetch(API_URLS.STATISTICS_DATA, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({ 
-            statisticType: 'diagnosis', 
-            periodType: 'monthly', 
-            startDate, 
-            endDate, 
-            limit: 10 
-          })
-        }),
-        fetch(API_URLS.STATISTICS_DATA, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({ 
-            statisticType: 'doctors', 
-            periodType: 'monthly', 
-            startDate, 
-            endDate 
-          })
-        }),
-        fetch(API_URLS.STATISTICS_DATA, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({ 
-            statisticType: 'summary', 
-            periodType: 'monthly', 
-            startDate, 
-            endDate 
-          })
+      const { startDate, endDate } = getDateRange(currentPeriodType, currentCustomStartDate, currentCustomEndDate);
+      const response = await fetch(API_URLS.STATISTICS_DATA, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          statisticType: 'overview',
+          periodType: 'monthly',
+          startDate,
+          endDate,
+          limit: 10
         })
-      ]);
+      });
 
-      // Parse JSON responses
-      const [visitData, diagnosisData, doctorData, summaryData] = await Promise.all([
-        visitResponse.json(),
-        diagnosisResponse.json(),
-        doctorResponse.json(),
-        summaryResponse.json()
-      ]);
-
-      // Check for successful responses and set data
-      if (visitData.success && visitData.data) {
-        setVisitData(visitData.data.visits || []);
+      const payload = await response.json();
+      if (!response.ok || !payload.success || !payload.data) {
+        throw new Error(payload.message || 'Gagal mengambil data statistik');
       }
 
-      if (diagnosisData.success && diagnosisData.data) {
-        setDiagnosisData(diagnosisData.data || []);
-      }
-
-      if (doctorData.success && doctorData.data) {
-        setDoctorData(doctorData.data || []);
-      }
-
-      if (summaryData.success && summaryData.data) {
-        setSummaryData(summaryData.data);
-      }
+      setVisitData(payload.data.visits || []);
+      setDiagnosisData(payload.data.diagnosis || []);
+      setDoctorData(payload.data.doctors || []);
+      setSummaryData(payload.data.summary || null);
 
     } catch (error) {
       console.error('Error fetching statistics:', error);
@@ -160,8 +117,14 @@ const Statistik = () => {
   };
 
   useEffect(() => {
-    fetchStatistics();
-  }, [periodType, customStartDate, customEndDate]);
+    fetchStatistics(appliedPeriodType, appliedCustomStartDate, appliedCustomEndDate);
+  }, [appliedPeriodType, appliedCustomStartDate, appliedCustomEndDate]);
+
+  const handleApplyFilters = () => {
+    setAppliedPeriodType(periodType);
+    setAppliedCustomStartDate(customStartDate);
+    setAppliedCustomEndDate(customEndDate);
+  };
 
   const COLORS = ['#0088FE', '#00C49F', '#FFBB28', '#FF8042', '#8884d8', '#82ca9d', '#ffc658', '#ff7300', '#00ff00', '#ff00ff'];
 
@@ -260,6 +223,10 @@ const Statistik = () => {
                 </div>
               </>
             )}
+
+            <Button onClick={handleApplyFilters}>
+              Terapkan Filter
+            </Button>
           </div>
         </CardContent>
       </Card>
