@@ -18,6 +18,7 @@ import DeleteExaminationService from './services/deleteExaminationService.js';
 import IcdDataService from './services/icdDataService.js';
 import IgdDataService from './services/igdDataService.js';
 import InacbgSimulationService from './services/inacbgSimulationService.js';
+import InternalReferralService from './services/internalReferralService.js';
 import LaboratoryDataService from './services/laboratoryDataService.js';
 import MedicalScribeService from './services/medicalScribeService.js';
 import OperationReportService from './services/operationReportService.js';
@@ -743,6 +744,67 @@ app.delete('/api/patient-notes', async (req, res) => {
   } catch (error) {
     console.error('Error in patient-notes DELETE endpoint:', error);
     res.status(500).json({
+      success: false,
+      error: error.message
+    });
+  }
+});
+
+app.get('/api/internal-referrals/:no_rawat', async (req, res) => {
+  try {
+    const { no_rawat } = req.params;
+
+    if (!no_rawat) {
+      return res.status(400).json({
+        success: false,
+        error: 'no_rawat wajib diisi'
+      });
+    }
+
+    const result = await InternalReferralService.getReferrals(no_rawat);
+    res.json(result);
+  } catch (error) {
+    console.error('Error in internal-referrals GET endpoint:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message
+    });
+  }
+});
+
+app.post('/api/internal-referrals', async (req, res) => {
+  try {
+    const result = await InternalReferralService.createReferral(req.body);
+    res.json(result);
+  } catch (error) {
+    console.error('Error in internal-referrals POST endpoint:', error);
+    res.status(400).json({
+      success: false,
+      error: error.message
+    });
+  }
+});
+
+app.put('/api/internal-referrals', async (req, res) => {
+  try {
+    const result = await InternalReferralService.updateReferral(req.body);
+    res.json(result);
+  } catch (error) {
+    console.error('Error in internal-referrals PUT endpoint:', error);
+    res.status(400).json({
+      success: false,
+      error: error.message
+    });
+  }
+});
+
+app.delete('/api/internal-referrals', async (req, res) => {
+  try {
+    const result = await InternalReferralService.deleteReferral(req.body);
+    res.json(result);
+  } catch (error) {
+    console.error('Error in internal-referrals DELETE endpoint:', error);
+    res.status(400).json({
       success: false,
       error: error.message
     });

@@ -801,6 +801,30 @@ export const MedicalResumeModal: React.FC<MedicalResumeModalProps> = ({ isOpen, 
     ].filter(Boolean).join('\n');
   };
 
+  const getDateSortTimestamp = (dateValue?: string, timeValue?: string) => {
+    if (!dateValue) {
+      return Number.MAX_SAFE_INTEGER;
+    }
+
+    const normalizedDate = String(dateValue).trim().replace(' ', 'T');
+    const datePart = normalizedDate.split('T')[0];
+    const dateTimeCandidate = timeValue
+      ? `${datePart}T${String(timeValue).trim()}`
+      : normalizedDate;
+
+    const parsed = new Date(dateTimeCandidate);
+    if (!Number.isNaN(parsed.getTime())) {
+      return parsed.getTime();
+    }
+
+    const fallbackParsed = new Date(`${datePart}T00:00:00`);
+    return Number.isNaN(fallbackParsed.getTime()) ? Number.MAX_SAFE_INTEGER : fallbackParsed.getTime();
+  };
+
+  const getExaminationSortTimestamp = (item: ResumeRanapExamination) => {
+    return getDateSortTimestamp(item.tanggal || item.tgl_perawatan, item.jam_rawat);
+  };
+
   const buildPickerConfigFromSource = (
     target: ResumePickerTarget,
     currentSourceData: ResumeSourceData
@@ -815,6 +839,8 @@ export const MedicalResumeModal: React.FC<MedicalResumeModalProps> = ({ isOpen, 
           multiple: true,
           items: currentSourceData.examinations
             .filter((item) => String(item.s || '').trim())
+            .slice()
+            .sort((a, b) => getExaminationSortTimestamp(a) - getExaminationSortTimestamp(b))
             .map((item, index) => ({
               id: `keluhan-${index}-${item.tanggal}`,
               title: item.tanggal || `Pemeriksaan ${index + 1}`,
@@ -832,6 +858,8 @@ export const MedicalResumeModal: React.FC<MedicalResumeModalProps> = ({ isOpen, 
           multiple: true,
           items: currentSourceData.examinations
             .filter((item) => String(item.o || buildVitalsText(item) || '').trim())
+            .slice()
+            .sort((a, b) => getExaminationSortTimestamp(a) - getExaminationSortTimestamp(b))
             .map((item, index) => ({
               id: `objektif-${index}-${item.tanggal}`,
               title: item.tanggal || `Pemeriksaan ${index + 1}`,
@@ -848,6 +876,8 @@ export const MedicalResumeModal: React.FC<MedicalResumeModalProps> = ({ isOpen, 
           emptyMessage: 'Belum ada data jalannya penyakit dari pemeriksaan ranap.',
           multiple: true,
           items: currentSourceData.examinations
+            .slice()
+            .sort((a, b) => getExaminationSortTimestamp(a) - getExaminationSortTimestamp(b))
             .map((item, index) => ({
               id: `soap-${index}-${item.tanggal}`,
               title: item.tanggal || `Pemeriksaan ${index + 1}`,
@@ -875,20 +905,29 @@ export const MedicalResumeModal: React.FC<MedicalResumeModalProps> = ({ isOpen, 
           multiple: true,
           items: [
             ...currentSourceData.laboratoryResults.map((item, index) => ({
-              id: `penunjang-lab-${index}-${item.tanggal}`,
-              title: item.tanggal || `Laboratorium ${index + 1}`,
-              subtitle: 'Pemeriksaan Laboratorium',
-              description: buildLaboratoryResultText(item),
-              value: buildLaboratoryResultText(item)
+              sortTimestamp: getDateSortTimestamp(item.tanggal),
+              pickerItem: {
+                id: `penunjang-lab-${index}-${item.tanggal}`,
+                title: item.tanggal || `Laboratorium ${index + 1}`,
+                subtitle: 'Pemeriksaan Laboratorium',
+                description: buildLaboratoryResultText(item),
+                value: buildLaboratoryResultText(item)
+              }
             })),
             ...currentSourceData.radiologyResults.map((item, index) => ({
-              id: `penunjang-rad-${index}-${item.tanggal}`,
-              title: item.tanggal || `Radiologi ${index + 1}`,
-              subtitle: 'Pemeriksaan Radiologi',
-              description: buildRadiologyResultText(item),
-              value: buildRadiologyResultText(item)
+              sortTimestamp: getDateSortTimestamp(item.tanggal),
+              pickerItem: {
+                id: `penunjang-rad-${index}-${item.tanggal}`,
+                title: item.tanggal || `Radiologi ${index + 1}`,
+                subtitle: 'Pemeriksaan Radiologi',
+                description: buildRadiologyResultText(item),
+                value: buildRadiologyResultText(item)
+              }
             }))
-          ].filter((item) => item.value.trim())
+          ]
+            .filter((item) => item.pickerItem.value.trim())
+            .sort((a, b) => a.sortTimestamp - b.sortTimestamp)
+            .map((item) => item.pickerItem)
         };
       case 'hasil_laborat':
         return {
@@ -898,6 +937,8 @@ export const MedicalResumeModal: React.FC<MedicalResumeModalProps> = ({ isOpen, 
           emptyMessage: 'Belum ada hasil pemeriksaan laboratorium untuk nomor rawat ini.',
           multiple: true,
           items: currentSourceData.laboratoryResults
+            .slice()
+            .sort((a, b) => getDateSortTimestamp(a.tanggal) - getDateSortTimestamp(b.tanggal))
             .map((item, index) => ({
               id: `hasil-lab-${index}-${item.tanggal}`,
               title: item.tanggal || `Hasil Laboratorium ${index + 1}`,
@@ -917,32 +958,43 @@ export const MedicalResumeModal: React.FC<MedicalResumeModalProps> = ({ isOpen, 
           items: [
             ...currentSourceData.outpatientExaminations
               .map((item, index) => ({
-                id: `tindakan-ralan-${index}-${item.tgl_perawatan || item.tanggal || ''}-${item.jam_rawat || ''}`,
-                title: item.tanggal || item.tgl_perawatan || `Pemeriksaan Ralan ${index + 1}`,
-                subtitle: item.pegawai || 'Pemeriksaan Rawat Jalan',
-                description: buildExaminationProcedureText(item, 'Pemeriksaan Ralan'),
-                value: buildExaminationProcedureText(item, 'Pemeriksaan Ralan')
+                sortTimestamp: getExaminationSortTimestamp(item),
+                pickerItem: {
+                  id: `tindakan-ralan-${index}-${item.tgl_perawatan || item.tanggal || ''}-${item.jam_rawat || ''}`,
+                  title: item.tanggal || item.tgl_perawatan || `Pemeriksaan Ralan ${index + 1}`,
+                  subtitle: item.pegawai || 'Pemeriksaan Rawat Jalan',
+                  description: buildExaminationProcedureText(item, 'Pemeriksaan Ralan'),
+                  value: buildExaminationProcedureText(item, 'Pemeriksaan Ralan')
+                }
               }))
-              .filter((item) => item.value.trim()),
+              .filter((item) => item.pickerItem.value.trim()),
             ...currentSourceData.examinations
               .map((item, index) => ({
-                id: `tindakan-ranap-${index}-${item.tgl_perawatan || item.tanggal || ''}-${item.jam_rawat || ''}`,
-                title: item.tanggal || item.tgl_perawatan || `Pemeriksaan Ranap ${index + 1}`,
-                subtitle: item.pegawai || 'Pemeriksaan Rawat Inap',
-                description: buildExaminationProcedureText(item, 'Pemeriksaan Ranap'),
-                value: buildExaminationProcedureText(item, 'Pemeriksaan Ranap')
+                sortTimestamp: getExaminationSortTimestamp(item),
+                pickerItem: {
+                  id: `tindakan-ranap-${index}-${item.tgl_perawatan || item.tanggal || ''}-${item.jam_rawat || ''}`,
+                  title: item.tanggal || item.tgl_perawatan || `Pemeriksaan Ranap ${index + 1}`,
+                  subtitle: item.pegawai || 'Pemeriksaan Rawat Inap',
+                  description: buildExaminationProcedureText(item, 'Pemeriksaan Ranap'),
+                  value: buildExaminationProcedureText(item, 'Pemeriksaan Ranap')
+                }
               }))
-              .filter((item) => item.value.trim()),
+              .filter((item) => item.pickerItem.value.trim()),
             ...currentSourceData.operationData
               .map((item, index) => ({
-                id: `operasi-${item.id || index}`,
-                title: item.nm_op || item.tanggal_op || `Operasi ${index + 1}`,
-                subtitle: item.post_op || item.pre_op || 'Laporan Operasi',
-                description: buildOperationText(item),
-                value: buildOperationText(item)
+                sortTimestamp: getDateSortTimestamp(item.tanggal_op),
+                pickerItem: {
+                  id: `operasi-${item.id || index}`,
+                  title: item.nm_op || item.tanggal_op || `Operasi ${index + 1}`,
+                  subtitle: item.post_op || item.pre_op || 'Laporan Operasi',
+                  description: buildOperationText(item),
+                  value: buildOperationText(item)
+                }
               }))
-              .filter((item) => item.value.trim())
+              .filter((item) => item.pickerItem.value.trim())
           ]
+            .sort((a, b) => a.sortTimestamp - b.sortTimestamp)
+            .map((item) => item.pickerItem)
         };
       case 'obat_di_rs':
         return {
@@ -954,23 +1006,31 @@ export const MedicalResumeModal: React.FC<MedicalResumeModalProps> = ({ isOpen, 
           items: [
             ...currentSourceData.dischargeMedicationRequests
               .map((item, index) => ({
-                id: `obat-pulang-${index}-${item.no_resep || ''}-${item.tanggal || ''}`,
-                title: item.tanggal || `Obat Pulang ${index + 1}`,
-                subtitle: 'Obat Pulang',
-                description: buildMedicationListText(item, 'Obat Pulang'),
-                value: buildMedicationListText(item, 'Obat Pulang')
+                sortTimestamp: getDateSortTimestamp(item.tanggal),
+                pickerItem: {
+                  id: `obat-pulang-${index}-${item.no_resep || ''}-${item.tanggal || ''}`,
+                  title: item.tanggal || `Obat Pulang ${index + 1}`,
+                  subtitle: 'Obat Pulang',
+                  description: buildMedicationListText(item, 'Obat Pulang'),
+                  value: buildMedicationListText(item, 'Obat Pulang')
+                }
               }))
-              .filter((item) => item.value.trim()),
+              .filter((item) => item.pickerItem.value.trim()),
             ...currentSourceData.inpatientMedications
               .map((item, index) => ({
-                id: `obat-ranap-${index}-${item.no_resep || ''}-${item.tanggal || ''}`,
-                title: item.tanggal || `Pemberian Obat ${index + 1}`,
-                subtitle: 'Pemberian Obat Selama Perawatan',
-                description: buildMedicationListText(item, 'Pemberian Obat Selama Perawatan'),
-                value: buildMedicationListText(item, 'Pemberian Obat Selama Perawatan')
+                sortTimestamp: getDateSortTimestamp(item.tanggal),
+                pickerItem: {
+                  id: `obat-ranap-${index}-${item.no_resep || ''}-${item.tanggal || ''}`,
+                  title: item.tanggal || `Pemberian Obat ${index + 1}`,
+                  subtitle: 'Pemberian Obat Selama Perawatan',
+                  description: buildMedicationListText(item, 'Pemberian Obat Selama Perawatan'),
+                  value: buildMedicationListText(item, 'Pemberian Obat Selama Perawatan')
+                }
               }))
-              .filter((item) => item.value.trim())
+              .filter((item) => item.pickerItem.value.trim())
           ]
+            .sort((a, b) => a.sortTimestamp - b.sortTimestamp)
+            .map((item) => item.pickerItem)
         };
       default:
         return {

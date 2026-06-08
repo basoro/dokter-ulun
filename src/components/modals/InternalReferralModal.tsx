@@ -1,26 +1,52 @@
-import React, { useState, useEffect } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
-import { Plus, Edit, Trash2, ArrowRight, Clock } from 'lucide-react';
+import { Plus, Edit, Trash2, ArrowRight, Loader2 } from 'lucide-react';
 import { useToast } from "@/hooks/use-toast";
+import { API_URLS } from '@/config/api';
+import { useAuth } from '@/contexts/AuthContext';
+
+interface PoliOption {
+  kd_poli: string;
+  nm_poli: string;
+}
+
+interface DoctorOption {
+  kd_dokter: string;
+  nm_dokter: string;
+}
+
+interface ReferralSourceInfo {
+  no_rawat: string;
+  asal_kd_poli: string;
+  asal_nm_poli: string;
+  asal_kd_dokter: string;
+  asal_nm_dokter: string;
+}
 
 interface InternalReferral {
-  id?: string;
-  tanggal_rujukan: string;
-  dari_poli: string;
-  ke_poli: string;
-  dokter_pengirim: string;
-  dokter_tujuan: string;
+  no_rawat: string;
+  kd_dokter: string;
+  kd_poli: string;
+  nm_poli: string;
+  nm_dokter: string;
+  konsul: string;
+  pemeriksaan: string;
   diagnosa: string;
-  alasan_rujukan: string;
-  catatan: string;
-  status: 'Pending' | 'Diterima' | 'Selesai';
-  prioritas: 'Normal' | 'Cito' | 'Urgent';
+  saran: string;
+  original_kd_dokter?: string;
+}
+
+interface InternalReferralForm {
+  kd_poli: string;
+  kd_dokter: string;
+  konsul: string;
+  pemeriksaan: string;
+  diagnosa: string;
+  saran: string;
 }
 
 interface InternalReferralModalProps {
@@ -30,59 +56,81 @@ interface InternalReferralModalProps {
 }
 
 export const InternalReferralModal: React.FC<InternalReferralModalProps> = ({ isOpen, onClose, noRawat }) => {
+  const { user } = useAuth();
+  const { toast } = useToast();
   const [referrals, setReferrals] = useState<InternalReferral[]>([]);
+  const [poliOptions, setPoliOptions] = useState<PoliOption[]>([]);
+  const [doctorOptions, setDoctorOptions] = useState<DoctorOption[]>([]);
+  const [sourceInfo, setSourceInfo] = useState<ReferralSourceInfo | null>(null);
   const [loading, setLoading] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [deletingKey, setDeletingKey] = useState<string | null>(null);
   const [editingItem, setEditingItem] = useState<InternalReferral | null>(null);
   const [showForm, setShowForm] = useState(false);
-  const [formData, setFormData] = useState<InternalReferral>({
-    tanggal_rujukan: new Date().toISOString().split('T')[0],
-    dari_poli: '',
-    ke_poli: '',
-    dokter_pengirim: '',
-    dokter_tujuan: '',
-    diagnosa: '',
-    alasan_rujukan: '',
-    catatan: '',
-    status: 'Pending',
-    prioritas: 'Normal'
-  });
-  const { toast } = useToast();
 
-  const poliklinikOptions = [
-    'Poli Umum', 'Poli Anak', 'Poli Kandungan', 'Poli Bedah', 'Poli Mata',
-    'Poli THT', 'Poli Jantung', 'Poli Paru', 'Poli Saraf', 'Poli Kulit'
-  ];
+  const createDefaultForm = useMemo(() => {
+    return (): InternalReferralForm => ({
+      kd_poli: '',
+      kd_dokter: '',
+      konsul: '',
+      pemeriksaan: '',
+      diagnosa: '',
+      saran: '',
+    });
+  }, []);
+
+  const [formData, setFormData] = useState<InternalReferralForm>(createDefaultForm);
 
   useEffect(() => {
     if (isOpen) {
-      fetchReferrals();
+      void fetchReferrals();
     }
-  }, [isOpen]);
+  }, [isOpen, noRawat]);
+
+  useEffect(() => {
+    if (!showForm && !editingItem) {
+      setFormData(createDefaultForm());
+    }
+  }, [createDefaultForm, editingItem, showForm]);
 
   const fetchReferrals = async () => {
+    if (!noRawat) {
+      setReferrals([]);
+      setSourceInfo(null);
+      return;
+    }
+
     setLoading(true);
     try {
-      // Mock data for now - replace with real API call
-      setReferrals([
-        {
-          id: '1',
-          tanggal_rujukan: '2025-01-15',
-          dari_poli: 'Poli Umum',
-          ke_poli: 'Poli Jantung',
-          dokter_pengirim: 'Dr. Ahmad',
-          dokter_tujuan: 'Dr. Sarah',
-          diagnosa: 'Hipertensi Stage 2',
-          alasan_rujukan: 'Evaluasi lebih lanjut hipertensi dengan komplikasi',
-          catatan: 'Pasien sudah diberi ACE inhibitor, monitoring diperlukan',
-          status: 'Diterima',
-          prioritas: 'Normal'
-        }
-      ]);
+      const response = await fetch(`${API_URLS.INTERNAL_REFERRALS}/${encodeURIComponent(noRawat)}`);
+      const result = await response.json();
+
+      if (!response.ok || !result.success) {
+        throw new Error(result.error || 'Gagal memuat rujukan internal');
+      }
+
+      setReferrals(
+        (Array.isArray(result.data) ? result.data : []).map((item: any) => ({
+          no_rawat: item.no_rawat,
+          kd_dokter: item.kd_dokter,
+          kd_poli: item.kd_poli || '',
+          nm_poli: item.nm_poli || item.kd_poli || '-',
+          nm_dokter: item.nm_dokter || item.kd_dokter || '-',
+          konsul: item.konsul || '',
+          pemeriksaan: item.pemeriksaan || '',
+          diagnosa: item.diagnosa || '',
+          saran: item.saran || '',
+          original_kd_dokter: item.kd_dokter,
+        }))
+      );
+      setPoliOptions(Array.isArray(result.options?.poliklinik) ? result.options.poliklinik : []);
+      setDoctorOptions(Array.isArray(result.options?.doctors) ? result.options.doctors : []);
+      setSourceInfo(result.meta?.source || null);
     } catch (error) {
-      console.error('Error fetching referrals:', error);
+      console.error('Error fetching internal referrals:', error);
       toast({
         title: "Error",
-        description: "Gagal memuat rujukan internal",
+        description: error instanceof Error ? error.message : "Gagal memuat rujukan internal",
         variant: "destructive",
       });
     } finally {
@@ -91,85 +139,131 @@ export const InternalReferralModal: React.FC<InternalReferralModalProps> = ({ is
   };
 
   const handleSave = async () => {
+    if (!noRawat) {
+      toast({
+        title: "Error",
+        description: "No. rawat tidak ditemukan",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    if (!formData.kd_poli || !formData.kd_dokter) {
+      toast({
+        title: "Validasi",
+        description: "Poli tujuan dan dokter tujuan wajib dipilih",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    setSaving(true);
     try {
-      if (editingItem) {
-        // Update existing item
-        setReferrals(prev => prev.map(item => 
-          item.id === editingItem.id ? { ...formData, id: editingItem.id } : item
-        ));
-        toast({
-          title: "Berhasil",
-          description: "Rujukan internal berhasil diperbarui",
-        });
-      } else {
-        // Add new item
-        const newItem = { ...formData, id: Date.now().toString() };
-        setReferrals(prev => [newItem, ...prev]);
-        toast({
-          title: "Berhasil",
-          description: "Rujukan internal berhasil ditambahkan",
-        });
+      const payload = {
+        no_rawat: noRawat,
+        kd_poli: formData.kd_poli,
+        kd_dokter: formData.kd_dokter,
+        konsul: formData.konsul,
+        pemeriksaan: formData.pemeriksaan,
+        diagnosa: formData.diagnosa,
+        saran: formData.saran,
+        original_kd_dokter: editingItem?.original_kd_dokter,
+      };
+
+      const response = await fetch(API_URLS.INTERNAL_REFERRALS, {
+        method: editingItem ? 'PUT' : 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(payload),
+      });
+
+      const result = await response.json();
+      if (!response.ok || !result.success) {
+        throw new Error(result.error || 'Gagal menyimpan rujukan internal');
       }
+
+      await fetchReferrals();
       resetForm();
+
+      toast({
+        title: "Berhasil",
+        description: editingItem
+          ? "Rujukan internal berhasil diperbarui"
+          : "Rujukan internal berhasil ditambahkan",
+      });
     } catch (error) {
       toast({
         title: "Error",
-        description: "Gagal menyimpan rujukan internal",
+        description: error instanceof Error ? error.message : "Gagal menyimpan rujukan internal",
         variant: "destructive",
       });
+    } finally {
+      setSaving(false);
     }
   };
 
   const handleEdit = (item: InternalReferral) => {
     setEditingItem(item);
-    setFormData(item);
+    setFormData({
+      kd_poli: item.kd_poli,
+      kd_dokter: item.kd_dokter,
+      konsul: item.konsul,
+      pemeriksaan: item.pemeriksaan,
+      diagnosa: item.diagnosa,
+      saran: item.saran,
+    });
     setShowForm(true);
   };
 
-  const handleDelete = async (id: string) => {
-    if (confirm('Apakah Anda yakin ingin menghapus rujukan ini?')) {
-      setReferrals(prev => prev.filter(item => item.id !== id));
+  const handleDelete = async (item: InternalReferral) => {
+    if (!confirm('Apakah Anda yakin ingin menghapus rujukan internal ini?')) {
+      return;
+    }
+
+    const deleteKey = `${item.no_rawat}-${item.original_kd_dokter || item.kd_dokter}`;
+    setDeletingKey(deleteKey);
+    try {
+      const response = await fetch(API_URLS.INTERNAL_REFERRALS, {
+        method: 'DELETE',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          no_rawat: noRawat,
+          kd_dokter: item.original_kd_dokter || item.kd_dokter,
+        }),
+      });
+
+      const result = await response.json();
+      if (!response.ok || !result.success) {
+        throw new Error(result.error || 'Gagal menghapus rujukan internal');
+      }
+
+      await fetchReferrals();
       toast({
         title: "Berhasil",
         description: "Rujukan internal berhasil dihapus",
       });
+    } catch (error) {
+      toast({
+        title: "Error",
+        description: error instanceof Error ? error.message : "Gagal menghapus rujukan internal",
+        variant: "destructive",
+      });
+    } finally {
+      setDeletingKey(null);
     }
   };
 
   const resetForm = () => {
-    setFormData({
-      tanggal_rujukan: new Date().toISOString().split('T')[0],
-      dari_poli: '',
-      ke_poli: '',
-      dokter_pengirim: '',
-      dokter_tujuan: '',
-      diagnosa: '',
-      alasan_rujukan: '',
-      catatan: '',
-      status: 'Pending',
-      prioritas: 'Normal'
-    });
+    setFormData(createDefaultForm());
     setEditingItem(null);
     setShowForm(false);
   };
 
-  const getStatusBadge = (status: string) => {
-    const variants = {
-      'Pending': 'default',
-      'Diterima': 'secondary',
-      'Selesai': 'default'
-    } as const;
-    return <Badge variant={variants[status as keyof typeof variants] || 'default'}>{status}</Badge>;
-  };
-
-  const getPriorityBadge = (prioritas: string) => {
-    const variants = {
-      'Normal': 'outline',
-      'Cito': 'secondary',
-      'Urgent': 'destructive'
-    } as const;
-    return <Badge variant={variants[prioritas as keyof typeof variants] || 'outline'}>{prioritas}</Badge>;
-  };
+  const currentDoctorName = sourceInfo?.asal_nm_dokter || user?.name || user?.username || '-';
+  const currentPoliName = sourceInfo?.asal_nm_poli || user?.kd_poli || '-';
 
   return (
     <Dialog open={isOpen} onOpenChange={onClose}>
@@ -182,15 +276,30 @@ export const InternalReferralModal: React.FC<InternalReferralModalProps> = ({ is
         </DialogHeader>
 
         <div className="space-y-4">
-          {/* Add Button */}
+          <Card>
+            <CardContent className="grid gap-4 pt-6 md:grid-cols-3">
+              <div>
+                <p className="text-sm font-medium text-muted-foreground">No. Rawat</p>
+                <p className="text-sm font-semibold">{noRawat || '-'}</p>
+              </div>
+              <div>
+                <p className="text-sm font-medium text-muted-foreground">Asal Poli</p>
+                <p className="text-sm font-semibold">{currentPoliName || '-'}</p>
+              </div>
+              <div>
+                <p className="text-sm font-medium text-muted-foreground">Dokter Perujuk</p>
+                <p className="text-sm font-semibold">{currentDoctorName || '-'}</p>
+              </div>
+            </CardContent>
+          </Card>
+
           <div className="flex justify-end">
-            <Button onClick={() => setShowForm(true)}>
-              <Plus className="h-4 w-4 mr-2" />
+            <Button onClick={() => setShowForm(true)} disabled={loading || saving}>
+              <Plus className="mr-2 h-4 w-4" />
               Tambah Rujukan
             </Button>
           </div>
 
-          {/* Form */}
           {showForm && (
             <Card>
               <CardHeader>
@@ -199,181 +308,176 @@ export const InternalReferralModal: React.FC<InternalReferralModalProps> = ({ is
                 </CardTitle>
               </CardHeader>
               <CardContent className="space-y-4">
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
                   <div>
-                    <Label htmlFor="tanggal_rujukan">Tanggal Rujukan</Label>
-                    <input
-                      type="date"
-                      id="tanggal_rujukan"
-                      value={formData.tanggal_rujukan}
-                      onChange={(e) => setFormData(prev => ({ ...prev, tanggal_rujukan: e.target.value }))}
-                      className="w-full p-2 border rounded"
-                    />
-                  </div>
-                  <div>
-                    <Label htmlFor="prioritas">Prioritas</Label>
+                    <Label htmlFor="kd_poli">Poli Tujuan</Label>
                     <select
-                      id="prioritas"
-                      value={formData.prioritas}
-                      onChange={(e) => setFormData(prev => ({ ...prev, prioritas: e.target.value as any }))}
-                      className="w-full p-2 border rounded"
+                      id="kd_poli"
+                      value={formData.kd_poli}
+                      onChange={(e) => setFormData((prev) => ({ ...prev, kd_poli: e.target.value }))}
+                      className="w-full rounded-md border bg-background px-3 py-2 text-sm"
+                      disabled={saving}
                     >
-                      <option value="Normal">Normal</option>
-                      <option value="Cito">Cito</option>
-                      <option value="Urgent">Urgent</option>
-                    </select>
-                  </div>
-                  <div>
-                    <Label htmlFor="status">Status</Label>
-                    <select
-                      id="status"
-                      value={formData.status}
-                      onChange={(e) => setFormData(prev => ({ ...prev, status: e.target.value as any }))}
-                      className="w-full p-2 border rounded"
-                    >
-                      <option value="Pending">Pending</option>
-                      <option value="Diterima">Diterima</option>
-                      <option value="Selesai">Selesai</option>
-                    </select>
-                  </div>
-                  <div>
-                    <Label htmlFor="dari_poli">Dari Poliklinik</Label>
-                    <select
-                      id="dari_poli"
-                      value={formData.dari_poli}
-                      onChange={(e) => setFormData(prev => ({ ...prev, dari_poli: e.target.value }))}
-                      className="w-full p-2 border rounded"
-                    >
-                      <option value="">Pilih Poliklinik</option>
-                      {poliklinikOptions.map(poli => (
-                        <option key={poli} value={poli}>{poli}</option>
+                      <option value="">Pilih Poli Tujuan</option>
+                      {poliOptions.map((poli) => (
+                        <option key={poli.kd_poli} value={poli.kd_poli}>
+                          {poli.nm_poli}
+                        </option>
                       ))}
                     </select>
                   </div>
                   <div>
-                    <Label htmlFor="ke_poli">Ke Poliklinik</Label>
+                    <Label htmlFor="kd_dokter">Dokter Tujuan</Label>
                     <select
-                      id="ke_poli"
-                      value={formData.ke_poli}
-                      onChange={(e) => setFormData(prev => ({ ...prev, ke_poli: e.target.value }))}
-                      className="w-full p-2 border rounded"
+                      id="kd_dokter"
+                      value={formData.kd_dokter}
+                      onChange={(e) => setFormData((prev) => ({ ...prev, kd_dokter: e.target.value }))}
+                      className="w-full rounded-md border bg-background px-3 py-2 text-sm"
+                      disabled={saving}
                     >
-                      <option value="">Pilih Poliklinik</option>
-                      {poliklinikOptions.map(poli => (
-                        <option key={poli} value={poli}>{poli}</option>
+                      <option value="">Pilih Dokter Tujuan</option>
+                      {doctorOptions.map((doctor) => (
+                        <option key={doctor.kd_dokter} value={doctor.kd_dokter}>
+                          {doctor.nm_dokter}
+                        </option>
                       ))}
                     </select>
                   </div>
-                  <div>
-                    <Label htmlFor="dokter_pengirim">Dokter Pengirim</Label>
-                    <Input
-                      id="dokter_pengirim"
-                      value={formData.dokter_pengirim}
-                      onChange={(e) => setFormData(prev => ({ ...prev, dokter_pengirim: e.target.value }))}
+                  <div className="md:col-span-2">
+                    <Label htmlFor="konsul">Konsul</Label>
+                    <Textarea
+                      id="konsul"
+                      value={formData.konsul}
+                      onChange={(e) => setFormData((prev) => ({ ...prev, konsul: e.target.value }))}
+                      rows={3}
+                      disabled={saving}
                     />
                   </div>
-                  <div>
-                    <Label htmlFor="dokter_tujuan">Dokter Tujuan</Label>
-                    <Input
-                      id="dokter_tujuan"
-                      value={formData.dokter_tujuan}
-                      onChange={(e) => setFormData(prev => ({ ...prev, dokter_tujuan: e.target.value }))}
+                  <div className="md:col-span-2">
+                    <Label htmlFor="pemeriksaan">Pemeriksaan</Label>
+                    <Textarea
+                      id="pemeriksaan"
+                      value={formData.pemeriksaan}
+                      onChange={(e) => setFormData((prev) => ({ ...prev, pemeriksaan: e.target.value }))}
+                      rows={3}
+                      disabled={saving}
                     />
                   </div>
                   <div className="md:col-span-2">
                     <Label htmlFor="diagnosa">Diagnosa</Label>
-                    <Input
+                    <Textarea
                       id="diagnosa"
                       value={formData.diagnosa}
-                      onChange={(e) => setFormData(prev => ({ ...prev, diagnosa: e.target.value }))}
-                    />
-                  </div>
-                  <div className="md:col-span-3">
-                    <Label htmlFor="alasan_rujukan">Alasan Rujukan</Label>
-                    <Textarea
-                      id="alasan_rujukan"
-                      value={formData.alasan_rujukan}
-                      onChange={(e) => setFormData(prev => ({ ...prev, alasan_rujukan: e.target.value }))}
+                      onChange={(e) => setFormData((prev) => ({ ...prev, diagnosa: e.target.value }))}
                       rows={3}
+                      disabled={saving}
                     />
                   </div>
-                  <div className="md:col-span-3">
-                    <Label htmlFor="catatan">Catatan</Label>
+                  <div className="md:col-span-2">
+                    <Label htmlFor="saran">Saran</Label>
                     <Textarea
-                      id="catatan"
-                      value={formData.catatan}
-                      onChange={(e) => setFormData(prev => ({ ...prev, catatan: e.target.value }))}
-                      rows={2}
+                      id="saran"
+                      value={formData.saran}
+                      onChange={(e) => setFormData((prev) => ({ ...prev, saran: e.target.value }))}
+                      rows={3}
+                      disabled={saving}
                     />
                   </div>
                 </div>
                 <div className="flex gap-2">
-                  <Button onClick={handleSave}>Simpan</Button>
-                  <Button variant="outline" onClick={resetForm}>Batal</Button>
+                  <Button onClick={handleSave} disabled={saving}>
+                    {saving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                    Simpan
+                  </Button>
+                  <Button variant="outline" onClick={resetForm} disabled={saving}>
+                    Batal
+                  </Button>
                 </div>
               </CardContent>
             </Card>
           )}
 
-          {/* Referrals List */}
           <div className="space-y-3">
-            {referrals.map((referral) => (
-              <Card key={referral.id}>
-                <CardHeader>
-                  <CardTitle className="flex items-center justify-between">
-                    <div className="flex items-center gap-2">
-                      <Clock className="h-5 w-5" />
-                      {referral.tanggal_rujukan}
-                    </div>
-                    <div className="flex gap-2">
-                      {getPriorityBadge(referral.prioritas)}
-                      {getStatusBadge(referral.status)}
-                      <Button size="sm" variant="outline" onClick={() => handleEdit(referral)}>
-                        <Edit className="h-4 w-4" />
-                      </Button>
-                      <Button size="sm" variant="destructive" onClick={() => handleDelete(referral.id!)}>
-                        <Trash2 className="h-4 w-4" />
-                      </Button>
-                    </div>
-                  </CardTitle>
-                </CardHeader>
-                <CardContent className="space-y-3">
-                  <div className="flex items-center gap-2 text-sm">
-                    <span className="font-medium">{referral.dari_poli}</span>
-                    <ArrowRight className="h-4 w-4" />
-                    <span className="font-medium">{referral.ke_poli}</span>
-                  </div>
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <div>
-                      <p className="text-sm font-medium text-muted-foreground">Dokter Pengirim</p>
-                      <p className="text-sm">{referral.dokter_pengirim}</p>
-                    </div>
-                    <div>
-                      <p className="text-sm font-medium text-muted-foreground">Dokter Tujuan</p>
-                      <p className="text-sm">{referral.dokter_tujuan}</p>
-                    </div>
-                    <div className="md:col-span-2">
-                      <p className="text-sm font-medium text-muted-foreground">Diagnosa</p>
-                      <p className="text-sm">{referral.diagnosa}</p>
-                    </div>
-                    <div className="md:col-span-2">
-                      <p className="text-sm font-medium text-muted-foreground">Alasan Rujukan</p>
-                      <p className="text-sm">{referral.alasan_rujukan}</p>
-                    </div>
-                    {referral.catatan && (
-                      <div className="md:col-span-2">
-                        <p className="text-sm font-medium text-muted-foreground">Catatan</p>
-                        <p className="text-sm">{referral.catatan}</p>
-                      </div>
-                    )}
-                  </div>
-                </CardContent>
-              </Card>
-            ))}
-            {referrals.length === 0 && (
-              <div className="text-center py-8 text-muted-foreground">
-                Belum ada rujukan internal untuk pasien ini
+            {loading ? (
+              <div className="flex items-center justify-center py-8 text-muted-foreground">
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                Memuat rujukan internal...
               </div>
+            ) : (
+              <>
+                {referrals.map((referral) => {
+                  const itemKey = `${referral.no_rawat}-${referral.original_kd_dokter || referral.kd_dokter}`;
+                  return (
+                    <Card key={itemKey}>
+                      <CardHeader>
+                        <CardTitle className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+                          <div className="flex items-center gap-2 text-base">
+                            <span className="font-medium">{currentPoliName || '-'}</span>
+                            <ArrowRight className="h-4 w-4" />
+                            <span className="font-medium">{referral.nm_poli || referral.kd_poli || '-'}</span>
+                          </div>
+                          <div className="flex gap-2">
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              onClick={() => handleEdit(referral)}
+                              disabled={saving || deletingKey === itemKey}
+                            >
+                              <Edit className="h-4 w-4" />
+                            </Button>
+                            <Button
+                              size="sm"
+                              variant="destructive"
+                              onClick={() => handleDelete(referral)}
+                              disabled={saving || deletingKey === itemKey}
+                            >
+                              {deletingKey === itemKey ? (
+                                <Loader2 className="h-4 w-4 animate-spin" />
+                              ) : (
+                                <Trash2 className="h-4 w-4" />
+                              )}
+                            </Button>
+                          </div>
+                        </CardTitle>
+                      </CardHeader>
+                      <CardContent className="space-y-4">
+                        <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+                          <div>
+                            <p className="text-sm font-medium text-muted-foreground">Dokter Perujuk</p>
+                            <p className="text-sm">{currentDoctorName || '-'}</p>
+                          </div>
+                          <div>
+                            <p className="text-sm font-medium text-muted-foreground">Dokter Tujuan</p>
+                            <p className="text-sm">{referral.nm_dokter || referral.kd_dokter || '-'}</p>
+                          </div>
+                          <div className="md:col-span-2">
+                            <p className="text-sm font-medium text-muted-foreground">Konsul</p>
+                            <p className="whitespace-pre-wrap text-sm">{referral.konsul || '-'}</p>
+                          </div>
+                          <div className="md:col-span-2">
+                            <p className="text-sm font-medium text-muted-foreground">Pemeriksaan</p>
+                            <p className="whitespace-pre-wrap text-sm">{referral.pemeriksaan || '-'}</p>
+                          </div>
+                          <div className="md:col-span-2">
+                            <p className="text-sm font-medium text-muted-foreground">Diagnosa</p>
+                            <p className="whitespace-pre-wrap text-sm">{referral.diagnosa || '-'}</p>
+                          </div>
+                          <div className="md:col-span-2">
+                            <p className="text-sm font-medium text-muted-foreground">Saran</p>
+                            <p className="whitespace-pre-wrap text-sm">{referral.saran || '-'}</p>
+                          </div>
+                        </div>
+                      </CardContent>
+                    </Card>
+                  );
+                })}
+
+                {referrals.length === 0 && (
+                  <div className="py-8 text-center text-muted-foreground">
+                    Belum ada rujukan internal untuk pasien ini
+                  </div>
+                )}
+              </>
             )}
           </div>
         </div>

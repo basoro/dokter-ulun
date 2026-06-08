@@ -1618,6 +1618,10 @@ const MedicalRecord = () => {
       </div>
     ));
   };
+  const renderVisitLaboratoryHistory = (items: LabData[], noRawat: string, source: string) => {
+    const normalizedItems = buildFocusedItems(items || [], noRawat, source);
+    return renderLaboratoryHistoryCards(normalizedItems);
+  };
   const renderRadiologyRequestCards = (items: any[]) => {
     if (items.length === 0) {
       return <p className="text-sm italic text-muted-foreground">Belum ada data permintaan radiologi.</p>;
@@ -4862,72 +4866,7 @@ const MedicalRecord = () => {
                             Laboratorium
                           </h3>
                           <div className="grid grid-cols-1 gap-4">
-                            {allOutpatientVisits.map((visit) => {
-                              const groupedLabs: any = {};
-
-                              for (const lab of (visit.laboratory || []) as any[]) {
-                                const key = `${lab.tanggal} ${lab.jam}`;
-                                if (!groupedLabs[key]) {
-                                  groupedLabs[key] = {
-                                    tanggal: lab.tanggal,
-                                    jam: lab.jam,
-                                    no_rawat: visit.no_rawat,
-                                    perawatans: [],
-                                  };
-                                }
-                                groupedLabs[key].perawatans.push(lab);
-                              }
-
-                              return Object.values(groupedLabs).map((group: any, index) => (
-                                <div
-                                  key={`${group.no_rawat}-${group.tanggal}-${group.jam}-${index}`}
-                                  className="border rounded-lg p-4 hover:bg-muted/50 hover:shadow-lg transition-shadow"
-                                >
-                                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
-                                    <div>
-                                      <p className="text-sm text-muted-foreground">Tanggal</p>
-                                      <p className="font-medium">{formatDateSafe((group as any).tanggal)}</p>
-                                    </div>
-                                    <div>
-                                      <p className="text-sm text-muted-foreground">No. Rawat</p>
-                                      <p className="font-medium">{(group as any).no_rawat}</p>
-                                    </div>
-                                  </div>
-
-                                  {((group as any).perawatans as any[]).map((lab: any, labIndex) => (
-                                    <div key={labIndex} className="mb-4">
-                                      <h4 className="text-md font-semibold text-primary">{lab.nm_perawatan}</h4>
-                                      <div className="space-y-2">
-                                        {Array.isArray(lab.hasil) && lab.hasil.length > 0 ? (
-                                          lab.hasil.map((test, testIndex) => (
-                                            <div key={testIndex} className="grid grid-cols-1 md:grid-cols-4 gap-2 text-sm border-l-2 border-primary pl-4">
-                                              <div>
-                                                <span className="text-muted-foreground">Nama:</span>
-                                                <span className="ml-2 font-medium">{test.pemeriksaan}</span>
-                                              </div>
-                                              <div>
-                                                <span className="text-muted-foreground">Hasil:</span>
-                                                <span className="ml-2">{test.nilai}</span>
-                                              </div>
-                                              <div>
-                                                <span className="text-muted-foreground">Rujukan:</span>
-                                                <span className="ml-2">{test.nilai_rujukan}</span>
-                                              </div>
-                                              <div>
-                                                <span className="text-muted-foreground">Keterangan:</span>
-                                                <span className="ml-2">{test.keterangan}</span>
-                                              </div>
-                                            </div>
-                                          ))
-                                        ) : (
-                                          <p className="text-sm italic text-muted-foreground">Tidak ada hasil pemeriksaan.</p>
-                                        )}
-                                      </div>
-                                    </div>
-                                  ))}
-                                </div>
-                              ));
-                            })}
+                            {renderVisitLaboratoryHistory((visit.laboratory || []) as LabData[], visit.no_rawat, 'Rawat Jalan')}
                           </div>
                         </div>
 
@@ -5180,98 +5119,7 @@ const MedicalRecord = () => {
                             Laboratorium
                           </h3>
                           <div className="grid grid-cols-1 gap-4">
-                            {((visit.laboratory || []) as any[]).map((lab: any, labIndex) => (
-                              <div key={labIndex} className="border rounded-lg p-4 hover:bg-muted/50">
-                                <div className="mb-2">
-                                  <p className="text-sm text-muted-foreground">Tanggal</p>
-                                   <p className="font-medium">{formatDateSafe(lab.tanggal)}</p>
-                                </div>
-                                <div className="space-y-2">
-                                  {allInpatientVisits.map((visit) => {
-                                    // Grouping berdasarkan tanggal + jam
-                                    const groupedLaboratory = {};
-
-                                    for (const lab of visit.laboratory || []) {
-                                      const key = `${lab.tanggal} ${lab.jam}`;
-                                      if (!groupedLaboratory[key]) {
-                                        groupedLaboratory[key] = {
-                                          tanggal: lab.tanggal,
-                                          jam: lab.jam,
-                                          no_rawat: visit.no_rawat,
-                                          nm_perawatan: lab.nm_perawatan,
-                                          perawatans: [],
-                                        };
-                                      }
-                                      groupedLaboratory[key].perawatans.push(lab);
-                                    }
-
-                                    return Object.values(groupedLaboratory).map((group, groupIndex) => (
-                                      <div
-                                        key={groupIndex}
-                                        className="border rounded-lg p-4 cursor-move hover:shadow-lg transition-shadow"
-                                        draggable
-                                        onDragStart={(e) => {
-                                          setDraggingLab(group as any);
-                                          e.dataTransfer.effectAllowed = 'move';
-                                        }}
-                                      >
-                                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
-                                          <div>
-                                            <p className="text-sm text-muted-foreground">Tanggal</p>
-                                            <p className="font-medium">
-                                              {formatDateSafe((group as any).tanggal)}
-                                            </p>
-                                          </div>
-                                          <div>
-                                            <p className="text-sm text-muted-foreground">No. Rawat</p>
-                                            <p className="font-medium">{(group as any).no_rawat}</p>
-                                          </div>
-                                        </div>
-
-                                        {((group as any).perawatans as any[]).map((lab: any, labIndex) => (
-                                          <div key={labIndex} className="mb-4">
-                                            <h4 className="text-md font-semibold text-primary">{lab.nm_perawatan}</h4>
-
-                                            <div className="space-y-2">
-                                              <h4 className="font-medium">Pemeriksaan:</h4>
-                                              {Array.isArray(lab.hasil) && lab.hasil.length > 0 ? (
-                                                lab.hasil.map((test, testIndex) => (
-                                                  <div
-                                                    key={testIndex}
-                                                    className="grid grid-cols-1 md:grid-cols-4 gap-4 border-l-2 border-primary pl-4"
-                                                  >
-                                                    <div>
-                                                      <p className="text-sm text-muted-foreground">Nama</p>
-                                                      <p className="font-medium">{test.pemeriksaan}</p>
-                                                    </div>
-                                                    <div>
-                                                      <p className="text-sm text-muted-foreground">Hasil</p>
-                                                      <p className="font-medium">{test.nilai}</p>
-                                                    </div>
-                                                    <div>
-                                                      <p className="text-sm text-muted-foreground">Rujukan</p>
-                                                      <p className="font-medium">{test.nilai_rujukan}</p>
-                                                    </div>
-                                                    <div>
-                                                      <p className="text-sm text-muted-foreground">Keterangan</p>
-                                                      <p className="font-medium">{test.keterangan}</p>
-                                                    </div>
-                                                  </div>
-                                                ))
-                                              ) : (
-                                                <p className="text-sm italic text-muted-foreground">
-                                                  Tidak ada hasil pemeriksaan
-                                                </p>
-                                              )}
-                                            </div>
-                                          </div>
-                                        ))}
-                                      </div>
-                                    ));
-                                  })}
-                                </div>
-                              </div>
-                            ))}
+                            {renderVisitLaboratoryHistory((visit.laboratory || []) as LabData[], visit.no_rawat, 'Rawat Inap')}
                           </div>
                         </div>
 
