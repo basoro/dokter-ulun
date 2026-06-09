@@ -10,7 +10,7 @@ import {
   User, Calendar, Stethoscope, Syringe, Pill, FlaskConical, Radio,
   Activity, ClipboardList, BedDouble, UserCircle, Building, MapPin,
   Phone, Heart, CalendarDays, FileText, Plus, X, Trash2, Image as ImageIcon, Clock, ArrowLeft,
-  Calendar as CalendarIcon, Copy, ChevronDown, ChevronLeft, ChevronRight, ChevronUp, Brain, Check, ChevronsUpDown, Pause, Pencil, Play
+  Calendar as CalendarIcon, Copy, ChevronDown, ChevronLeft, ChevronRight, ChevronUp, Brain, Check, ChevronsUpDown, Maximize2, Pause, Pencil, Play
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -620,9 +620,10 @@ const MedicalRecord = () => {
   // Examination form states
   const [examinationForm, setExaminationForm] = useState(getDefaultExaminationForm);
 
+  const [fullscreenLabHistory, setFullscreenLabHistory] = useState<any | null>(null);
   const [draggingLab, setDraggingLab] = useState<LabData | null>(null);
   const [canvasItems, setCanvasItems] = useState<Array<{ type: string; content: any; position: { x: number; y: number } }>>([]);
-  const [draggingRad, setDraggingRad] = useState<any>(null);
+  const [draggingRad, setDraggingRad] = useState<any | null>(null);
   const [radiologies, setRadiologies] = useState<RadiologyFormItem[]>(getDefaultRadiologyRequestForm);
   const [radiologyServiceOptions, setRadiologyServiceOptions] = useState<RadiologyServiceOption[]>([]);
   const [radiologySearchOpen, setRadiologySearchOpen] = useState<Record<number, boolean>>({});
@@ -696,6 +697,38 @@ const MedicalRecord = () => {
   const dataContextVersionRef = useRef(0);
   const [expandedVisitKeys, setExpandedVisitKeys] = useState<Record<string, boolean>>({});
   const [loadingVisitDetailsKeys, setLoadingVisitDetailsKeys] = useState<Record<string, boolean>>({});
+
+  const addLaboratoryResultToCanvas = useCallback((labGroup: any) => {
+    setCanvasItems((previous) => [
+      ...previous,
+      {
+        type: 'laboratory',
+        content: labGroup,
+        position: { x: 0, y: 0 }
+      }
+    ]);
+    setDraggingLab(null);
+    toast({
+      title: "Lab Result Added",
+      description: "Hasil laboratorium berhasil ditambahkan ke canvas",
+    });
+  }, [toast]);
+
+  const addRadiologyResultToCanvas = useCallback((radiologyItem: any) => {
+    setCanvasItems((previous) => [
+      ...previous,
+      {
+        type: 'radiology',
+        content: radiologyItem,
+        position: { x: 0, y: 0 }
+      }
+    ]);
+    setDraggingRad(null);
+    toast({
+      title: "Radiology Result Added",
+      description: "Hasil radiologi berhasil ditambahkan ke canvas",
+    });
+  }, [toast]);
   const hasMoreCurrentVisitTab = visitHistoryTab === 'outpatient'
     ? pagination.outpatient.hasMore
     : pagination.inpatient.hasMore;
@@ -1528,6 +1561,59 @@ const MedicalRecord = () => {
       </div>
     )});
   };
+  const renderLaboratoryHistoryDetails = (labGroup: any) => {
+    if (!Array.isArray(labGroup.pemeriksaan) || labGroup.pemeriksaan.length === 0) {
+      return <p className="text-sm italic text-muted-foreground">Tidak ada hasil pemeriksaan</p>;
+    }
+
+    const groupedTests = (labGroup.pemeriksaan as LabTest[]).reduce((groups, test) => {
+      const key = test.nama?.trim() || '-';
+      if (!groups[key]) {
+        groups[key] = [];
+      }
+      groups[key].push(test);
+      return groups;
+    }, {} as Record<string, LabTest[]>);
+
+    return Object.entries(groupedTests).map(([groupName, tests], groupIdx) => (
+      <div key={`${groupName}-${groupIdx}`} className="border rounded-lg p-3 space-y-3 bg-muted/20">
+        <div>
+          <p className="text-sm text-muted-foreground">Nama</p>
+          <p className="font-semibold">{groupName}</p>
+        </div>
+        <div className="space-y-2">
+          {(tests as LabTest[]).map((test, testIndex) => (
+            <div
+              key={`${groupName}-${testIndex}`}
+              className={cn(
+                "grid grid-cols-1 md:grid-cols-4 gap-4 border-l-2 border-primary pl-4 rounded-r px-2 py-2 bg-background",
+                test.keterangan === 'H' && "bg-red-100 text-red-900",
+                test.keterangan === 'L' && "bg-yellow-100 text-yellow-900"
+              )}
+            >
+              <div>
+                <p className="text-sm text-muted-foreground">Pemeriksaan</p>
+                <p className="font-medium">{test.pemeriksaan || '-'}</p>
+              </div>
+              <div>
+                <p className="text-sm text-muted-foreground">Hasil</p>
+                <p className="font-medium">{test.hasil || '-'}</p>
+              </div>
+              <div>
+                <p className="text-sm text-muted-foreground">Rujukan</p>
+                <p className="font-medium">{test.rujukan || '-'}</p>
+              </div>
+              <div>
+                <p className="text-sm text-muted-foreground">Keterangan</p>
+                <p className="font-medium">{test.keterangan || '-'}</p>
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+    ));
+  };
+
   const renderLaboratoryHistoryCards = (items: any[]) => {
     if (items.length === 0) {
       return <p className="text-sm italic text-muted-foreground">Belum ada riwayat pemeriksaan laboratorium.</p>;
@@ -1546,74 +1632,58 @@ const MedicalRecord = () => {
           e.dataTransfer.effectAllowed = 'move';
         }}
       >
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
-          <div>
-            <p className="text-sm text-muted-foreground">Tanggal</p>
-            <p className="font-medium">{formatDateSafe(labGroup.tanggal)}</p>
+        <div className="mb-4 flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+          <div className="grid flex-1 grid-cols-1 gap-4 md:grid-cols-3">
+            <div>
+              <p className="text-sm text-muted-foreground">Tanggal</p>
+              <p className="font-medium">{formatDateSafe(labGroup.tanggal)}</p>
+            </div>
+            <div>
+              <p className="text-sm text-muted-foreground">No. Rawat</p>
+              <p className="font-medium">{labGroup.no_rawat}</p>
+            </div>
+            <div>
+              <p className="text-sm text-muted-foreground">Sumber</p>
+              <p className="font-medium">{labGroup.source}</p>
+            </div>
           </div>
-          <div>
-            <p className="text-sm text-muted-foreground">No. Rawat</p>
-            <p className="font-medium">{labGroup.no_rawat}</p>
-          </div>
-          <div>
-            <p className="text-sm text-muted-foreground">Sumber</p>
-            <p className="font-medium">{labGroup.source}</p>
+          <div className="flex w-full flex-col gap-2 md:w-auto md:items-end">
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              className="w-full md:w-auto"
+              onClick={(event) => {
+                event.preventDefault();
+                event.stopPropagation();
+                addLaboratoryResultToCanvas({
+                  tanggal: labGroup.tanggal,
+                  pemeriksaan: labGroup.pemeriksaan
+                });
+              }}
+            >
+              <Plus className="mr-2 h-4 w-4" />
+              Tambah ke Canvas
+            </Button>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              className="w-full md:w-auto"
+              onClick={(event) => {
+                event.preventDefault();
+                event.stopPropagation();
+                setFullscreenLabHistory(labGroup);
+              }}
+            >
+              <Maximize2 className="mr-2 h-4 w-4" />
+              Fullscreen
+            </Button>
           </div>
         </div>
         <div className="space-y-2">
           <h4 className="font-medium">Pemeriksaan:</h4>
-          {Array.isArray(labGroup.pemeriksaan) && labGroup.pemeriksaan.length > 0 ? (
-            (() => {
-              const groupedTests = (labGroup.pemeriksaan as LabTest[]).reduce((groups, test) => {
-                const key = test.nama?.trim() || '-';
-                if (!groups[key]) {
-                  groups[key] = [];
-                }
-                groups[key].push(test);
-                return groups;
-              }, {} as Record<string, LabTest[]>);
-
-              return Object.entries(groupedTests).map(([groupName, tests], groupIdx) => (
-              <div key={`${groupName}-${groupIdx}`} className="border rounded-lg p-3 space-y-3 bg-muted/20">
-                <div>
-                  <p className="text-sm text-muted-foreground">Nama</p>
-                  <p className="font-semibold">{groupName}</p>
-                </div>
-                <div className="space-y-2">
-                  {(tests as LabTest[]).map((test, testIndex) => (
-                    <div
-                      key={`${groupName}-${testIndex}`}
-                      className={cn(
-                        "grid grid-cols-1 md:grid-cols-4 gap-4 border-l-2 border-primary pl-4 rounded-r px-2 py-2 bg-background",
-                        test.keterangan === 'H' && "bg-red-100 text-red-900",
-                        test.keterangan === 'L' && "bg-yellow-100 text-yellow-900"
-                      )}
-                    >
-                      <div>
-                        <p className="text-sm text-muted-foreground">Pemeriksaan</p>
-                        <p className="font-medium">{test.pemeriksaan || '-'}</p>
-                      </div>
-                      <div>
-                        <p className="text-sm text-muted-foreground">Hasil</p>
-                        <p className="font-medium">{test.hasil || '-'}</p>
-                      </div>
-                      <div>
-                        <p className="text-sm text-muted-foreground">Rujukan</p>
-                        <p className="font-medium">{test.rujukan || '-'}</p>
-                      </div>
-                      <div>
-                        <p className="text-sm text-muted-foreground">Keterangan</p>
-                        <p className="font-medium">{test.keterangan || '-'}</p>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-              ));
-            })()
-          ) : (
-            <p className="text-sm italic text-muted-foreground">Tidak ada hasil pemeriksaan</p>
-          )}
+          {renderLaboratoryHistoryDetails(labGroup)}
         </div>
       </div>
     ));
@@ -1712,26 +1782,42 @@ const MedicalRecord = () => {
         }}
       >
         <div className="space-y-4">
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-          <div>
-            <p className="text-sm text-muted-foreground">Tanggal</p>
-            <p className="font-medium">{formatDateSafe(rad.tanggal)}</p>
-          </div>
-          <div>
-            <p className="text-sm text-muted-foreground">No. Rawat</p>
-            <p className="font-medium">{rad.no_rawat}</p>
-          </div>
-          <div>
-            <p className="text-sm text-muted-foreground">Sumber</p>
-            <p className="font-medium">{rad.source}</p>
-          </div>
-          <div>
-            <p className="text-sm text-muted-foreground">Pemeriksaan</p>
-            <div className="mt-1 flex flex-wrap items-center gap-2">
-              <p className="font-medium">{rad.pemeriksaan}</p>
-              {renderRadiologyModalityBadge(rad)}
+          <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+            <div className="grid flex-1 grid-cols-1 gap-4 md:grid-cols-4">
+              <div>
+                <p className="text-sm text-muted-foreground">Tanggal</p>
+                <p className="font-medium">{formatDateSafe(rad.tanggal)}</p>
+              </div>
+              <div>
+                <p className="text-sm text-muted-foreground">No. Rawat</p>
+                <p className="font-medium">{rad.no_rawat}</p>
+              </div>
+              <div>
+                <p className="text-sm text-muted-foreground">Sumber</p>
+                <p className="font-medium">{rad.source}</p>
+              </div>
+              <div>
+                <p className="text-sm text-muted-foreground">Pemeriksaan</p>
+                <div className="mt-1 flex flex-wrap items-center gap-2">
+                  <p className="font-medium">{rad.pemeriksaan}</p>
+                  {renderRadiologyModalityBadge(rad)}
+                </div>
+              </div>
             </div>
-          </div>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              className="w-full md:w-auto"
+              onClick={(event) => {
+                event.preventDefault();
+                event.stopPropagation();
+                addRadiologyResultToCanvas(rad);
+              }}
+            >
+              <Plus className="mr-2 h-4 w-4" />
+              Tambah ke Canvas
+            </Button>
           </div>
           <div>
             <p className="text-sm text-muted-foreground">Hasil</p>
@@ -6641,22 +6727,7 @@ const MedicalRecord = () => {
                   onDrop={(e) => {
                     e.preventDefault();
                     if (draggingLab) {
-                      const rect = e.currentTarget.getBoundingClientRect();
-                      const x = e.clientX - rect.left;
-                      const y = e.clientY - rect.top;
-                      
-                      const newItem = {
-                        type: 'laboratory',
-                        content: draggingLab,
-                        position: { x, y }
-                      };
-                      
-                      setCanvasItems([...canvasItems, newItem]);
-                      setDraggingLab(null);
-                      toast({
-                        title: "Lab Result Added",
-                        description: "Lab result berhasil ditambahkan ke canvas",
-                      });
+                      addLaboratoryResultToCanvas(draggingLab);
                     }
                   }}
                   onDragOver={(e) => e.preventDefault()}
@@ -6811,16 +6882,12 @@ const MedicalRecord = () => {
                       </TabsList>
                       <TabsContent value="outpatient">
                         {isFocusedLaboratoryLoaded ? (
-                          <ScrollArea className="h-[400px] w-full rounded-md border p-4">
-                            <div className="space-y-4">{renderLaboratoryHistoryCards(outpatientLaboratoryHistory)}</div>
-                          </ScrollArea>
+                          <div className="space-y-4">{renderLaboratoryHistoryCards(outpatientLaboratoryHistory)}</div>
                         ) : renderDeferredTabState('hasil laboratorium')}
                       </TabsContent>
                       <TabsContent value="inpatient">
                         {isFocusedLaboratoryLoaded ? (
-                          <ScrollArea className="h-[400px] w-full rounded-md border p-4">
-                            <div className="space-y-4">{renderLaboratoryHistoryCards(inpatientLaboratoryHistory)}</div>
-                          </ScrollArea>
+                          <div className="space-y-4">{renderLaboratoryHistoryCards(inpatientLaboratoryHistory)}</div>
                         ) : renderDeferredTabState('hasil laboratorium')}
                       </TabsContent>
                     </Tabs>
@@ -7028,22 +7095,7 @@ const MedicalRecord = () => {
                   onDrop={(e) => {
                     e.preventDefault();
                     if (draggingRad) {
-                      const rect = e.currentTarget.getBoundingClientRect();
-                      const x = e.clientX - rect.left;
-                      const y = e.clientY - rect.top;
-                      
-                      const newItem = {
-                        type: 'radiology',
-                        content: draggingRad,
-                        position: { x, y }
-                      };
-                      
-                      setCanvasItems([...canvasItems, newItem]);
-                      setDraggingRad(null);
-                      toast({
-                        title: "Radiology Result Added",
-                        description: "Hasil radiologi berhasil ditambahkan ke canvas",
-                      });
+                      addRadiologyResultToCanvas(draggingRad);
                     }
                   }}
                   onDragOver={(e) => e.preventDefault()}
@@ -7150,16 +7202,12 @@ const MedicalRecord = () => {
                       </TabsList>
                       <TabsContent value="outpatient">
                         {isFocusedRadiologyLoaded ? (
-                          <ScrollArea className="h-[400px] w-full rounded-md border p-4">
-                            <div className="space-y-4">{renderRadiologyHistoryCards(outpatientRadiologyHistory)}</div>
-                          </ScrollArea>
+                          <div className="space-y-4">{renderRadiologyHistoryCards(outpatientRadiologyHistory)}</div>
                         ) : renderDeferredTabState('hasil radiologi')}
                       </TabsContent>
                       <TabsContent value="inpatient">
                         {isFocusedRadiologyLoaded ? (
-                          <ScrollArea className="h-[400px] w-full rounded-md border p-4">
-                            <div className="space-y-4">{renderRadiologyHistoryCards(inpatientRadiologyHistory)}</div>
-                          </ScrollArea>
+                          <div className="space-y-4">{renderRadiologyHistoryCards(inpatientRadiologyHistory)}</div>
                         ) : renderDeferredTabState('hasil radiologi')}
                       </TabsContent>
                     </Tabs>
@@ -7206,6 +7254,47 @@ const MedicalRecord = () => {
           )}
         </div>
       ) : null}
+
+      <Dialog
+        open={Boolean(fullscreenLabHistory)}
+        onOpenChange={(open) => {
+          if (!open) {
+            setFullscreenLabHistory(null);
+          }
+        }}
+      >
+        <DialogContent className="max-w-6xl max-h-[90vh] overflow-hidden p-0">
+          <DialogHeader className="border-b px-6 py-4">
+            <DialogTitle className="flex items-center gap-2">
+              <FlaskConical className="h-5 w-5" />
+              Hasil Laboratorium Sesuai Tanggal
+            </DialogTitle>
+          </DialogHeader>
+
+          {fullscreenLabHistory ? (
+            <div className="max-h-[calc(90vh-88px)] space-y-4 overflow-y-auto px-6 py-4 pr-4">
+              <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
+                <div>
+                  <p className="text-sm text-muted-foreground">Tanggal</p>
+                  <p className="font-medium">{formatDateSafe(fullscreenLabHistory.tanggal)}</p>
+                </div>
+                <div>
+                  <p className="text-sm text-muted-foreground">No. Rawat</p>
+                  <p className="font-medium">{fullscreenLabHistory.no_rawat}</p>
+                </div>
+                <div>
+                  <p className="text-sm text-muted-foreground">Sumber</p>
+                  <p className="font-medium">{fullscreenLabHistory.source}</p>
+                </div>
+              </div>
+              <div className="space-y-2">
+                <h4 className="font-medium">Pemeriksaan:</h4>
+                {renderLaboratoryHistoryDetails(fullscreenLabHistory)}
+              </div>
+            </div>
+          ) : null}
+        </DialogContent>
+      </Dialog>
 
       <Dialog
         open={pacsPreviewModal.open}
