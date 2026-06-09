@@ -63,18 +63,28 @@ const rawatJalanColumns = [
   { accessor: 'paymentStatus', header: 'Status Bayar' },
 ];
 
+const rawatJalanTabValues = ['pasien-poli', 'rujukan_internal', 'pasien_lanjutan', 'internal_lanjutan'] as const;
+type RawatJalanTab = typeof rawatJalanTabValues[number];
+
+const emptyTabCounts: Record<RawatJalanTab, number> = {
+  'pasien-poli': 0,
+  rujukan_internal: 0,
+  pasien_lanjutan: 0,
+  internal_lanjutan: 0
+};
+
 const RawatJalanTabs = () => {
   const { user } = useAuth();
   const [searchParams, setSearchParams] = useSearchParams();
   const initialToday = new Date();
   const initialFromDate = parseDateParam(searchParams.get('from'), initialToday);
   const initialToDate = parseDateParam(searchParams.get('to'), initialFromDate);
-  const normalizeTabParam = (value: string | null) => {
+  const normalizeTabParam = (value: string | null): RawatJalanTab => {
     if (!value || value === 'hari-ini' || value === 'pagi' || value === 'sore') {
       return 'pasien-poli';
     }
 
-    return value;
+    return rawatJalanTabValues.includes(value as RawatJalanTab) ? (value as RawatJalanTab) : 'pasien-poli';
   };
   const [searchQuery, setSearchQuery] = useState(searchParams.get('search') || '');
   const [activeTab, setActiveTab] = useState(normalizeTabParam(searchParams.get('tab')));
@@ -94,12 +104,74 @@ const RawatJalanTabs = () => {
   const [currentPage, setCurrentPage] = useState(parsePositiveInt(searchParams.get('page'), 1));
   const [total, setTotal] = useState(0);
   const [itemsPerPage, setItemsPerPage] = useState(parsePositiveInt(searchParams.get('itemsPerPage'), 10));
+  const [tabCounts, setTabCounts] = useState<Record<RawatJalanTab, number>>(emptyTabCounts);
   const effectiveDoctorFilter = doctorFilter || user?.username || "all";
   const requestDoctorFilter = doctorFilter === "all"
     ? "all"
     : (doctorFilter || user?.username || undefined);
-  
-  const fetchRawatJalanPatients = async (tabFilter?: string) => {
+
+  const buildRequestBody = (tabFilter: RawatJalanTab, overrides: Record<string, string> = {}) => ({
+    kd_poli: user?.kd_poli,
+    startDate: date?.from ? formatDateWIB(date.from) : '',
+    endDate: date?.to ? formatDateWIB(date.to) : '',
+    username: user?.username,
+    status: statusFilter,
+    statusBayar: statusBayarFilter,
+    kd_dokter: requestDoctorFilter,
+    tabFilter,
+    page: currentPage.toString(),
+    itemsPerPage: itemsPerPage.toString(),
+    ...overrides
+  });
+
+  const fetchRawatJalanTabCounts = async () => {
+    if (!user?.kd_poli || !date?.from || !date?.to) {
+      return;
+    }
+
+    try {
+      const results = await Promise.allSettled(
+        rawatJalanTabValues.map(async (tabValue) => {
+          const response = await fetch(API_URLS.RAWAT_JALAN_PATIENTS, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify(buildRequestBody(tabValue, {
+              page: '1',
+              itemsPerPage: '1'
+            }))
+          });
+
+          if (!response.ok) {
+            throw new Error(`HTTP ${response.status}`);
+          }
+
+          const data = await response.json();
+          if (!data.success) {
+            throw new Error(data.error || `Gagal mengambil total ${tabValue}`);
+          }
+
+          return [tabValue, Number(data.total || 0)] as const;
+        })
+      );
+
+      const nextTabCounts = { ...emptyTabCounts };
+      results.forEach((result) => {
+        if (result.status === 'fulfilled') {
+          const [tabValue, count] = result.value;
+          nextTabCounts[tabValue] = count;
+        }
+      });
+
+      setTabCounts(nextTabCounts);
+    } catch (error) {
+      console.error('Error fetching rawat jalan tab counts:', error);
+      setTabCounts(emptyTabCounts);
+    }
+  };
+
+  const fetchRawatJalanPatients = async (tabFilter?: RawatJalanTab) => {
     if (!user?.kd_poli || !date?.from || !date?.to) {
       console.log('Missing required data:', { kd_poli: user?.kd_poli, date });
       return;
@@ -107,18 +179,7 @@ const RawatJalanTabs = () => {
     
     setLoading(true);
     try {
-      let requestBody: any = {
-        kd_poli: user.kd_poli,
-        startDate: formatDateWIB(date.from),
-        endDate: formatDateWIB(date.to),
-        username: user.username,
-        status: statusFilter,
-        statusBayar: statusBayarFilter,
-        kd_dokter: requestDoctorFilter,
-        tabFilter: tabFilter || activeTab,
-        page: currentPage.toString(),
-        itemsPerPage: itemsPerPage.toString()
-      };
+      const requestBody = buildRequestBody(tabFilter || activeTab);
 
       console.log('Request dates (WIB):', {
         startDate: formatDateWIB(date.from),
@@ -156,6 +217,7 @@ const RawatJalanTabs = () => {
         setRawatJalanPatients(Array.isArray(data.data) ? data.data : []);
         setDoctorOptions(Array.isArray(data.doctors) ? data.doctors : []);
         setTotal(data.total || 0);
+        void fetchRawatJalanTabCounts();
       } else {
         console.error('Failed to fetch patients:', data);
         setRawatJalanPatients([]);
@@ -167,6 +229,7 @@ const RawatJalanTabs = () => {
       setRawatJalanPatients([]);
       setDoctorOptions([]);
       setTotal(0);
+      setTabCounts(emptyTabCounts);
     } finally {
       setLoading(false);
     }
@@ -327,23 +390,23 @@ const RawatJalanTabs = () => {
       <TabsList className="mb-4">
         <TabsTrigger value="pasien-poli">
           <Clock className="mr-2 h-4 w-4" />
-          <span>Pasien Poli</span>
+          <span>Pasien Poli ({tabCounts['pasien-poli']})</span>
         </TabsTrigger>
         <TabsTrigger value="rujukan_internal">
           <User className="mr-2 h-4 w-4" />
-          <span>Rujukan Internal</span>
+          <span>Rujukan Internal ({tabCounts.rujukan_internal})</span>
         </TabsTrigger>
         <TabsTrigger value="pasien_lanjutan">
           <List className="mr-2 h-4 w-4" />
-          <span>Pasien Lanjutan</span>
+          <span>Pasien Lanjutan ({tabCounts.pasien_lanjutan})</span>
         </TabsTrigger>
         <TabsTrigger value="internal_lanjutan">
           <List className="mr-2 h-4 w-4" />
-          <span>Internal Lanjutan</span>
+          <span>Internal Lanjutan ({tabCounts.internal_lanjutan})</span>
         </TabsTrigger>
       </TabsList>
       
-      {['pasien-poli', 'rujukan_internal', 'pasien_lanjutan', 'internal_lanjutan'].map((tabValue) => (
+      {rawatJalanTabValues.map((tabValue) => (
         <TabsContent key={tabValue} value={tabValue} className="space-y-4">
           <Card>
             <CardHeader className="pb-2 w-full">

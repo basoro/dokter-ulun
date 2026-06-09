@@ -400,7 +400,7 @@ app.post('/api/booking-operasi-data', async (req, res) => {
 // Booking Registrasi endpoint
 app.post('/api/booking-registrasi', async (req, res) => {
   try {
-    const { action, startDate, endDate, status, kd_dokter, no_rkm_medis, tanggal_periksa, data, page, itemsPerPage } = req.body;
+    const { action, startDate, endDate, status, kd_dokter, sessionFilter, no_rkm_medis, tanggal_periksa, data, page, itemsPerPage } = req.body;
     
     let result;
     
@@ -415,6 +415,7 @@ app.post('/api/booking-registrasi', async (req, res) => {
           endDate,
           status,
           kd_dokter,
+          sessionFilter,
           page,
           itemsPerPage
         });

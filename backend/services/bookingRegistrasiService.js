@@ -42,7 +42,20 @@ class BookingRegistrasiService {
     }
   }
 
-  static async getAll({ startDate, endDate, status, kd_dokter, page = 1, itemsPerPage = 10 }) {
+  static getSessionCondition(sessionFilter) {
+    const normalizedSession = String(sessionFilter || '').trim().toLowerCase();
+
+    if (normalizedSession !== 'pagi' && normalizedSession !== 'sore') {
+      return null;
+    }
+
+    return {
+      condition: "LOWER(COALESCE(pk.nm_poli, '')) LIKE ?",
+      param: `%${normalizedSession}%`
+    };
+  }
+
+  static async getAll({ startDate, endDate, status, kd_dokter, sessionFilter, page = 1, itemsPerPage = 10 }) {
     try {
       // Pagination parameters
       const limit = parseInt(itemsPerPage) === -1 || parseInt(itemsPerPage) > 1000 ? 10000 : Math.min(parseInt(itemsPerPage), 1000);
@@ -95,18 +108,37 @@ class BookingRegistrasiService {
         conditions.push('br.kd_dokter = ?');
         queryParams.push(kd_dokter);
       }
+
+      const baseConditions = [...conditions];
+      const baseQueryParams = [...queryParams];
+
+      const sessionCondition = this.getSessionCondition(sessionFilter);
+      if (sessionCondition) {
+        conditions.push(sessionCondition.condition);
+        queryParams.push(sessionCondition.param);
+      }
       
       const whereClause = conditions.length > 0 ? ' WHERE ' + conditions.join(' AND ') : '';
-      
-      // Count query
-      const countQuery = `
-        SELECT COUNT(*) as total
+      const baseWhereClause = baseConditions.length > 0 ? ' WHERE ' + baseConditions.join(' AND ') : '';
+      const countBaseQuery = `
         FROM booking_registrasi br
         LEFT JOIN pasien p ON br.no_rkm_medis = p.no_rkm_medis
         LEFT JOIN dokter d ON br.kd_dokter = d.kd_dokter
         LEFT JOIN poliklinik pk ON br.kd_poli = pk.kd_poli
         LEFT JOIN penjab pj ON br.kd_pj = pj.kd_pj
+      `;
+      
+      // Count query
+      const countQuery = `
+        SELECT COUNT(*) as total
+        ${countBaseQuery}
         ${whereClause}
+      `;
+
+      const tabCountQuery = `
+        SELECT COUNT(*) as total
+        ${countBaseQuery}
+        %WHERE_CLAUSE%
       `;
       
       const dataQuery = baseQuery + whereClause + ` ORDER BY br.tanggal_periksa DESC, br.jam_booking ASC ${limit === 10000 ? '' : `LIMIT ${limit} OFFSET ${offset}`}`;
@@ -114,6 +146,28 @@ class BookingRegistrasiService {
       // Execute count query
       const [countResult] = await db.execute(countQuery, queryParams);
       const total = countResult[0]?.total || 0;
+
+      const [pagiCountResult, soreCountResult] = await Promise.all([
+        db.execute(
+          tabCountQuery.replace(
+            '%WHERE_CLAUSE%',
+            `${baseWhereClause}${baseWhereClause ? ' AND ' : ' WHERE '}LOWER(COALESCE(pk.nm_poli, '')) LIKE ?`
+          ),
+          [...baseQueryParams, '%pagi%']
+        ),
+        db.execute(
+          tabCountQuery.replace(
+            '%WHERE_CLAUSE%',
+            `${baseWhereClause}${baseWhereClause ? ' AND ' : ' WHERE '}LOWER(COALESCE(pk.nm_poli, '')) LIKE ?`
+          ),
+          [...baseQueryParams, '%sore%']
+        )
+      ]);
+
+      const tabCounts = {
+        pagi: pagiCountResult[0]?.[0]?.total || 0,
+        sore: soreCountResult[0]?.[0]?.total || 0
+      };
       
       // Execute data query with pagination
       const queryParams2 = queryParams;
@@ -129,6 +183,7 @@ class BookingRegistrasiService {
         success: true,
         bookings,
         total,
+        tabCounts,
         limit,
         offset,
         page: parseInt(page),

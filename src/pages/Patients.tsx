@@ -134,6 +134,7 @@ const rawatJalanData = [
 const BookingTabs = () => {
   const [bookingPagi, setBookingPagi] = useState([]);
   const [bookingSore, setBookingSore] = useState([]);
+  const [activeTab, setActiveTab] = useState<'pagi' | 'sore'>('pagi');
   const [loading, setLoading] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [dateRange, setDateRange] = useState<DateRange | undefined>({
@@ -150,7 +151,7 @@ const BookingTabs = () => {
   const [totalSore, setTotalSore] = useState(0);
   const [itemsPerPage, setItemsPerPage] = useState(10);
 
-  const fetchBookingData = async () => {
+  const fetchBookingData = async (tabValue: 'pagi' | 'sore' = activeTab) => {
     setLoading(true);
     try {
       const requestBody = {
@@ -158,6 +159,7 @@ const BookingTabs = () => {
         startDate: dateRange?.from ? format(dateRange.from, 'yyyy-MM-dd') : null,
         endDate: dateRange?.to ? format(dateRange.to, 'yyyy-MM-dd') : null,
         status: statusFilter,
+        sessionFilter: tabValue,
         page: currentPage.toString(),
         itemsPerPage: itemsPerPage.toString()
       };
@@ -193,27 +195,27 @@ const BookingTabs = () => {
         throw new Error(data.error || 'Failed to fetch booking data');
       }
 
-      let bookings = data.bookings || [];
+      const bookings = Array.isArray(data.bookings) ? data.bookings : [];
       setTotal(data.total || 0);
-      
-      // Filter booking berdasarkan poliklinik yang mengandung "Pagi" dan "Sore"
-      const pagiBookings = bookings.filter(booking => 
-        booking.nm_poli && booking.nm_poli.toLowerCase().includes('pagi')
-      );
-      
-      const soreBookings = bookings.filter(booking => 
-        booking.nm_poli && booking.nm_poli.toLowerCase().includes('sore')
-      );
 
-      setBookingPagi(pagiBookings);
-      setBookingSore(soreBookings);
-      setTotalPagi(pagiBookings.length);
-      setTotalSore(soreBookings.length);
+      if (tabValue === 'pagi') {
+        setBookingPagi(bookings);
+      } else {
+        setBookingSore(bookings);
+      }
+
+      setTotalPagi(Number(data?.tabCounts?.pagi || 0));
+      setTotalSore(Number(data?.tabCounts?.sore || 0));
     } catch (error) {
       console.error('Error fetching booking data:', error);
-      setBookingPagi([]);
-      setBookingSore([]);
+      if (tabValue === 'pagi') {
+        setBookingPagi([]);
+      } else {
+        setBookingSore([]);
+      }
       setTotal(0);
+      setTotalPagi(0);
+      setTotalSore(0);
     } finally {
       setLoading(false);
     }
@@ -262,21 +264,27 @@ const BookingTabs = () => {
     fetchBookingData();
   };
 
+  const handleTabChange = (value: string) => {
+    const nextTab = value === 'sore' ? 'sore' : 'pagi';
+    setActiveTab(nextTab);
+    setCurrentPage(1);
+  };
+
   useEffect(() => {
     fetchBookingData();
     fetchDoctors();
-  }, [currentPage, itemsPerPage]);
+  }, [currentPage, itemsPerPage, activeTab]);
 
   return (
-    <Tabs defaultValue="pagi">
+    <Tabs value={activeTab} onValueChange={handleTabChange}>
       <TabsList className="mb-4">
         <TabsTrigger value="pagi">
           <AlarmClock className="mr-2 h-4 w-4" />
-          <span>Pagi</span>
+          <span>Pagi ({totalPagi})</span>
         </TabsTrigger>
         <TabsTrigger value="sore">
           <Clock className="mr-2 h-4 w-4" />
-          <span>Sore</span>
+          <span>Sore ({totalSore})</span>
         </TabsTrigger>
       </TabsList>
       
