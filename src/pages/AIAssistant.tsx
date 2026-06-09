@@ -807,15 +807,22 @@ const AIAssistant = () => {
                                       ))}
                                       <td className="p-3 align-top">
                                         {medicalRecordLink ? (
-                                          <a
-                                            href={medicalRecordLink}
-                                            target="_blank"
-                                            rel="noreferrer"
-                                            className="text-xs font-medium text-primary underline-offset-4 hover:underline"
-                                            onClick={(event) => event.stopPropagation()}
+                                          <Button
+                                            asChild
+                                            type="button"
+                                            variant="outline"
+                                            size="sm"
+                                            className="h-8"
                                           >
-                                            Buka Rekam Medis
-                                          </a>
+                                            <a
+                                              href={medicalRecordLink}
+                                              target="_blank"
+                                              rel="noreferrer"
+                                              onClick={(event) => event.stopPropagation()}
+                                            >
+                                              Buka Rekam Medis
+                                            </a>
+                                          </Button>
                                         ) : (
                                           <span className="text-xs text-muted-foreground">-</span>
                                         )}
