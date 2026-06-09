@@ -491,6 +491,7 @@ const AIAssistant = () => {
     if (!finalMessage || !user?.username) {
       return;
     }
+    const debugTraceId = `ai-${Date.now()}`;
 
     const userTurn: ChatTurn = {
       id: `user-${Date.now()}`,
@@ -524,6 +525,9 @@ const AIAssistant = () => {
     setMessage('');
 
     try {
+      // #region debug-point A:ai-request-start
+      fetch("http://127.0.0.1:7777/event",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({sessionId:"prod-ai-json-error",runId:"pre-fix",hypothesisId:"A",location:"src/pages/AIAssistant.tsx:submitQuestion",msg:"[DEBUG] AI request start",data:{traceId:debugTraceId,url:API_URLS.DOCTOR_AI_ASSISTANT,username:user.username,hasSelectedContext:Boolean(selectedContext),historyCount:historyForRequest.length},ts:Date.now()})}).catch(()=>{});
+      // #endregion
       const response = await fetch(API_URLS.DOCTOR_AI_ASSISTANT, {
         method: 'POST',
         headers: {
@@ -537,6 +541,10 @@ const AIAssistant = () => {
           conversationHistory: historyForRequest
         })
       });
+
+      // #region debug-point B:ai-response-meta
+      response.clone().text().then((body)=>fetch("http://127.0.0.1:7777/event",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({sessionId:"prod-ai-json-error",runId:"pre-fix",hypothesisId:"B",location:"src/pages/AIAssistant.tsx:submitQuestion",msg:"[DEBUG] AI response meta",data:{traceId:debugTraceId,url:response.url,status:response.status,ok:response.ok,redirected:response.redirected,contentType:response.headers.get('content-type'),bodyStart:body.slice(0,180)},ts:Date.now()})}).catch(()=>{})).catch((cloneError)=>fetch("http://127.0.0.1:7777/event",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({sessionId:"prod-ai-json-error",runId:"pre-fix",hypothesisId:"B",location:"src/pages/AIAssistant.tsx:submitQuestion",msg:"[DEBUG] AI response clone failed",data:{traceId:debugTraceId,error:cloneError instanceof Error ? cloneError.message : String(cloneError)},ts:Date.now()})}).catch(()=>{}));
+      // #endregion
 
       const payload = await response.json();
       if (!response.ok || !payload.success || !payload.data) {
@@ -553,6 +561,9 @@ const AIAssistant = () => {
       setSelectedContext(null);
       setChatHistory((previous) => [...previous, assistantTurn]);
     } catch (error) {
+      // #region debug-point C:ai-request-error
+      fetch("http://127.0.0.1:7777/event",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({sessionId:"prod-ai-json-error",runId:"pre-fix",hypothesisId:"C",location:"src/pages/AIAssistant.tsx:submitQuestion",msg:"[DEBUG] AI request error",data:{traceId:debugTraceId,error:error instanceof Error ? error.message : String(error)},ts:Date.now()})}).catch(()=>{});
+      // #endregion
       console.error('AI assistant request failed:', error);
       toast({
         title: 'AI Assistant Error',

@@ -2,7 +2,16 @@ const trimTrailingSlash = (value: string) => value.replace(/\/+$/, '');
 
 const getApiBaseUrl = () => {
   const configuredBaseUrl = String(import.meta.env.VITE_API_BASE_URL || '').trim();
+  const configuredOrigin = String(import.meta.env.VITE_API_ORIGIN || '').trim();
   if (configuredBaseUrl) {
+    if (
+      import.meta.env.PROD &&
+      configuredOrigin &&
+      configuredBaseUrl.startsWith('/') &&
+      !configuredBaseUrl.startsWith('//')
+    ) {
+      return `${trimTrailingSlash(configuredOrigin)}${configuredBaseUrl}`;
+    }
     return trimTrailingSlash(configuredBaseUrl);
   }
 
