@@ -500,14 +500,14 @@ const RawatJalanTabs = () => {
                   />
                 </div>
                 
-                <div className="flex flex-col sm:flex-row gap-2 w-full lg:w-auto">
+                <div className="flex flex-col sm:flex-row gap-2 w-full sm:w-auto">
                   <Popover>
                     <PopoverTrigger asChild>
                       <Button
                         id="date"
                         variant={"outline"}
                         className={cn(
-                          "w-[350px] justify-start text-left font-normal",
+                          "w-full sm:w-[280px] justify-start text-left font-normal",
                           !date && "text-muted-foreground"
                         )}
                       >
