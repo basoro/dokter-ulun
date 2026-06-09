@@ -64,7 +64,17 @@ const rawatJalanColumns = [
   { accessor: 'paymentStatus', header: 'Status Bayar' },
 ];
 
-const rawatJalanTabValues = ['hari-ini', 'pagi', 'sore', 'rujukan_internal', 'pasien_lanjutan', 'internal_lanjutan'] as const;
+const rawatJalanTabValues = [
+  'hari-ini',
+  'pagi',
+  'sore',
+  'rujukan_internal',
+  'rujukan_internal_sore',
+  'pasien_lanjutan',
+  'pasien_lanjutan_sore',
+  'internal_lanjutan',
+  'internal_lanjutan_sore'
+] as const;
 type RawatJalanTab = typeof rawatJalanTabValues[number];
 
 const emptyTabCounts: Record<RawatJalanTab, number> = {
@@ -72,8 +82,11 @@ const emptyTabCounts: Record<RawatJalanTab, number> = {
   pagi: 0,
   sore: 0,
   rujukan_internal: 0,
+  rujukan_internal_sore: 0,
   pasien_lanjutan: 0,
-  internal_lanjutan: 0
+  pasien_lanjutan_sore: 0,
+  internal_lanjutan: 0,
+  internal_lanjutan_sore: 0
 };
 
 const RawatJalanTabs = () => {
@@ -314,7 +327,7 @@ const RawatJalanTabs = () => {
     });
     setStatusFilter("all");
     setStatusBayarFilter("all");
-    setDoctorFilter("");
+    setDoctorFilter("all");
     setSearchQuery("");
     setCurrentPage(1);
   };
@@ -407,13 +420,25 @@ const RawatJalanTabs = () => {
           <User className="mr-2 h-4 w-4" />
           <span>Rujukan Internal ({tabCounts.rujukan_internal})</span>
         </TabsTrigger>
+        <TabsTrigger value="rujukan_internal_sore">
+          <User className="mr-2 h-4 w-4" />
+          <span>Rujukan Internal Sore ({tabCounts.rujukan_internal_sore})</span>
+        </TabsTrigger>
         <TabsTrigger value="pasien_lanjutan">
           <List className="mr-2 h-4 w-4" />
           <span>Pasien Lanjutan ({tabCounts.pasien_lanjutan})</span>
         </TabsTrigger>
+        <TabsTrigger value="pasien_lanjutan_sore">
+          <List className="mr-2 h-4 w-4" />
+          <span>Pasien Lanjutan Sore ({tabCounts.pasien_lanjutan_sore})</span>
+        </TabsTrigger>
         <TabsTrigger value="internal_lanjutan">
           <List className="mr-2 h-4 w-4" />
           <span>Internal Lanjutan ({tabCounts.internal_lanjutan})</span>
+        </TabsTrigger>
+        <TabsTrigger value="internal_lanjutan_sore">
+          <List className="mr-2 h-4 w-4" />
+          <span>Internal Lanjutan Sore ({tabCounts.internal_lanjutan_sore})</span>
         </TabsTrigger>
       </TabsList>
       
@@ -426,8 +451,11 @@ const RawatJalanTabs = () => {
                 {tabValue === 'pagi' && 'Daftar Pasien Sesi Pagi'}
                 {tabValue === 'sore' && 'Daftar Pasien Sesi Sore'}
                 {tabValue === 'rujukan_internal' && 'Rujukan Internal'}
+                {tabValue === 'rujukan_internal_sore' && 'Rujukan Internal Sore'}
                 {tabValue === 'pasien_lanjutan' && 'Pasien Lanjutan'}
+                {tabValue === 'pasien_lanjutan_sore' && 'Pasien Lanjutan Sore'}
                 {tabValue === 'internal_lanjutan' && 'Internal Lanjutan'}
+                {tabValue === 'internal_lanjutan_sore' && 'Internal Lanjutan Sore'}
               </CardTitle>
               <div className="flex flex-col lg:flex-row gap-2 items-start mb-4 w-full">
                 <div className="relative w-full sm:w-full">

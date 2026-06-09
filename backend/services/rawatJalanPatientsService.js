@@ -120,16 +120,23 @@ class RawatJalanPatientsService {
       const normalizedJenisPoli = String(jenis_poli || serverPoliAssignments.jenis_poli || '').trim();
       const normalizedJenisPoliSore = String(jenis_poli_sore || serverPoliAssignments.jenis_poli_sore || '').trim();
       const sessionPoliGroups = await this.getSessionPoliGroups(poliCodes);
+      const soreScopedTabs = ['sore', 'rujukan_internal_sore', 'pasien_lanjutan_sore', 'internal_lanjutan_sore'];
+      const pagiScopedTabs = ['pagi', 'rujukan_internal', 'pasien_lanjutan', 'internal_lanjutan'];
       const selectedPoliCodes = normalizedTabFilter === 'pagi'
         ? (normalizedJenisPoli ? [normalizedJenisPoli] : sessionPoliGroups.pagi)
         : normalizedTabFilter === 'sore'
           ? (normalizedJenisPoliSore ? [normalizedJenisPoliSore] : sessionPoliGroups.sore)
-          : sessionPoliGroups.hariIni;
-      const effectivePoliCodes = selectedPoliCodes.length > 0 || !['pagi', 'sore'].includes(normalizedTabFilter)
+          : pagiScopedTabs.includes(normalizedTabFilter)
+            ? (normalizedJenisPoli ? [normalizedJenisPoli] : sessionPoliGroups.pagi)
+            : soreScopedTabs.includes(normalizedTabFilter)
+              ? (normalizedJenisPoliSore ? [normalizedJenisPoliSore] : sessionPoliGroups.sore)
+            : sessionPoliGroups.hariIni;
+      const sessionScopedTabs = [...pagiScopedTabs, ...soreScopedTabs];
+      const effectivePoliCodes = selectedPoliCodes.length > 0 || !sessionScopedTabs.includes(normalizedTabFilter)
         ? selectedPoliCodes
         : [];
 
-      if (['pagi', 'sore'].includes(normalizedTabFilter) && effectivePoliCodes.length === 0) {
+      if (sessionScopedTabs.includes(normalizedTabFilter) && effectivePoliCodes.length === 0) {
         return {
           success: true,
           data: [],
@@ -146,8 +153,8 @@ class RawatJalanPatientsService {
         ? effectivePoliCodes
         : poliCodes;
       const poliPlaceholders = filteredPoliCodes.map(() => '?').join(',');
-      const isInternalTab = normalizedTabFilter === 'rujukan_internal' || normalizedTabFilter === 'internal_lanjutan';
-      const isLanjutanTab = normalizedTabFilter === 'pasien_lanjutan' || normalizedTabFilter === 'internal_lanjutan';
+      const isInternalTab = ['rujukan_internal', 'rujukan_internal_sore', 'internal_lanjutan', 'internal_lanjutan_sore'].includes(normalizedTabFilter);
+      const isLanjutanTab = ['pasien_lanjutan', 'pasien_lanjutan_sore', 'internal_lanjutan', 'internal_lanjutan_sore'].includes(normalizedTabFilter);
       const fromClause = isInternalTab
         ? `
           FROM reg_periksa rp
@@ -250,11 +257,20 @@ class RawatJalanPatientsService {
         case 'rujukan_internal':
           console.log('Tab filter applied: Rujukan Internal');
           break;
+        case 'rujukan_internal_sore':
+          console.log('Tab filter applied: Rujukan Internal Sore');
+          break;
         case 'pasien_lanjutan':
           console.log('Tab filter applied: Pasien Lanjutan');
           break;
+        case 'pasien_lanjutan_sore':
+          console.log('Tab filter applied: Pasien Lanjutan Sore');
+          break;
         case 'internal_lanjutan':
           console.log('Tab filter applied: Internal Lanjutan');
+          break;
+        case 'internal_lanjutan_sore':
+          console.log('Tab filter applied: Internal Lanjutan Sore');
           break;
         case 'pagi':
           console.log('Tab filter applied: Sesi Pagi');
