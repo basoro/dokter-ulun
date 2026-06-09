@@ -196,47 +196,6 @@ const buildDefaultVariableValue = (variable: string, context?: AssistantPayload[
 const fillPromptTemplate = (template: string, values: Record<string, string>) =>
   template.replace(PLACEHOLDER_REGEX, (_, key) => values[String(key).trim()] || `[${key}]`);
 
-const suggestionMatchesContext = (prompt: string, context: AssistantContext, lastIntent?: string | null) => {
-  const normalizedPrompt = prompt.toLowerCase();
-
-  if (context.careType === 'ranap' && normalizedPrompt.includes('rawat inap')) return true;
-  if (context.careType === 'ralan' && normalizedPrompt.includes('rawat jalan')) return true;
-  if (context.inpatientStatus === 'masih-dirawat' && /belum pulang|masih dirawat/.test(normalizedPrompt)) return true;
-  if (context.inpatientStatus === 'sudah-pulang' && normalizedPrompt.includes('sudah pulang')) return true;
-  if (context.patientName && /pasien ini|diagnosis|resep|lab|radiologi|kunjungan terakhir/.test(normalizedPrompt)) return true;
-  if ((context.startDate && context.endDate) && /rentang tanggal|tanggal awal|tanggal akhir/.test(normalizedPrompt)) return true;
-  if (context.targetDate && /tanggal ini|tanggal yang sama/.test(normalizedPrompt)) return true;
-  if (lastIntent === 'today_patient_list' && /berapa pasien|kemarin/.test(normalizedPrompt)) return true;
-
-  return false;
-};
-
-const rankSuggestions = (
-  prompts: string[],
-  context: AssistantContext,
-  input: string,
-  lastIntent?: string | null
-) => {
-  const normalizedInput = input.trim().toLowerCase();
-
-  return [...prompts]
-    .sort((left, right) => {
-      const leftMatchesContext = suggestionMatchesContext(left, context, lastIntent) ? 1 : 0;
-      const rightMatchesContext = suggestionMatchesContext(right, context, lastIntent) ? 1 : 0;
-      const leftMatchesInput = normalizedInput && left.toLowerCase().includes(normalizedInput) ? 1 : 0;
-      const rightMatchesInput = normalizedInput && right.toLowerCase().includes(normalizedInput) ? 1 : 0;
-      const leftScore = leftMatchesContext * 4 + leftMatchesInput * 2;
-      const rightScore = rightMatchesContext * 4 + rightMatchesInput * 2;
-
-      if (leftScore !== rightScore) {
-        return rightScore - leftScore;
-      }
-
-      return left.length - right.length;
-    })
-    .slice(0, 8);
-};
-
 const filterPromptsByInput = (prompts: string[], input: string) => {
   const normalizedInput = input.trim().toLowerCase();
   if (!normalizedInput) {
@@ -379,13 +338,8 @@ const AIAssistant = () => {
   const quickSuggestionPrompts = useMemo(() => {
     const backendSuggestions = lastAssistantPayload?.suggestions || [];
     const mergedSuggestions = [...backendSuggestions, ...examplePrompts];
-    return rankSuggestions(
-      Array.from(new Set(mergedSuggestions)),
-      activeContext,
-      message,
-      lastAssistantPayload?.intent || activeContext.lastIntent || null
-    );
-  }, [activeContext, lastAssistantPayload?.intent, lastAssistantPayload?.suggestions, message]);
+    return Array.from(new Set(mergedSuggestions));
+  }, [lastAssistantPayload?.suggestions]);
   const visibleSuggestionPrompts = useMemo(
     () => filterPromptsByInput(quickSuggestionPrompts, message),
     [quickSuggestionPrompts, message]

@@ -331,95 +331,6 @@ class DoctorAiAssistantService {
     return `tanggal ${this.getCurrentDateWib()}`;
   }
 
-  buildContextualSuggestions({ context = {}, intent, suggestions = [] }) {
-    const contextualSuggestions = [];
-    const normalizedIntent = String(intent || context.lastIntent || '').trim();
-    const patientLabel = context.patientName || 'pasien ini';
-    const hasPatientContext = Boolean(context.patientName || context.noRawat || context.noRkmMedis);
-    const hasDateRange = Boolean(context.startDate && context.endDate);
-    const hasTargetDate = Boolean(context.targetDate);
-
-    if (context.careType === 'ranap' && context.inpatientStatus === 'masih-dirawat') {
-      contextualSuggestions.push(
-        'Tampilkan data pasien saya rawat inap belum pulang',
-        'Berapa pasien rawat inap saya yang belum pulang?',
-        'Tampilkan data pasien saya rawat inap dari tanggal [tanggal awal] sampai [tanggal akhir]'
-      );
-    }
-
-    if (context.careType === 'ranap' && context.inpatientStatus === 'sudah-pulang') {
-      contextualSuggestions.push(
-        'Tampilkan data pasien saya rawat inap sudah pulang',
-        'Berapa pasien rawat inap saya yang sudah pulang?',
-        'Tampilkan data pasien saya rawat inap dari tanggal [tanggal awal] sampai [tanggal akhir]'
-      );
-    }
-
-    if (context.careType === 'ralan') {
-      contextualSuggestions.push(
-        'Tampilkan data pasien saya rawat jalan hari ini',
-        'Berapa pasien rawat jalan saya untuk hari ini?',
-        'Tampilkan data pasien saya rawat jalan dari tanggal [tanggal awal] sampai [tanggal akhir]'
-      );
-    }
-
-    if (hasDateRange) {
-      contextualSuggestions.push(
-        'Berapa pasien saya pada rentang tanggal ini?',
-        'Tampilkan data pasien saya rawat inap pada rentang tanggal ini',
-        'Tampilkan data pasien saya rawat jalan pada rentang tanggal ini'
-      );
-    } else if (hasTargetDate) {
-      contextualSuggestions.push(
-        'Berapa pasien saya pada tanggal ini?',
-        'Tampilkan data pasien saya rawat inap pada tanggal ini',
-        'Tampilkan data pasien saya rawat jalan pada tanggal ini'
-      );
-    }
-
-    if (hasPatientContext) {
-      contextualSuggestions.push(
-        `Tampilkan kunjungan terakhir ${patientLabel}`,
-        `Tampilkan diagnosis ${patientLabel}`,
-        `Tampilkan resep ${patientLabel}`
-      );
-
-      if (hasTargetDate || hasDateRange) {
-        contextualSuggestions.push(
-          `Berikan saya hasil lab untuk ${patientLabel} tanggal yang sama`,
-          `Berikan saya hasil radiologi ${patientLabel} tanggal yang sama`
-        );
-      } else {
-        contextualSuggestions.push(
-          `Berikan saya hasil lab untuk ${patientLabel} tanggal [tanggal]`,
-          `Berikan saya hasil radiologi ${patientLabel} tanggal [tanggal]`
-        );
-      }
-    }
-
-    if (normalizedIntent === 'today_patient_list') {
-      contextualSuggestions.push(
-        'Berapa pasien saya untuk hari ini?',
-        'Tampilkan data pasien saya kemarin'
-      );
-    }
-
-    if (normalizedIntent === 'patient_last_visit_summary' && hasPatientContext) {
-      contextualSuggestions.push(
-        `Tampilkan riwayat rawat inap ${patientLabel}`,
-        `Tampilkan laporan operasi ${patientLabel}`
-      );
-    }
-
-    return Array.from(
-      new Set(
-        [...contextualSuggestions, ...suggestions, ...this.defaultSuggestions]
-          .map((item) => String(item || '').trim())
-          .filter(Boolean)
-      )
-    ).slice(0, 12);
-  }
-
   async ask({ message, username, doctorName, conversationHistory = [] }) {
     if (!this.openAIApiKey) {
       throw new Error('OpenAI API key is not configured');
@@ -664,12 +575,6 @@ Aturan:
 
   buildResponse({ intent, answer, rows, sql, suggestions, plan, previousContext }) {
     const payload = this.buildRowsPayload(rows);
-    const context = this.buildContextPayload({
-      rows: payload.rows,
-      plan: plan || {},
-      previousContext: previousContext || {},
-      intent
-    });
     return {
       success: true,
       data: {
@@ -679,12 +584,13 @@ Aturan:
         rows: payload.rows,
         columns: payload.columns,
         sqlPreview: sql ? this.toSqlPreview(sql) : null,
-        suggestions: this.buildContextualSuggestions({
-          context,
-          intent,
-          suggestions: suggestions && suggestions.length > 0 ? suggestions : this.defaultSuggestions
-        }),
-        context
+        suggestions: suggestions && suggestions.length > 0 ? suggestions : this.defaultSuggestions,
+        context: this.buildContextPayload({
+          rows: payload.rows,
+          plan: plan || {},
+          previousContext: previousContext || {},
+          intent
+        })
       }
     };
   }
