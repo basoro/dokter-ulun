@@ -79,6 +79,7 @@ class RawatJalanPatientsService {
     jenis_poli_sore,
     startDate,
     endDate,
+    search,
     status,
     statusBayar,
     username,
@@ -88,7 +89,7 @@ class RawatJalanPatientsService {
     itemsPerPage = 10
   }) {
     try {
-      console.log('Received request body:', { kd_poli, jenis_poli, jenis_poli_sore, startDate, endDate, status, statusBayar, username, kd_dokter, tabFilter });
+      console.log('Received request body:', { kd_poli, jenis_poli, jenis_poli_sore, startDate, endDate, search, status, statusBayar, username, kd_dokter, tabFilter });
       console.log('Current time (WIB):', new Date(new Date().getTime() + (7 * 60 * 60 * 1000)).toISOString());
       
       if (!kd_poli || !startDate || !endDate || !username) {
@@ -201,17 +202,17 @@ class RawatJalanPatientsService {
 
       if (isLanjutanTab) {
         const [dateMinus1, dateMinus2] = this.getLanjutanDates();
-        conditions.push('rp.tgl_registrasi IN (?, ?)');
+        conditions.push('DATE(rp.tgl_registrasi) IN (?, ?)');
         conditions.push(`rp.stts = 'Lanjutan'`);
         params.push(dateMinus1, dateMinus2);
-        doctorConditions.push('rp.tgl_registrasi IN (?, ?)');
+        doctorConditions.push('DATE(rp.tgl_registrasi) IN (?, ?)');
         doctorConditions.push(`rp.stts = 'Lanjutan'`);
         doctorParams.push(dateMinus1, dateMinus2);
         console.log('Lanjutan date condition:', [dateMinus1, dateMinus2]);
       } else {
-        conditions.push('rp.tgl_registrasi BETWEEN ? AND ?');
+        conditions.push('DATE(rp.tgl_registrasi) BETWEEN ? AND ?');
         params.push(formattedStartDate, formattedEndDate);
-        doctorConditions.push('rp.tgl_registrasi BETWEEN ? AND ?');
+        doctorConditions.push('DATE(rp.tgl_registrasi) BETWEEN ? AND ?');
         doctorParams.push(formattedStartDate, formattedEndDate);
         console.log('Date range condition:', `tgl_registrasi BETWEEN '${formattedStartDate}' AND '${formattedEndDate}'`);
       }
@@ -229,14 +230,44 @@ class RawatJalanPatientsService {
       } else {
         console.log('Doctor filter: showing all doctors in allowed poli');
       }
+
+      if (search && String(search).trim().length > 0) {
+        const q = `%${String(search).trim()}%`;
+        conditions.push(`(
+          p.nm_pasien LIKE ? OR
+          rp.no_rkm_medis LIKE ? OR
+          rp.no_rawat LIKE ? OR
+          ${doctorNameColumn} LIKE ? OR
+          ${poliNameColumn} LIKE ?
+        )`);
+        params.push(q, q, q, q, q);
+        doctorConditions.push(`(
+          p.nm_pasien LIKE ? OR
+          rp.no_rkm_medis LIKE ? OR
+          rp.no_rawat LIKE ? OR
+          ${doctorNameColumn} LIKE ? OR
+          ${poliNameColumn} LIKE ?
+        )`);
+        doctorParams.push(q, q, q, q, q);
+        console.log('Search filter applied:', String(search).trim());
+      }
       
       // Status filtering - PHP native lanjutan tabs are fixed to 'Lanjutan'
       if (!isLanjutanTab && status && status.trim() && status !== 'all') {
-        conditions.push('rp.stts = ?');
-        params.push(status);
-        doctorConditions.push('rp.stts = ?');
-        doctorParams.push(status);
-        console.log('Status filter applied:', status);
+        const normalizedStatus = String(status).trim().toLowerCase();
+        if (normalizedStatus === 'sudah' || normalizedStatus === 'selesai') {
+          conditions.push('rp.stts IN (?, ?)');
+          params.push('Sudah', 'Selesai');
+          doctorConditions.push('rp.stts IN (?, ?)');
+          doctorParams.push('Sudah', 'Selesai');
+          console.log('Status filter applied (Sudah/Selesai):', status);
+        } else {
+          conditions.push('rp.stts = ?');
+          params.push(status);
+          doctorConditions.push('rp.stts = ?');
+          doctorParams.push(status);
+          console.log('Status filter applied:', status);
+        }
       } else {
         console.log('Status filter: showing all statuses (status value:', status, ')');
       }
@@ -379,7 +410,7 @@ class RawatJalanPatientsService {
         const dateCheckQuery = `
           SELECT COUNT(*) as count_in_range
           FROM reg_periksa
-          WHERE tgl_registrasi BETWEEN ? AND ?
+          WHERE DATE(tgl_registrasi) BETWEEN ? AND ?
           AND kd_poli IN (${poliPlaceholders})
         `;
         const [dateCheckResult] = await db.execute(dateCheckQuery, [formattedStartDate, formattedEndDate, ...filteredPoliCodes]);

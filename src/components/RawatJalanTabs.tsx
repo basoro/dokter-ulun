@@ -136,6 +136,7 @@ const RawatJalanTabs = () => {
     startDate: date?.from ? formatDateWIB(date.from) : '',
     endDate: date?.to ? formatDateWIB(date.to) : '',
     username: user?.username,
+    search: searchQuery.trim() || '',
     status: statusFilter,
     statusBayar: statusBayarFilter,
     kd_dokter: requestDoctorFilter,
@@ -261,6 +262,23 @@ const RawatJalanTabs = () => {
       fetchRawatJalanPatients();
     }
   }, [user?.kd_poli, date?.from, date?.to, activeTab, currentPage, itemsPerPage]);
+
+  useEffect(() => {
+    if (!date?.from || !date?.to) {
+      return;
+    }
+
+    const handle = setTimeout(() => {
+      if (currentPage !== 1) {
+        setCurrentPage(1);
+        return;
+      }
+
+      fetchRawatJalanPatients();
+    }, 400);
+
+    return () => clearTimeout(handle);
+  }, [searchQuery]);
 
   useEffect(() => {
     const params = new URLSearchParams(searchParams);
