@@ -45,8 +45,10 @@ class RawatJalanPatientsService {
         .map((row) => row.kd_poli)
     );
 
-    const pagiCodes = poliCodes.filter((code) => !soreCodes.has(code));
-    const sorePoliCodes = poliCodes.filter((code) => soreCodes.has(code));
+    const pagiCandidates = poliCodes.filter((code) => !soreCodes.has(code));
+    const soreCandidates = poliCodes.filter((code) => soreCodes.has(code));
+    const pagiCodes = pagiCandidates.length > 0 ? [pagiCandidates[0]] : [];
+    const sorePoliCodes = soreCandidates.length > 0 ? [soreCandidates[0]] : [];
 
     return {
       hariIni: poliCodes,
