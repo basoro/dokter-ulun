@@ -403,7 +403,7 @@ const RawatJalanTabs = () => {
 
   return (
     <Tabs value={activeTab} onValueChange={handleTabChange}>
-      <TabsList className="mb-4">
+      <TabsList className="mb-4 flex h-auto w-full flex-wrap justify-start gap-2">
         <TabsTrigger value="hari-ini">
           <Clock className="mr-2 h-4 w-4" />
           <span>Hari Ini ({tabCounts['hari-ini']})</span>
@@ -412,33 +412,33 @@ const RawatJalanTabs = () => {
           <AlarmClock className="mr-2 h-4 w-4" />
           <span>Sesi Pagi ({tabCounts.pagi})</span>
         </TabsTrigger>
+        <TabsTrigger value="rujukan_internal">
+          <User className="mr-2 h-4 w-4" />
+          <span>Internal Pagi ({tabCounts.rujukan_internal})</span>
+        </TabsTrigger>
+        <TabsTrigger value="pasien_lanjutan">
+          <List className="mr-2 h-4 w-4" />
+          <span>Lanjutan Pagi ({tabCounts.pasien_lanjutan})</span>
+        </TabsTrigger>
+        <TabsTrigger value="internal_lanjutan">
+          <List className="mr-2 h-4 w-4" />
+          <span>Internal Lanjut Pagi ({tabCounts.internal_lanjutan})</span>
+        </TabsTrigger>
         <TabsTrigger value="sore">
           <Clock className="mr-2 h-4 w-4" />
           <span>Sesi Sore ({tabCounts.sore})</span>
         </TabsTrigger>
-        <TabsTrigger value="rujukan_internal">
-          <User className="mr-2 h-4 w-4" />
-          <span>Rujukan Internal ({tabCounts.rujukan_internal})</span>
-        </TabsTrigger>
         <TabsTrigger value="rujukan_internal_sore">
           <User className="mr-2 h-4 w-4" />
-          <span>Rujukan Internal Sore ({tabCounts.rujukan_internal_sore})</span>
-        </TabsTrigger>
-        <TabsTrigger value="pasien_lanjutan">
-          <List className="mr-2 h-4 w-4" />
-          <span>Pasien Lanjutan ({tabCounts.pasien_lanjutan})</span>
+          <span>Internal Sore ({tabCounts.rujukan_internal_sore})</span>
         </TabsTrigger>
         <TabsTrigger value="pasien_lanjutan_sore">
           <List className="mr-2 h-4 w-4" />
-          <span>Pasien Lanjutan Sore ({tabCounts.pasien_lanjutan_sore})</span>
-        </TabsTrigger>
-        <TabsTrigger value="internal_lanjutan">
-          <List className="mr-2 h-4 w-4" />
-          <span>Internal Lanjutan ({tabCounts.internal_lanjutan})</span>
+          <span>Lanjutan Sore ({tabCounts.pasien_lanjutan_sore})</span>
         </TabsTrigger>
         <TabsTrigger value="internal_lanjutan_sore">
           <List className="mr-2 h-4 w-4" />
-          <span>Internal Lanjutan Sore ({tabCounts.internal_lanjutan_sore})</span>
+          <span>Internal Lanjut Sore ({tabCounts.internal_lanjutan_sore})</span>
         </TabsTrigger>
       </TabsList>
       
