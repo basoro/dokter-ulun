@@ -64,7 +64,11 @@ import RawatJalanTabs from '@/components/RawatJalanTabs';
 import HemodialisaTabs from '@/components/HemodialisaTabs';
 import { API_URLS } from '@/config/api';
 import MedicalRecord from './MedicalRecord';
-import { OPEN_MEDICAL_RECORD_TAB_EVENT, type OpenMedicalRecordTabDetail } from '@/lib/medical-record-tabs';
+import {
+  CLOSE_ALL_MEDICAL_RECORD_TABS_EVENT,
+  OPEN_MEDICAL_RECORD_TAB_EVENT,
+  type OpenMedicalRecordTabDetail
+} from '@/lib/medical-record-tabs';
 
 const parseDateParam = (value: string | null, fallback: Date) => {
   if (!value) return fallback;
@@ -2211,10 +2215,18 @@ const Patients = () => {
       }));
     };
 
+    const handleCloseAllMedicalRecordTabs = () => {
+      setOpenMedicalRecordTabs([]);
+      setActiveMedicalRecordTabId(LIST_PASIEN_TAB_ID);
+      setMedicalRecordReloadCounters({});
+    };
+
     window.addEventListener(OPEN_MEDICAL_RECORD_TAB_EVENT, handleOpenMedicalRecordTab as EventListener);
+    window.addEventListener(CLOSE_ALL_MEDICAL_RECORD_TABS_EVENT, handleCloseAllMedicalRecordTabs);
 
     return () => {
       window.removeEventListener(OPEN_MEDICAL_RECORD_TAB_EVENT, handleOpenMedicalRecordTab as EventListener);
+      window.removeEventListener(CLOSE_ALL_MEDICAL_RECORD_TABS_EVENT, handleCloseAllMedicalRecordTabs);
     };
   }, []);
 

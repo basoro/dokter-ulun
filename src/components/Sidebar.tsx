@@ -21,6 +21,7 @@ import {
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 import bgImage from '@/assets/profile-bg.png';
 import { AboutModal } from '@/components/ui/about-modal';
+import { dispatchCloseAllMedicalRecordTabs } from '@/lib/medical-record-tabs';
 
 interface SidebarProps {
   doctorName: string;
@@ -92,6 +93,13 @@ const Sidebar: React.FC<SidebarProps> = ({ doctorName, doctorId, gender, onClose
     }
   };
 
+  const handlePatientsMenuClick = () => {
+    dispatchCloseAllMedicalRecordTabs();
+    if (onClose) {
+      onClose();
+    }
+  };
+
   return (
     <aside className="fixed left-0 top-0 sm:top-16 h-[calc(100vh)] sm:h-[calc(100vh-4rem)] w-64 bg-white shadow-sm flex flex-col z-30">
         <div 
@@ -150,6 +158,7 @@ const Sidebar: React.FC<SidebarProps> = ({ doctorName, doctorId, gender, onClose
                     ? 'bg-primary/10 text-primary'
                     : 'text-gray-600 hover:bg-gray-100'
                 }`}
+                onClick={handlePatientsMenuClick}
               >
                 <div className="flex items-center">
                   <span className={`mr-3 ${isPasienActive() ? 'text-primary' : 'text-gray-500'}`}>
@@ -171,7 +180,7 @@ const Sidebar: React.FC<SidebarProps> = ({ doctorName, doctorId, gender, onClose
                         ? (location.pathname === item.path ? 'bg-primary/10 text-primary' : 'text-gray-600 hover:bg-gray-100')
                         : (location.pathname.startsWith(item.path) ? 'bg-primary/10 text-primary' : 'text-gray-600 hover:bg-gray-100')
                     }`}
-                    onClick={onClose}
+                    onClick={handlePatientsMenuClick}
                   >
                     {item.name}
                   </Link>
