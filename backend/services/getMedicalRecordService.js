@@ -288,6 +288,7 @@ class GetMedicalRecordService {
       tanggal: this.formatDateOnly(row.tgl_perawatan) + ' ' + row.jam_rawat,
       tgl_perawatan: this.formatDateOnly(row.tgl_perawatan),
       jam_rawat: row.jam_rawat,
+      nip: row.nip || '',
       tekanan_darah: row.tensi || '',
       nadi: row.nadi || '',
       respirasi: row.respirasi || '',
@@ -464,7 +465,24 @@ class GetMedicalRecordService {
         WHERE dro.no_resep = ?
         ORDER BY ob.nama_brng
       `;
-      const [detailRequestRows] = await db.execute(detailRequestQuery, [prescRequestRow.no_resep]);
+      const compoundQuery = `
+        SELECT
+          rdr.no_racik,
+          rdr.nama_racik,
+          rdr.kd_racik,
+          rdr.jml_dr,
+          rdr.aturan_pakai,
+          rdr.keterangan,
+          mr.nm_racik
+        FROM resep_dokter_racikan rdr
+        LEFT JOIN metode_racik mr ON mr.kd_racik = rdr.kd_racik
+        WHERE rdr.no_resep = ?
+        ORDER BY rdr.no_racik ASC
+      `;
+      const [detailRequestRows, compoundRows] = await Promise.all([
+        db.execute(detailRequestQuery, [prescRequestRow.no_resep]).then(([rows]) => rows),
+        db.execute(compoundQuery, [prescRequestRow.no_resep]).then(([rows]) => rows)
+      ]);
       
       const obatList = detailRequestRows.map(row => ({
         kode_brng: row.kode_brng || '',
@@ -472,13 +490,50 @@ class GetMedicalRecordService {
         jumlah: row.jml || '-',
         aturan_pakai: row.aturan_pakai || '-'
       }));
+
+      const compounds = [];
+      for (const compoundRow of compoundRows) {
+        const [compoundDetailRows] = await db.execute(
+          `
+            SELECT
+              rdrd.kode_brng,
+              rdrd.kandungan,
+              rdrd.jml,
+              db.nama_brng,
+              db.kode_sat AS satuan
+            FROM resep_dokter_racikan_detail rdrd
+            LEFT JOIN databarang db ON db.kode_brng = rdrd.kode_brng
+            WHERE rdrd.no_resep = ? AND rdrd.no_racik = ?
+            ORDER BY db.nama_brng ASC
+          `,
+          [prescRequestRow.no_resep, compoundRow.no_racik]
+        );
+
+        compounds.push({
+          no_racik: compoundRow.no_racik,
+          nama_racik: compoundRow.nama_racik || '',
+          kd_racik: compoundRow.kd_racik || '',
+          nm_racik: compoundRow.nm_racik || '',
+          jml_dr: compoundRow.jml_dr || '',
+          aturan_pakai: compoundRow.aturan_pakai || '',
+          keterangan: compoundRow.keterangan || '',
+          details: compoundDetailRows.map((detailRow) => ({
+            kode_brng: detailRow.kode_brng || '',
+            nama_brng: detailRow.nama_brng || '-',
+            kandungan: detailRow.kandungan || '',
+            jml: detailRow.jml || '',
+            satuan: detailRow.satuan || ''
+          }))
+        });
+      }
       
-      if (obatList.length > 0) {
+      if (obatList.length > 0 || compounds.length > 0) {
         medicationsRequest.push({
           tanggal: this.formatDateOnly(prescRequestRow.tgl_peresepan) + ' ' + prescRequestRow.jam_peresepan,
           no_resep: prescRequestRow.no_resep,
           kd_dokter: prescRequestRow.kd_dokter || '',
-          obat: obatList
+          obat: obatList,
+          compounds
         });
       }
     }

@@ -80,7 +80,16 @@ interface RacikanMedicine {
 interface CompoundPrescription {
   tanggal: string;
   nama_racikan: string;
+  jumlah: string;
+  kd_racik: string;
+  aturan_pakai: string;
+  keterangan: string;
   komposisi: RacikanMedicine[];
+}
+
+interface CompoundMethodOption {
+  kd_racik: string;
+  nm_racik: string;
 }
 
 interface LabTest {
@@ -275,6 +284,10 @@ const createEmptyRacikanMedicine = (): RacikanMedicine => ({
 const createDefaultCompoundPrescription = (): CompoundPrescription => ({
   tanggal: getCurrentPrescriptionDate(),
   nama_racikan: '',
+  jumlah: '',
+  kd_racik: '',
+  aturan_pakai: '',
+  keterangan: '',
   komposisi: [createEmptyRacikanMedicine()]
 });
 
@@ -631,6 +644,7 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
   const [medicineSearchLoading, setMedicineSearchLoading] = useState<Record<string, boolean>>({});
 
   const [compoundPrescriptions, setCompoundPrescriptions] = useState<CompoundPrescription[]>([createDefaultCompoundPrescription()]);
+  const [compoundMethods, setCompoundMethods] = useState<CompoundMethodOption[]>([]);
   const [compoundMedicineOptions, setCompoundMedicineOptions] = useState<Record<string, MedicineOption[]>>({});
   const [compoundMedicineSearchOpen, setCompoundMedicineSearchOpen] = useState<Record<string, boolean>>({});
   const [compoundMedicineSearchQuery, setCompoundMedicineSearchQuery] = useState<Record<string, string>>({});
@@ -1341,14 +1355,18 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
               <strong>P (Planning):</strong>
               <p className="whitespace-pre-line break-words">{formatMultilineText(exam.p || exam.rtl || '-')}</p>
             </div>
-            <div className="text-sm">
-              <strong>I (Implementation):</strong>
-              <p className="whitespace-pre-line break-words">{formatMultilineText(exam.i || exam.instruksi || '-')}</p>
-            </div>
-            <div className="text-sm">
-              <strong>E (Evaluation):</strong>
-              <p className="whitespace-pre-line break-words">{formatMultilineText(exam.e || exam.evaluasi || '-')}</p>
-            </div>
+            {rawatType === 'Ranap' && (
+              <div className="text-sm">
+                <strong>I (Implementation):</strong>
+                <p className="whitespace-pre-line break-words">{formatMultilineText(exam.i || exam.instruksi || '-')}</p>
+              </div>
+            )}
+            {rawatType === 'Ranap' && (
+              <div className="text-sm">
+                <strong>E (Evaluation):</strong>
+                <p className="whitespace-pre-line break-words">{formatMultilineText(exam.e || exam.evaluasi || '-')}</p>
+              </div>
+            )}
             <p className="text-sm"><strong>Petugas:</strong> {exam.pegawai || exam.nip || '-'}</p>
           </div>
         </div>
@@ -1491,6 +1509,9 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
 
     return items.map((med, index) => {
       const allowedToDelete = canDeletePrescription(med);
+      const compoundItems = Array.isArray(med?.compounds) ? med.compounds : [];
+      const hasCompoundItems = compoundItems.length > 0;
+      const canEditThisPrescription = canEditPrescription(med) && !hasCompoundItems;
 
       return (
       <div key={`${med.no_resep || med.tanggal}-${index}`} className="border rounded-lg p-4">
@@ -1514,7 +1535,7 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
         </div>
         <div className="space-y-2">
           <div className="flex justify-between items-center mb-2">
-            <h4 className="font-medium">Obat:</h4>
+            <h4 className="font-medium">{(Array.isArray(med?.obat) ? med.obat.length : 0) > 0 ? 'Obat:' : 'Resep:'}</h4>
             <div className="flex flex-wrap gap-2">
               {isRequestTab ? (
                 <>
@@ -1522,10 +1543,12 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
                     variant="outline"
                     size="sm"
                     onClick={() => handleEditResep(med)}
-                    disabled={!canEditPrescription(med)}
+                    disabled={!canEditThisPrescription}
                   >
                     <Pencil className="h-4 w-4 mr-2" />
-                    {canEditPrescription(med) ? 'Edit Resep' : 'Bukan Data Anda'}
+                    {canEditPrescription(med)
+                      ? (hasCompoundItems ? 'Ada Racikan' : 'Edit Resep')
+                      : 'Bukan Data Anda'}
                   </Button>
                   <Button
                     variant="destructive"
@@ -1544,7 +1567,7 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
               </Button>
             </div>
           </div>
-          {(med.obat || []).map((obat: any, i: number) => (
+          {(Array.isArray(med?.obat) ? med.obat : []).map((obat: any, i: number) => (
             <div key={i} className="grid grid-cols-1 md:grid-cols-3 gap-4 border-l-2 border-secondary pl-4">
               <div>
                 <p className="text-sm text-muted-foreground">Nama</p>
@@ -1560,6 +1583,54 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
               </div>
             </div>
           ))}
+          {hasCompoundItems ? (
+            <div className="space-y-3 pt-2">
+              <h4 className="font-medium text-blue-700">Racikan:</h4>
+              {compoundItems.map((compound: any, compoundIndex: number) => (
+                <div key={`${compound.no_racik || compoundIndex}`} className="rounded border border-blue-200 bg-blue-50/40 p-3">
+                  <div className="grid grid-cols-1 gap-3 md:grid-cols-4">
+                    <div>
+                      <p className="text-sm text-muted-foreground">Nama Racikan</p>
+                      <p className="font-medium">{compound.nama_racik || '-'}</p>
+                    </div>
+                    <div>
+                      <p className="text-sm text-muted-foreground">Jumlah</p>
+                      <p className="font-medium">{compound.jml_dr || '-'}</p>
+                    </div>
+                    <div>
+                      <p className="text-sm text-muted-foreground">Metode</p>
+                      <p className="font-medium">{compound.nm_racik || compound.kd_racik || '-'}</p>
+                    </div>
+                    <div>
+                      <p className="text-sm text-muted-foreground">Aturan Pakai</p>
+                      <p className="font-medium">{compound.aturan_pakai || '-'}</p>
+                    </div>
+                  </div>
+                  {compound.keterangan ? (
+                    <p className="mt-2 text-sm text-muted-foreground">Keterangan: {compound.keterangan}</p>
+                  ) : null}
+                  <div className="mt-3 space-y-2">
+                    {(Array.isArray(compound?.details) ? compound.details : []).map((detail: any, detailIndex: number) => (
+                      <div key={`${detail.kode_brng || detailIndex}`} className="grid grid-cols-1 gap-3 border-l-2 border-blue-300 pl-3 md:grid-cols-3">
+                        <div>
+                          <p className="text-sm text-muted-foreground">Obat</p>
+                          <p className="font-medium">{detail.nama_brng || detail.nama || '-'}</p>
+                        </div>
+                        <div>
+                          <p className="text-sm text-muted-foreground">Kandungan</p>
+                          <p className="font-medium">{detail.kandungan ?? detail.jumlah ?? '-'}</p>
+                        </div>
+                        <div>
+                          <p className="text-sm text-muted-foreground">Jumlah Obat</p>
+                          <p className="font-medium">{detail.jml ?? '-'}</p>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : null}
         </div>
       </div>
     )});
@@ -2776,7 +2847,7 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
     const newMedication: Medication = {
       tanggal: getCurrentPrescriptionDate(),
       status: med.status || (statusRawat === 'Ranap' ? 'Ranap' : 'Ralan'),
-      obat: med.obat.map((o: any) => ({
+      obat: (Array.isArray(med?.obat) ? med.obat : []).map((o: any) => ({
         kode_brng: o.kode_brng || '',
         nama: o.nama,
         jumlah: String(o.jumlah ?? ''),
@@ -2786,14 +2857,38 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
       }))
     };
 
-    if (isFirstEmpty) {
+    const compoundItems = Array.isArray(med?.compounds)
+      ? med.compounds.map((compound: any) => ({
+          tanggal: getCurrentPrescriptionDate(),
+          nama_racikan: compound.nama_racik || '',
+          jumlah: String(compound.jml_dr ?? compound.jumlah ?? ''),
+          kd_racik: compound.kd_racik || '',
+          aturan_pakai: compound.aturan_pakai || '',
+          keterangan: compound.keterangan || '',
+          komposisi: (Array.isArray(compound.details) ? compound.details : []).map((detail: any) => ({
+            kode_brng: detail.kode_brng || '',
+            nama: detail.nama_brng || detail.nama || '',
+            jumlah: String(detail.kandungan ?? detail.jumlah ?? ''),
+            satuan: detail.satuan || '',
+            stok: Number(detail.stok) || 0
+          }))
+        }))
+      : [];
+    const hasMedicineItems = newMedication.obat.length > 0;
+
+    if (hasMedicineItems && isFirstEmpty) {
       setMedications([newMedication]);
-    } else {
+    } else if (hasMedicineItems) {
       setMedications([...medications, newMedication]);
     }
 
+    if (compoundItems.length > 0) {
+      setCompoundPrescriptions(compoundItems);
+      setIsCompoundFormOpen(true);
+    }
+
     setEditingPrescriptionNo(null);
-    setIsMedicationFormOpen(true);
+    setIsMedicationFormOpen(hasMedicineItems);
     setActiveTab('medications');
     
     toast({
@@ -3145,6 +3240,32 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
       setCompoundMedicineSearchLoading((previous) => ({ ...previous, [key]: false }));
     }
   }, [formattedNoRawat]);
+
+  const fetchCompoundMethods = useCallback(async () => {
+    try {
+      const params = new URLSearchParams({
+        action: 'get_compound_methods'
+      });
+
+      const response = await fetch(`${API_URLS.PRESCRIPTION_DATA}?${params.toString()}`);
+      const responseJson = await response.json().catch(() => null);
+
+      if (!response.ok || !responseJson?.success) {
+        throw new Error(
+          responseJson?.error || `HTTP error! status: ${response.status}`
+        );
+      }
+
+      setCompoundMethods(Array.isArray(responseJson.data) ? responseJson.data : []);
+    } catch (error) {
+      console.error('Error fetching compound methods:', error);
+      setCompoundMethods([]);
+    }
+  }, []);
+
+  useEffect(() => {
+    void fetchCompoundMethods();
+  }, [fetchCompoundMethods]);
 
   const resetAllergyForm = useCallback(() => {
     setAllergyCategory('');
@@ -4866,6 +4987,86 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
         resetRadiologyForm();
         setActiveTab('radiology');
         await fetchMedicalRecord({ reset: true, outpatientPage: 1, inpatientPage: 1 });
+      } else if (type === 'Resep Racikan') {
+        if (!formattedNoRawat) {
+          throw new Error('Pilih kunjungan pasien terlebih dahulu');
+        }
+
+        if (!user?.username) {
+          throw new Error('User login tidak ditemukan');
+        }
+
+        const validCompounds = compoundPrescriptions
+          .map((compound) => ({
+            tanggal: compound.tanggal,
+            nama_racik: compound.nama_racikan.trim(),
+            jumlah: compound.jumlah.trim(),
+            kd_racik: compound.kd_racik.trim(),
+            aturan_pakai: compound.aturan_pakai.trim(),
+            keterangan: compound.keterangan.trim(),
+            details: compound.komposisi
+              .map((item) => ({
+                kode_brng: String(item.kode_brng ?? '').trim(),
+                nama: String(item.nama ?? '').trim(),
+                kandungan: String(item.jumlah ?? '').trim()
+              }))
+              .filter((item) => item.kode_brng && item.nama && item.kandungan)
+          }))
+          .filter((compound) => (
+            compound.tanggal &&
+            compound.nama_racik &&
+            compound.jumlah &&
+            compound.kd_racik &&
+            compound.aturan_pakai &&
+            compound.details.length > 0
+          ));
+
+        if (!validCompounds.length) {
+          throw new Error('Lengkapi minimal satu racikan yang valid');
+        }
+
+        const referenceDate = validCompounds[0].tanggal;
+        const hasDifferentDate = validCompounds.some((compound) => compound.tanggal !== referenceDate);
+        if (hasDifferentDate) {
+          throw new Error('Tanggal resep racikan harus sama dalam satu kali simpan');
+        }
+
+        const response = await fetch(API_URLS.PRESCRIPTION_DATA, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            action: 'create_prescription',
+            no_rawat: formattedNoRawat,
+            kd_dokter: user.username,
+            prescription_date: referenceDate,
+            prescription_status: statusRawat === 'Ranap' ? 'Ranap' : 'Ralan',
+            medicines: [],
+            compounds: validCompounds
+          })
+        });
+
+        const responseJson = await response.json().catch(() => null);
+
+        if (!response.ok || !responseJson?.success) {
+          throw new Error(
+            responseJson?.details ||
+            responseJson?.error ||
+            `HTTP error! status: ${response.status}`
+          );
+        }
+
+        toast({
+          title: "Berhasil",
+          description: responseJson?.reused_existing
+            ? `Racikan berhasil ditambahkan ke resep aktif ${responseJson?.no_resep}`
+            : `Racikan berhasil disimpan dengan nomor resep ${responseJson?.no_resep}`,
+        });
+
+        resetCompoundForm();
+        setActiveTab('medications');
+        await fetchMedicalRecord({ reset: true, outpatientPage: 1, inpatientPage: 1 });
       } else if (type === 'Resep') {
         if (!formattedNoRawat) {
           throw new Error('Pilih kunjungan pasien terlebih dahulu');
@@ -5362,14 +5563,6 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
                                         <div>
                                           <span className="font-medium">P (Planning):</span>
                                           <p className="mt-1 whitespace-pre-line break-words text-muted-foreground">{formatMultilineText(exam.p)}</p>
-                                        </div>
-                                        <div>
-                                          <span className="font-medium">I (Implementation):</span>
-                                          <p className="mt-1 whitespace-pre-line break-words text-muted-foreground">{formatMultilineText(exam.i)}</p>
-                                        </div>
-                                        <div>
-                                          <span className="font-medium">E (Evaluation):</span>
-                                          <p className="mt-1 whitespace-pre-line break-words text-muted-foreground">{formatMultilineText(exam.e)}</p>
                                         </div>
                                       </div>
                                     </div>
@@ -6711,7 +6904,7 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
                          </Button>
                        )}
                      </div>
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+                    <div className="grid grid-cols-1 gap-4 mb-4 md:grid-cols-2 xl:grid-cols-3">
                        <div>
                          <Label htmlFor={`racikan-date-${compoundIndex}`}>Tanggal Resep</Label>
                         <Popover>
@@ -6751,6 +6944,67 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
                            onChange={(e) => {
                              const newPrescriptions = [...compoundPrescriptions];
                              newPrescriptions[compoundIndex].nama_racikan = e.target.value;
+                             setCompoundPrescriptions(newPrescriptions);
+                           }}
+                         />
+                       </div>
+                       <div>
+                         <Label htmlFor={`racikan-jml-${compoundIndex}`}>Jumlah Racikan</Label>
+                         <Input
+                           id={`racikan-jml-${compoundIndex}`}
+                           placeholder="10"
+                           value={compound.jumlah}
+                           onChange={(e) => {
+                             const newPrescriptions = [...compoundPrescriptions];
+                             newPrescriptions[compoundIndex].jumlah = e.target.value;
+                             setCompoundPrescriptions(newPrescriptions);
+                           }}
+                         />
+                       </div>
+                       <div>
+                         <Label htmlFor={`racikan-metode-${compoundIndex}`}>Metode Racik</Label>
+                         <Select
+                           value={compound.kd_racik}
+                           onValueChange={(value) => {
+                             const newPrescriptions = [...compoundPrescriptions];
+                             newPrescriptions[compoundIndex].kd_racik = value;
+                             setCompoundPrescriptions(newPrescriptions);
+                           }}
+                         >
+                           <SelectTrigger id={`racikan-metode-${compoundIndex}`}>
+                             <SelectValue placeholder="Pilih metode racik" />
+                           </SelectTrigger>
+                           <SelectContent>
+                             {compoundMethods.map((method) => (
+                               <SelectItem key={method.kd_racik} value={method.kd_racik}>
+                                 {method.nm_racik}
+                               </SelectItem>
+                             ))}
+                           </SelectContent>
+                         </Select>
+                       </div>
+                       <div>
+                         <Label htmlFor={`racikan-aturan-${compoundIndex}`}>Aturan Pakai</Label>
+                         <Input
+                           id={`racikan-aturan-${compoundIndex}`}
+                           placeholder="3x1"
+                           value={compound.aturan_pakai}
+                           onChange={(e) => {
+                             const newPrescriptions = [...compoundPrescriptions];
+                             newPrescriptions[compoundIndex].aturan_pakai = e.target.value;
+                             setCompoundPrescriptions(newPrescriptions);
+                           }}
+                         />
+                       </div>
+                       <div className="md:col-span-2 xl:col-span-3">
+                         <Label htmlFor={`racikan-keterangan-${compoundIndex}`}>Keterangan</Label>
+                         <Input
+                           id={`racikan-keterangan-${compoundIndex}`}
+                           placeholder="Keterangan racikan"
+                           value={compound.keterangan}
+                           onChange={(e) => {
+                             const newPrescriptions = [...compoundPrescriptions];
+                             newPrescriptions[compoundIndex].keterangan = e.target.value;
                              setCompoundPrescriptions(newPrescriptions);
                            }}
                          />
@@ -6856,10 +7110,10 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
                         ) : null}
                        </div>
                        <div>
-                         <Label htmlFor={`racikan-jumlah-${compoundIndex}-${racikanIndex}`}>Jumlah/Dosis</Label>
+                         <Label htmlFor={`racikan-jumlah-${compoundIndex}-${racikanIndex}`}>Kandungan</Label>
                          <Input 
                            id={`racikan-jumlah-${compoundIndex}-${racikanIndex}`}
-                           placeholder="mg/ml"
+                           placeholder="500 / 1/2 / 250mg"
                            value={racikan.jumlah}
                           onChange={(e) => updateCompoundMedicineItem(compoundIndex, racikanIndex, { jumlah: e.target.value })}
                          />

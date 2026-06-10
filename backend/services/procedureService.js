@@ -402,9 +402,19 @@ class ProcedureService {
       }
 
       if (normalizedUsername) {
+        const ownershipFields = [];
+
+        if (normalizedRecordType === 'dr' || normalizedRecordType === 'drpr') {
+          ownershipFields.push('kd_dokter');
+        }
+
+        if (normalizedRecordType === 'pr' || normalizedRecordType === 'drpr') {
+          ownershipFields.push('nip');
+        }
+
         const [ownershipRows] = await connection.execute(
           `
-            SELECT kd_dokter, nip
+            SELECT ${ownershipFields.join(', ')}
             FROM ${procedureTable}
             WHERE ${conditions.join(' AND ')}
             LIMIT 1

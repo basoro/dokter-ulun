@@ -20,6 +20,184 @@ class PrescriptionDataService {
     return parsed;
   }
 
+  normalizeText(value) {
+    return String(value ?? '').trim();
+  }
+
+  roundToThree(value) {
+    return Math.round((Number(value) || 0) * 1000) / 1000;
+  }
+
+  async generatePrescriptionNumber(connection, normalizedPrescriptionDate) {
+    const datePrefix = normalizedPrescriptionDate.replace(/-/g, '');
+    const [sequenceRows] = await connection.execute(
+      `
+        SELECT MAX(no_resep) AS last_no_resep
+        FROM resep_obat
+        WHERE no_resep LIKE ?
+      `,
+      [`${datePrefix}%`]
+    );
+    const lastNoResep = sequenceRows[0]?.last_no_resep || '';
+    const lastSequence = Number(String(lastNoResep).slice(datePrefix.length)) || 0;
+    const nextSequence = String(lastSequence + 1).padStart(5, '0');
+    return `${datePrefix}${nextSequence}`;
+  }
+
+  async findReusablePrescription(connection, no_rawat, kd_dokter, normalizedPrescriptionDate) {
+    const [rows] = await connection.execute(
+      `
+        SELECT
+          no_resep,
+          IF(jam_peresepan = jam, 'Belum Terlayani', 'Sudah Terlayani') AS status_layanan
+        FROM resep_obat
+        WHERE no_rawat = ?
+          AND kd_dokter = ?
+          AND tgl_peresepan = ?
+        ORDER BY tgl_peresepan DESC, jam_peresepan DESC
+        LIMIT 1
+      `,
+      [no_rawat, kd_dokter, normalizedPrescriptionDate]
+    );
+
+    const row = rows[0];
+    if (!row) {
+      return null;
+    }
+
+    if (String(row.status_layanan || '').trim() !== 'Belum Terlayani') {
+      return null;
+    }
+
+    return String(row.no_resep || '').trim() || null;
+  }
+
+  async getNextCompoundNumber(connection, no_resep) {
+    const [rows] = await connection.execute(
+      `
+        SELECT COALESCE(MAX(no_racik), 0) AS max_no_racik
+        FROM resep_dokter_racikan
+        WHERE no_resep = ?
+      `,
+      [no_resep]
+    );
+
+    return (Number(rows?.[0]?.max_no_racik) || 0) + 1;
+  }
+
+  normalizeCompoundDose(rawValue, kapasitas) {
+    const normalizedRaw = String(rawValue ?? '')
+      .toLowerCase()
+      .replace(/tab/g, '')
+      .replace(/mg/g, '')
+      .replace(/\s+/g, '')
+      .replace(/,/g, '.')
+      .trim();
+
+    if (!normalizedRaw) {
+      return 0;
+    }
+
+    const fractionMatch = normalizedRaw.match(/^(\d+)\/(\d+)$/);
+    if (fractionMatch) {
+      const numerator = Number(fractionMatch[1]);
+      const denominator = Number(fractionMatch[2]);
+      if (numerator > 0 && denominator > 0 && kapasitas > 0) {
+        return this.roundToThree((kapasitas * numerator) / denominator);
+      }
+    }
+
+    const parsed = Number(normalizedRaw);
+    if (!Number.isFinite(parsed) || parsed <= 0) {
+      return 0;
+    }
+
+    return this.roundToThree(parsed);
+  }
+
+  async normalizeMedicines(medicines) {
+    return (Array.isArray(medicines) ? medicines : [])
+      .map((medicine) => ({
+        kode_brng: this.normalizeText(medicine?.kode_brng),
+        jml: this.normalizeText(medicine?.jml),
+        aturan_pakai: this.normalizeText(medicine?.aturan_pakai)
+      }))
+      .filter((medicine) => medicine.kode_brng && this.parseMedicineQty(medicine.jml) > 0);
+  }
+
+  async normalizeCompounds(connection, compounds) {
+    const normalizedCompounds = (Array.isArray(compounds) ? compounds : [])
+      .map((compound) => ({
+        nama_racik: this.normalizeText(compound?.nama_racik),
+        kd_racik: this.normalizeText(compound?.kd_racik),
+        jml_dr: this.normalizeText(compound?.jml_dr ?? compound?.jumlah),
+        aturan_pakai: this.normalizeText(compound?.aturan_pakai),
+        keterangan: this.normalizeText(compound?.keterangan),
+        details: (Array.isArray(compound?.details) ? compound.details : [])
+          .map((detail) => ({
+            kode_brng: this.normalizeText(detail?.kode_brng),
+            kandungan_input: this.normalizeText(detail?.kandungan ?? detail?.jumlah)
+          }))
+          .filter((detail) => detail.kode_brng && detail.kandungan_input)
+      }))
+      .filter((compound) => compound.nama_racik && this.parseMedicineQty(compound.jml_dr) > 0 && compound.details.length > 0);
+
+    if (!normalizedCompounds.length) {
+      return [];
+    }
+
+    const uniqueCodes = Array.from(
+      new Set(
+        normalizedCompounds.flatMap((compound) => compound.details.map((detail) => detail.kode_brng))
+      )
+    );
+
+    const placeholders = uniqueCodes.map(() => '?').join(', ');
+    const [rows] = await connection.execute(
+      `
+        SELECT kode_brng, kapasitas
+        FROM databarang
+        WHERE kode_brng IN (${placeholders})
+      `,
+      uniqueCodes
+    );
+
+    const capacityByCode = new Map(
+      rows.map((row) => [String(row.kode_brng || '').trim(), Number(row.kapasitas) || 0])
+    );
+
+    return normalizedCompounds.map((compound) => {
+      const racikanQty = this.parseMedicineQty(compound.jml_dr);
+      const details = compound.details.map((detail) => {
+        const kapasitas = capacityByCode.get(detail.kode_brng) || 0;
+        const kandungan = this.normalizeCompoundDose(detail.kandungan_input, kapasitas);
+        if (kandungan <= 0) {
+          throw new Error(`Kandungan racikan untuk obat ${detail.kode_brng} tidak valid`);
+        }
+
+        if (kapasitas <= 0) {
+          throw new Error(`Kapasitas obat ${detail.kode_brng} tidak ditemukan`);
+        }
+
+        return {
+          kode_brng: detail.kode_brng,
+          kandungan,
+          jml: this.roundToThree((racikanQty * kandungan) / kapasitas)
+        };
+      }).filter((detail) => detail.jml > 0);
+
+      if (!details.length) {
+        throw new Error(`Komposisi racikan ${compound.nama_racik} tidak valid`);
+      }
+
+      return {
+        ...compound,
+        jml_dr: String(racikanQty),
+        details
+      };
+    });
+  }
+
   async resolveStockBangsalCode(connection, no_rawat, resolvedPrescriptionStatus) {
     const normalizedStatus = String(resolvedPrescriptionStatus || '').trim().toLowerCase();
 
@@ -244,6 +422,7 @@ class PrescriptionDataService {
         FROM resep_dokter_racikan rdr
         LEFT JOIN metode_racik mr ON rdr.kd_racik = mr.kd_racik
         WHERE rdr.no_resep = ?
+        ORDER BY rdr.no_racik ASC
       `;
       
       const [medicines, compounds] = await Promise.all([
@@ -251,10 +430,36 @@ class PrescriptionDataService {
         executeQuery(compoundQuery, [no_resep])
       ]);
       
+      const compoundRows = Array.isArray(compounds) ? compounds : [];
+      const compoundDetails = await Promise.all(
+        compoundRows.map(async (compound) => {
+          const detailRows = await executeQuery(
+            `
+              SELECT
+                rdrd.kode_brng,
+                rdrd.kandungan,
+                rdrd.jml,
+                db.nama_brng,
+                db.kode_sat AS satuan
+              FROM resep_dokter_racikan_detail rdrd
+              LEFT JOIN databarang db ON db.kode_brng = rdrd.kode_brng
+              WHERE rdrd.no_resep = ? AND rdrd.no_racik = ?
+              ORDER BY db.nama_brng ASC
+            `,
+            [no_resep, compound.no_racik]
+          );
+
+          return {
+            ...compound,
+            details: detailRows
+          };
+        })
+      );
+
       return {
         success: true,
         medicines,
-        compounds
+        compounds: compoundDetails
       };
     } catch (error) {
       console.error('Error getting prescription details:', error);
@@ -480,41 +685,52 @@ class PrescriptionDataService {
       await connection.beginTransaction();
       const normalizedPrescriptionDate = this.normalizePrescriptionDate(prescriptionDate) || new Date().toISOString().slice(0, 10);
       const resolvedPrescriptionStatus = await this.resolvePrescriptionStatus(connection, no_rawat, prescriptionStatus);
+      const normalizedMedicines = await this.normalizeMedicines(medicines);
+      const normalizedCompounds = await this.normalizeCompounds(connection, compounds);
+
+      if (!normalizedMedicines.length && !normalizedCompounds.length) {
+        throw new Error('Minimal satu obat atau satu racikan harus diisi');
+      }
+
       const stockBangsalCode = await this.resolveStockBangsalCode(connection, no_rawat, resolvedPrescriptionStatus);
-      await this.validateMedicineStock(connection, stockBangsalCode, medicines);
-      
-      // Generate no_resep dengan format YYYYMMDD + 5 digit urutan harian.
-      const datePrefix = normalizedPrescriptionDate.replace(/-/g, '');
-      const [sequenceRows] = await connection.execute(
-        `
-          SELECT MAX(no_resep) AS last_no_resep
-          FROM resep_obat
-          WHERE no_resep LIKE ?
-        `,
-        [`${datePrefix}%`]
-      );
-      const lastNoResep = sequenceRows[0]?.last_no_resep || '';
-      const lastSequence = Number(String(lastNoResep).slice(datePrefix.length)) || 0;
-      const nextSequence = String(lastSequence + 1).padStart(5, '0');
-      const no_resep = `${datePrefix}${nextSequence}`;
-      
-      // Insert main prescription
-      const insertPrescriptionQuery = `
-        INSERT INTO resep_obat (no_resep, tgl_perawatan, jam, no_rawat, kd_dokter, tgl_peresepan, jam_peresepan, status)
-        VALUES (?, '0000-00-00', '00:00:00', ?, ?, ?, CURTIME(), ?)
-      `;
-      
-      await connection.execute(insertPrescriptionQuery, [
-        no_resep,
-        no_rawat,
-        kd_dokter,
-        normalizedPrescriptionDate,
-        resolvedPrescriptionStatus
+      const compoundMedicineRequests = normalizedCompounds.flatMap((compound) => (
+        compound.details.map((detail) => ({
+          kode_brng: detail.kode_brng,
+          jml: detail.jml
+        }))
+      ));
+      await this.validateMedicineStock(connection, stockBangsalCode, [
+        ...normalizedMedicines,
+        ...compoundMedicineRequests
       ]);
-      
-      // Insert medicines
-      if (medicines && medicines.length > 0) {
-        for (const medicine of medicines) {
+
+      let no_resep = await this.findReusablePrescription(connection, no_rawat, kd_dokter, normalizedPrescriptionDate);
+      let reusedExisting = true;
+
+      if (!no_resep) {
+        reusedExisting = false;
+        no_resep = await this.generatePrescriptionNumber(connection, normalizedPrescriptionDate);
+
+        await connection.execute(
+          `
+            INSERT INTO resep_obat (
+              no_resep, tgl_perawatan, jam, no_rawat, kd_dokter, tgl_peresepan, jam_peresepan, status
+            )
+            VALUES (?, ?, CURTIME(), ?, ?, ?, CURTIME(), ?)
+          `,
+          [
+            no_resep,
+            normalizedPrescriptionDate,
+            no_rawat,
+            kd_dokter,
+            normalizedPrescriptionDate,
+            resolvedPrescriptionStatus
+          ]
+        );
+      }
+
+      if (normalizedMedicines.length > 0) {
+        for (const medicine of normalizedMedicines) {
           const insertMedicineQuery = `
             INSERT INTO resep_dokter (no_resep, kode_brng, jml, aturan_pakai)
             VALUES (?, ?, ?, ?)
@@ -522,15 +738,28 @@ class PrescriptionDataService {
           await connection.execute(insertMedicineQuery, [no_resep, medicine.kode_brng, medicine.jml, medicine.aturan_pakai]);
         }
       }
-      
-      // Insert compounds
-      if (compounds && compounds.length > 0) {
-        for (const compound of compounds) {
+
+      if (normalizedCompounds.length > 0) {
+        let nextCompoundNumber = await this.getNextCompoundNumber(connection, no_resep);
+
+        for (const compound of normalizedCompounds) {
+          const compoundNo = nextCompoundNumber++;
           const insertCompoundQuery = `
             INSERT INTO resep_dokter_racikan (no_resep, no_racik, nama_racik, kd_racik, jml_dr, aturan_pakai, keterangan)
             VALUES (?, ?, ?, ?, ?, ?, ?)
           `;
-          await connection.execute(insertCompoundQuery, [no_resep, compound.no_racik, compound.nama_racik, compound.kd_racik, compound.jml_dr, compound.aturan_pakai, compound.keterangan]);
+          await connection.execute(insertCompoundQuery, [no_resep, compoundNo, compound.nama_racik, compound.kd_racik, compound.jml_dr, compound.aturan_pakai, compound.keterangan]);
+
+          for (const detail of compound.details) {
+            await connection.execute(
+              `
+                INSERT INTO resep_dokter_racikan_detail
+                  (no_resep, no_racik, kode_brng, p1, p2, kandungan, jml)
+                VALUES (?, ?, ?, '1', '1', ?, ?)
+              `,
+              [no_resep, compoundNo, detail.kode_brng, detail.kandungan, detail.jml]
+            );
+          }
         }
       }
       
@@ -538,7 +767,8 @@ class PrescriptionDataService {
       
       return {
         success: true,
-        no_resep
+        no_resep,
+        reused_existing: reusedExisting
       };
     } catch (error) {
       await connection.rollback();
@@ -578,6 +808,8 @@ class PrescriptionDataService {
 
       const normalizedPrescriptionDate = this.normalizePrescriptionDate(prescriptionDate);
       const normalizedPrescriptionStatus = this.normalizePrescriptionStatus(prescriptionStatus);
+      const normalizedMedicines = await this.normalizeMedicines(medicines);
+      const normalizedCompounds = await this.normalizeCompounds(connection, compounds);
 
       const [headerRows] = await connection.execute(
         `
@@ -596,7 +828,16 @@ class PrescriptionDataService {
       const noRawatHeader = String(headerRows[0].no_rawat || '').trim();
       const resolvedStatus = normalizedPrescriptionStatus || (await this.resolvePrescriptionStatus(connection, noRawatHeader, headerRows[0].status));
       const stockBangsalCode = await this.resolveStockBangsalCode(connection, noRawatHeader, resolvedStatus);
-      await this.validateMedicineStock(connection, stockBangsalCode, medicines);
+      const compoundMedicineRequests = normalizedCompounds.flatMap((compound) => (
+        compound.details.map((detail) => ({
+          kode_brng: detail.kode_brng,
+          jml: detail.jml
+        }))
+      ));
+      await this.validateMedicineStock(connection, stockBangsalCode, [
+        ...normalizedMedicines,
+        ...compoundMedicineRequests
+      ]);
 
       const headerUpdates = [];
       const headerParams = [];
@@ -618,13 +859,12 @@ class PrescriptionDataService {
         );
       }
       
-      // Delete existing medicines and compounds
+      await connection.execute('DELETE FROM resep_dokter_racikan_detail WHERE no_resep = ?', [no_resep]);
       await connection.execute('DELETE FROM resep_dokter WHERE no_resep = ?', [no_resep]);
       await connection.execute('DELETE FROM resep_dokter_racikan WHERE no_resep = ?', [no_resep]);
-      
-      // Insert updated medicines
-      if (medicines && medicines.length > 0) {
-        for (const medicine of medicines) {
+
+      if (normalizedMedicines.length > 0) {
+        for (const medicine of normalizedMedicines) {
           const insertMedicineQuery = `
             INSERT INTO resep_dokter (no_resep, kode_brng, jml, aturan_pakai)
             VALUES (?, ?, ?, ?)
@@ -632,15 +872,28 @@ class PrescriptionDataService {
           await connection.execute(insertMedicineQuery, [no_resep, medicine.kode_brng, medicine.jml, medicine.aturan_pakai]);
         }
       }
-      
-      // Insert updated compounds
-      if (compounds && compounds.length > 0) {
-        for (const compound of compounds) {
+
+      if (normalizedCompounds.length > 0) {
+        let nextCompoundNumber = 1;
+        for (const compound of normalizedCompounds) {
           const insertCompoundQuery = `
             INSERT INTO resep_dokter_racikan (no_resep, no_racik, nama_racik, kd_racik, jml_dr, aturan_pakai, keterangan)
             VALUES (?, ?, ?, ?, ?, ?, ?)
           `;
-          await connection.execute(insertCompoundQuery, [no_resep, compound.no_racik, compound.nama_racik, compound.kd_racik, compound.jml_dr, compound.aturan_pakai, compound.keterangan]);
+          await connection.execute(insertCompoundQuery, [no_resep, nextCompoundNumber, compound.nama_racik, compound.kd_racik, compound.jml_dr, compound.aturan_pakai, compound.keterangan]);
+
+          for (const detail of compound.details) {
+            await connection.execute(
+              `
+                INSERT INTO resep_dokter_racikan_detail
+                  (no_resep, no_racik, kode_brng, p1, p2, kandungan, jml)
+                VALUES (?, ?, ?, '1', '1', ?, ?)
+              `,
+              [no_resep, nextCompoundNumber, detail.kode_brng, detail.kandungan, detail.jml]
+            );
+          }
+
+          nextCompoundNumber += 1;
         }
       }
       
@@ -685,7 +938,7 @@ class PrescriptionDataService {
         }
       }
       
-      // Delete related records first
+      await connection.execute('DELETE FROM resep_dokter_racikan_detail WHERE no_resep = ?', [no_resep]);
       await connection.execute('DELETE FROM resep_dokter WHERE no_resep = ?', [no_resep]);
       await connection.execute('DELETE FROM resep_dokter_racikan WHERE no_resep = ?', [no_resep]);
       
