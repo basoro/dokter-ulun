@@ -38,6 +38,200 @@ const validateClinicalPathwayData = [
     .optional()
 ];
 
+const validateGeneratePatientPayload = [
+  body('no_rkm_medis')
+    .notEmpty()
+    .withMessage('No rekam medis harus diisi'),
+  body('no_rawat')
+    .notEmpty()
+    .withMessage('No rawat harus diisi'),
+  body('clinical_pathway_id')
+    .optional()
+    .isInt({ min: 1 })
+    .withMessage('Clinical pathway id tidak valid')
+];
+
+const validateMonitoringPatientId = [
+  param('patientId')
+    .isInt({ min: 1 })
+    .withMessage('Patient CP id tidak valid')
+];
+
+const validateMonitoringExecutionPayload = [
+  ...validateMonitoringPatientId,
+  param('executionId')
+    .isInt({ min: 1 })
+    .withMessage('Execution id tidak valid'),
+  body('status')
+    .notEmpty()
+    .withMessage('Status aktivitas harus diisi')
+];
+
+const validateMonitoringPatientStatusPayload = [
+  ...validateMonitoringPatientId,
+  body('status')
+    .notEmpty()
+    .withMessage('Status pasien harus diisi')
+];
+
+/**
+ * @route GET /api/clinical-pathway/monitoring/by-no-rawat/:no_rawat
+ * @desc Mendapatkan detail monitoring berdasarkan no_rawat
+ * @access Private
+ */
+router.get('/monitoring/by-no-rawat/:no_rawat', async (req, res) => {
+  try {
+    const result = await clinicalPathwayService.getMonitoringDetailByNoRawat(req.params.no_rawat);
+    if (!result.success) {
+      return res.status(404).json(result);
+    }
+
+    return res.json(result);
+  } catch (error) {
+    console.error('Error in clinical pathway monitoring by no_rawat route:', error);
+    return res.status(500).json({
+      success: false,
+      message: 'Terjadi kesalahan server',
+      error: process.env.NODE_ENV === 'development' ? error.message : undefined
+    });
+  }
+});
+
+/**
+ * @route GET /api/clinical-pathway/monitoring/:patientId
+ * @desc Mendapatkan detail monitoring pasien Clinical Pathway
+ * @access Private
+ */
+router.get('/monitoring/:patientId', validateMonitoringPatientId, async (req, res) => {
+  try {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+      return res.status(400).json({
+        success: false,
+        message: 'Data tidak valid',
+        errors: errors.array()
+      });
+    }
+
+    const result = await clinicalPathwayService.getMonitoringDetail(Number(req.params.patientId));
+    if (!result.success) {
+      return res.status(404).json(result);
+    }
+
+    return res.json(result);
+  } catch (error) {
+    console.error('Error in clinical pathway monitoring detail route:', error);
+    return res.status(500).json({
+      success: false,
+      message: 'Terjadi kesalahan server',
+      error: process.env.NODE_ENV === 'development' ? error.message : undefined
+    });
+  }
+});
+
+/**
+ * @route POST /api/clinical-pathway/monitoring/:patientId/refresh
+ * @desc Refresh monitoring pasien Clinical Pathway
+ * @access Private
+ */
+router.post('/monitoring/:patientId/refresh', validateMonitoringPatientId, async (req, res) => {
+  try {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+      return res.status(400).json({
+        success: false,
+        message: 'Data tidak valid',
+        errors: errors.array()
+      });
+    }
+
+    const result = await clinicalPathwayService.refreshMonitoring(Number(req.params.patientId));
+    if (!result.success) {
+      return res.status(400).json(result);
+    }
+
+    return res.json(result);
+  } catch (error) {
+    console.error('Error in clinical pathway refresh monitoring route:', error);
+    return res.status(500).json({
+      success: false,
+      message: 'Terjadi kesalahan server',
+      error: process.env.NODE_ENV === 'development' ? error.message : undefined
+    });
+  }
+});
+
+/**
+ * @route POST /api/clinical-pathway/monitoring/:patientId/execution/:executionId/status
+ * @desc Update status aktivitas monitoring
+ * @access Private
+ */
+router.post('/monitoring/:patientId/execution/:executionId/status', validateMonitoringExecutionPayload, async (req, res) => {
+  try {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+      return res.status(400).json({
+        success: false,
+        message: 'Data tidak valid',
+        errors: errors.array()
+      });
+    }
+
+    const result = await clinicalPathwayService.updateExecutionStatus(
+      Number(req.params.patientId),
+      Number(req.params.executionId),
+      req.body.status
+    );
+    if (!result.success) {
+      return res.status(400).json(result);
+    }
+
+    return res.json(result);
+  } catch (error) {
+    console.error('Error in clinical pathway update execution status route:', error);
+    return res.status(500).json({
+      success: false,
+      message: 'Terjadi kesalahan server',
+      error: process.env.NODE_ENV === 'development' ? error.message : undefined
+    });
+  }
+});
+
+/**
+ * @route POST /api/clinical-pathway/monitoring/:patientId/status
+ * @desc Update status pasien Clinical Pathway
+ * @access Private
+ */
+router.post('/monitoring/:patientId/status', validateMonitoringPatientStatusPayload, async (req, res) => {
+  try {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+      return res.status(400).json({
+        success: false,
+        message: 'Data tidak valid',
+        errors: errors.array()
+      });
+    }
+
+    const result = await clinicalPathwayService.updatePatientStatus(
+      Number(req.params.patientId),
+      req.body.status
+    );
+    if (!result.success) {
+      return res.status(400).json(result);
+    }
+
+    return res.json(result);
+  } catch (error) {
+    console.error('Error in clinical pathway update patient status route:', error);
+    return res.status(500).json({
+      success: false,
+      message: 'Terjadi kesalahan server',
+      error: process.env.NODE_ENV === 'development' ? error.message : undefined
+    });
+  }
+});
+
 /**
  * @route GET /api/clinical-pathway/:no_rkm_medis/:no_rawat
  * @desc Mendapatkan data pasien untuk clinical pathway
@@ -56,6 +250,7 @@ router.get('/:no_rkm_medis/:no_rawat', validatePatientParams, async (req, res) =
     }
 
     const { no_rkm_medis, no_rawat } = req.params;
+    const requestedClinicalPathwayId = Number(req.query.clinical_pathway_id || 0);
     
     // Convert no_rawat (without slashes) to formatted version with slashes
     const formattedNoRawat = no_rawat.length >= 8 ? 
@@ -63,12 +258,16 @@ router.get('/:no_rkm_medis/:no_rawat', validatePatientParams, async (req, res) =
       no_rawat;
     
     console.log('=== Clinical Pathway API - Get Patient Data ===');
-    console.log('Request params:', { no_rkm_medis, no_rawat });
+    console.log('Request params:', { no_rkm_medis, no_rawat, requestedClinicalPathwayId });
     console.log('Formatted no_rawat:', formattedNoRawat);
     console.log('User:', req.user?.username || 'Unknown');
 
     // Panggil service untuk mendapatkan data pasien
-    const result = await clinicalPathwayService.getPatientData(no_rkm_medis, formattedNoRawat);
+    const result = await clinicalPathwayService.getPatientData(
+      no_rkm_medis,
+      formattedNoRawat,
+      requestedClinicalPathwayId || null
+    );
     
     if (!result.success) {
       return res.status(404).json({
@@ -144,6 +343,38 @@ router.post('/save', validateClinicalPathwayData, async (req, res) => {
   } catch (error) {
     console.error('Error in save clinical pathway route:', error);
     res.status(500).json({
+      success: false,
+      message: 'Terjadi kesalahan server',
+      error: process.env.NODE_ENV === 'development' ? error.message : undefined
+    });
+  }
+});
+
+/**
+ * @route POST /api/clinical-pathway/generate-patient
+ * @desc Generate clinical pathway pasien berdasarkan no_rawat, status_lanjut, master CP, dan histori 1 tahun terakhir
+ * @access Private
+ */
+router.post('/generate-patient', validateGeneratePatientPayload, async (req, res) => {
+  try {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+      return res.status(400).json({
+        success: false,
+        message: 'Data tidak valid',
+        errors: errors.array()
+      });
+    }
+
+    const result = await clinicalPathwayService.generatePatientClinicalPathway(req.body);
+    if (!result.success) {
+      return res.status(400).json(result);
+    }
+
+    return res.json(result);
+  } catch (error) {
+    console.error('Error in generate patient clinical pathway route:', error);
+    return res.status(500).json({
       success: false,
       message: 'Terjadi kesalahan server',
       error: process.env.NODE_ENV === 'development' ? error.message : undefined

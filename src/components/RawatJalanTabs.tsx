@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
-import { useSearchParams } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
+import { formatNoRawat } from '@/App';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
@@ -14,7 +15,8 @@ import {
   List, 
   Filter,
   X,
-  CalendarIcon
+  CalendarIcon,
+  FileText
 } from 'lucide-react';
 import { 
   Select,
@@ -48,22 +50,6 @@ const parsePositiveInt = (value: string | null, fallback: number) => {
   return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
 };
 
-// Updated columns with new structure
-const rawatJalanColumns = [
-  { accessor: 'no_reg', header: 'No. Reg' },
-  { accessor: 'no_rkm_medis', header: 'No. RM' },
-  { accessor: 'no_rawat', header: 'Nomor Rawat' },
-  { accessor: 'name', header: 'Nama Pasien' },
-  { accessor: 'age', header: 'Umur' },
-  { accessor: 'gender', header: 'Jenis Kelamin' },
-  { accessor: 'doctor', header: 'Dokter' },
-  { accessor: 'poliklinik', header: 'Poliklinik' },
-  { accessor: 'status', header: 'Status' },
-  { accessor: 'insurance', header: 'Asuransi' },
-  { accessor: 'tgl_registrasi', header: 'Tanggal Registrasi' },
-  { accessor: 'paymentStatus', header: 'Status Bayar' },
-];
-
 const rawatJalanTabValues = [
   'hari-ini',
   'pagi',
@@ -94,6 +80,7 @@ const soreTabGroup: RawatJalanTab[] = ['sore', 'rujukan_internal_sore', 'pasien_
 
 const RawatJalanTabs = () => {
   const { user } = useAuth();
+  const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
   const initialToday = new Date();
   const initialFromDate = parseDateParam(searchParams.get('from'), initialToday);
@@ -128,6 +115,42 @@ const RawatJalanTabs = () => {
   const requestDoctorFilter = doctorFilter || "all";
   const isPagiGroupActive = pagiTabGroup.includes(activeTab);
   const isSoreGroupActive = soreTabGroup.includes(activeTab);
+  const rawatJalanColumns = [
+    { accessor: 'no_reg', header: 'No. Reg' },
+    { accessor: 'no_rkm_medis', header: 'No. RM' },
+    { accessor: 'no_rawat', header: 'Nomor Rawat' },
+    { accessor: 'name', header: 'Nama Pasien' },
+    { accessor: 'age', header: 'Umur' },
+    { accessor: 'gender', header: 'Jenis Kelamin' },
+    { accessor: 'doctor', header: 'Dokter' },
+    { accessor: 'poliklinik', header: 'Poliklinik' },
+    { accessor: 'status', header: 'Status' },
+    { accessor: 'insurance', header: 'Asuransi' },
+    { accessor: 'tgl_registrasi', header: 'Tanggal Registrasi' },
+    { accessor: 'paymentStatus', header: 'Status Bayar' },
+    {
+      accessor: 'clinical_pathway',
+      header: 'Clinical Pathway',
+      render: (row: any) => (
+        <Button
+          size="sm"
+          variant="outline"
+          onClick={(e) => {
+            e.stopPropagation();
+            if (row.no_rkm_medis && row.no_rawat) {
+              const formattedNoRawat = formatNoRawat(row.no_rawat);
+              const compactNoRawat = String(formattedNoRawat).replace(/\//g, '');
+              navigate(`/clinical-pathway/${row.no_rkm_medis}/${compactNoRawat}?mode=initiation&source=rawat-jalan`);
+            }
+          }}
+          className="flex items-center gap-1"
+        >
+          <FileText size={14} />
+          CP
+        </Button>
+      )
+    }
+  ];
 
   const buildRequestBody = (tabFilter: RawatJalanTab, overrides: Record<string, string> = {}) => ({
     kd_poli: user?.kd_poli,

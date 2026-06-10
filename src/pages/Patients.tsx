@@ -4,6 +4,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import { formatNoRawat } from '@/App';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { Separator } from '@/components/ui/separator';
@@ -1040,42 +1041,9 @@ const DokterDPJPCell = ({ dokterDpjp }: { dokterDpjp: string }) => {
   );
 };
 
-const rawatInapColumns = [
-  { accessor: 'no_rkm_medis', header: 'No. RM' },
-  { accessor: 'nm_pasien', header: 'Nama Pasien' },
-  { accessor: 'jenis_kelamin', header: 'JK' },
-  { accessor: 'tgl_masuk', header: 'Tgl Masuk' },
-  { accessor: 'tgl_keluar', header: 'Tgl Keluar' },
-  { accessor: 'kd_kamar', header: 'Kamar' },
-  { accessor: 'nm_bangsal', header: 'Bangsal' },
-  { 
-    accessor: 'dokter_dpjp', 
-    header: 'DPJP',
-    render: (row: any) => <DokterDPJPCell dokterDpjp={row.dokter_dpjp} />
-  },
-  { accessor: 'stts_pulang', header: 'Status Pulang' },
-  { 
-    accessor: 'lama', 
-    header: 'Lama Rawat',
-    render: (row: any) => {
-      if (!row.tgl_masuk) return <span className="text-sm">-</span>;
-      
-      const tglMasuk = new Date(row.tgl_masuk);
-      const today = new Date();
-      const lamaRawat = differenceInDays(today, tglMasuk) + 1; // +1 untuk menghitung hari masuk
-      
-      return (
-        <span className="text-sm">
-          {lamaRawat} hari
-        </span>
-      );
-    }
-  },
-];
-
-
 const RawatInapTabs = () => {
   const { user } = useAuth();
+  const navigate = useNavigate();
   type RawatInapListTab = 'rawat-inap' | 'rawat-bersama' | 'rawat-gabung';
   type RawatInapTab = RawatInapListTab | 'resume-pasien';
   const [searchParams, setSearchParams] = useSearchParams();
@@ -1123,6 +1091,60 @@ const RawatInapTabs = () => {
   const [total, setTotal] = useState(0);
   const [itemsPerPage, setItemsPerPage] = useState(parsePositiveInt(searchParams.get('itemsPerPage'), 10));
   const [tabCounts, setTabCounts] = useState(emptyTabCounts);
+  const rawatInapColumns = [
+    { accessor: 'no_rkm_medis', header: 'No. RM' },
+    { accessor: 'nm_pasien', header: 'Nama Pasien' },
+    { accessor: 'jenis_kelamin', header: 'JK' },
+    { accessor: 'tgl_masuk', header: 'Tgl Masuk' },
+    { accessor: 'tgl_keluar', header: 'Tgl Keluar' },
+    { accessor: 'kd_kamar', header: 'Kamar' },
+    { accessor: 'nm_bangsal', header: 'Bangsal' },
+    {
+      accessor: 'dokter_dpjp',
+      header: 'DPJP',
+      render: (row: any) => <DokterDPJPCell dokterDpjp={row.dokter_dpjp} />
+    },
+    { accessor: 'stts_pulang', header: 'Status Pulang' },
+    {
+      accessor: 'lama',
+      header: 'Lama Rawat',
+      render: (row: any) => {
+        if (!row.tgl_masuk) return <span className="text-sm">-</span>;
+
+        const tglMasuk = new Date(row.tgl_masuk);
+        const today = new Date();
+        const lamaRawat = differenceInDays(today, tglMasuk) + 1;
+
+        return (
+          <span className="text-sm">
+            {lamaRawat} hari
+          </span>
+        );
+      }
+    },
+    {
+      accessor: 'clinical_pathway',
+      header: 'Clinical Pathway',
+      render: (row: any) => (
+        <Button
+          size="sm"
+          variant="outline"
+          onClick={(e) => {
+            e.stopPropagation();
+            if (row.no_rkm_medis && row.no_rawat) {
+              const formattedNoRawat = formatNoRawat(row.no_rawat);
+              const compactNoRawat = String(formattedNoRawat).replace(/\//g, '');
+              navigate(`/clinical-pathway/${row.no_rkm_medis}/${compactNoRawat}?mode=monitoring&source=rawat-inap`);
+            }
+          }}
+          className="flex items-center gap-1"
+        >
+          <FileText size={14} />
+          CP
+        </Button>
+      )
+    }
+  ];
 
   const buildRawatInapRequestBody = (
     tabValue: RawatInapListTab,
@@ -1910,14 +1932,64 @@ const IGDTabs = () => {
     setCurrentPage(1);
   };
 
+  const getIgdTriaseBadgeClass = (value: string) => {
+    switch ((value || '').toLowerCase()) {
+      case 'merah':
+        return 'bg-red-100 text-red-800 hover:bg-red-100';
+      case 'kuning':
+        return 'bg-yellow-100 text-yellow-800 hover:bg-yellow-100';
+      case 'hijau':
+        return 'bg-green-100 text-green-800 hover:bg-green-100';
+      case 'hitam':
+        return 'bg-slate-800 text-white hover:bg-slate-800';
+      default:
+        return 'bg-slate-100 text-slate-700 hover:bg-slate-100';
+    }
+  };
+
   const igdColumns = [
     { accessor: 'no_rkm_medis', header: 'No. RM' },
     { accessor: 'nm_pasien', header: 'Nama Pasien' },
     { accessor: 'tgl_registrasi', header: 'Tanggal' },
     { accessor: 'jam_reg', header: 'Jam' },
     { accessor: 'nm_dokter', header: 'Dokter' },
-    { accessor: 'triase_level', header: 'Level Triase' },
-    { accessor: 'nm_tindakan', header: 'Tindakan' },
+    {
+      accessor: 'triase_level',
+      header: 'Level Triase',
+      render: (row: any) => {
+        const triaseLevelLabel = String(row.triase_level || 'Belum Triase').trim() || 'Belum Triase';
+        return (
+          <Badge className={cn('font-medium', getIgdTriaseBadgeClass(triaseLevelLabel))}>
+            {triaseLevelLabel}
+          </Badge>
+        );
+      }
+    },
+    {
+      accessor: 'nm_tindakan',
+      header: 'Tindakan',
+      render: (row: any) => {
+        const tindakan = String(row.nm_tindakan || '').trim() || 'Belum Ada Tindakan';
+        const tindakanItems = tindakan
+          .split(',')
+          .map((item: string) => item.trim())
+          .filter(Boolean);
+        const compactText = tindakanItems.length > 2
+          ? `${tindakanItems.slice(0, 2).join(', ')} +${tindakanItems.length - 2} lainnya`
+          : tindakan;
+
+        return (
+          <div className="max-w-[240px]" title={tindakan}>
+            <div className="truncate text-sm font-medium">{compactText}</div>
+            {row.kd_tindakan ? (
+              <div className="truncate text-xs text-muted-foreground" title={String(row.kd_tindakan)}>
+                Kode: {String(row.kd_tindakan)}
+              </div>
+            ) : null}
+          </div>
+        );
+      }
+    },
     { accessor: 'status', header: 'Status' },
     { 
       accessor: 'clinical_pathway', 
@@ -1930,7 +2002,8 @@ const IGDTabs = () => {
             e.stopPropagation();
             if (row.no_rkm_medis && row.no_rawat) {
               const formattedNoRawat = formatNoRawat(row.no_rawat);
-              navigate(`/clinical-pathway/${row.no_rkm_medis}/${formattedNoRawat}`);
+              const compactNoRawat = String(formattedNoRawat).replace(/\//g, '');
+              navigate(`/clinical-pathway/${row.no_rkm_medis}/${compactNoRawat}?mode=initiation&source=igd`);
             }
           }}
           className="flex items-center gap-1"

@@ -1,2325 +1,1002 @@
-import React, { useState, useEffect } from 'react';
-import { useParams } from 'react-router-dom';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { useEffect, useMemo, useState } from 'react';
+import { useParams, useSearchParams } from 'react-router-dom';
+import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Textarea } from '@/components/ui/textarea';
-import { Checkbox } from '@/components/ui/checkbox';
-import { Label } from '@/components/ui/label';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Separator } from '@/components/ui/separator';
-import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { FileText, Save, Printer, User, Calendar, DollarSign, Target, AlertTriangle, Activity, Stethoscope, Plus, X, Database, Brain, Search, Clipboard } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { API_URLS } from '@/config/api';
+import {
+  Activity,
+  AlertTriangle,
+  CheckCircle2,
+  ClipboardList,
+  Database,
+  FileText,
+  Loader2,
+  RefreshCw,
+  UserRound
+} from 'lucide-react';
 
-interface PathwayItem {
-  category: string;
-  items: {
-    name: string;
-    days: boolean[];
-    notes: string;
-    variance?: string;
-  }[];
+interface DiagnosisItem {
+  kd_penyakit: string;
+  nm_penyakit: string;
+  prioritas: number;
+  status: string;
 }
 
-interface IcdEntry {
-  code: string;
-  description: string;
-  snomedCode?: string;
-  snomedTerm?: string;
+interface MasterRecommendation {
+  id: number;
+  kode_cp: string;
+  nama_cp: string;
+  status_layanan: string;
+  target_los: number;
+  confidence_score: number;
+  matched_icd_count: number;
+  matched_diagnoses: Array<{
+    kd_penyakit: string;
+    nm_penyakit: string;
+  }>;
 }
 
-interface SnomedEntry {
-  kode: string;
-  istilah: string;
-  is_direct_map?: boolean;
-  related_icd_codes?: string;
+interface TemplateActivity {
+  kategori: string;
+  uraian_kegiatan: string;
+  item_nama: string;
+  keterangan?: string;
+  frequency?: number;
+  coverage_percentage?: number;
 }
 
-const createEmptyIcdEntry = (): IcdEntry => ({
-  code: '',
-  description: '',
-  snomedCode: '',
-  snomedTerm: ''
-});
+interface TemplateDay {
+  hari_ke: number;
+  label_hari: string;
+  activities: TemplateActivity[];
+}
+
+interface TemplateData {
+  source_case_count: number;
+  generated_from_history: boolean;
+  days: TemplateDay[];
+}
+
+interface ExistingPathway {
+  id: number;
+  clinical_pathway_id: number;
+  kode_cp: string;
+  nama_cp: string;
+  status_cp: string;
+  status_layanan: string;
+  target_los: number;
+  compliance_percentage: number;
+  tanggal_mulai: string;
+}
+
+interface RegistrationData {
+  no_rkm_medis: string;
+  nm_pasien: string;
+  jk: string;
+  tgl_lahir: string;
+  umur: number;
+  no_rawat: string;
+  tgl_registrasi: string;
+  jam_reg: string;
+  nm_dokter: string;
+  nm_poli: string;
+  png_jawab: string;
+  status_lanjut: string;
+}
+
+interface ClinicalPathwayPreview {
+  registration: RegistrationData;
+  diagnoses: DiagnosisItem[];
+  existing: ExistingPathway | null;
+  master_recommendations: MasterRecommendation[];
+  selected_clinical_pathway_id: number | null;
+  master_template: TemplateData;
+  historical_template: TemplateData;
+}
+
+interface MonitoringPatientDetail {
+  id: number;
+  no_rawat: string;
+  kd_penyakit: string;
+  status_cp: string;
+  tanggal_mulai: string;
+  tanggal_selesai?: string | null;
+  kode_cp: string;
+  nama_cp: string;
+  target_los: number;
+  status_layanan: string;
+  no_rkm_medis: string;
+  nm_pasien: string;
+  nm_penyakit?: string;
+  compliance_percentage: number;
+  variance_count: number;
+}
+
+interface MonitoringExecution {
+  id: number;
+  cp_patient_id: number;
+  hari_ke: number;
+  status: string;
+  tanggal_rencana?: string;
+  tanggal_realisasi?: string | null;
+  catatan?: string;
+  kategori: string;
+  kegiatan: string;
+  uraian_kegiatan: string;
+  aktivitas: string;
+  keterangan?: string;
+}
+
+interface MonitoringVariance {
+  id: number;
+  hari_ke: number;
+  kategori_variance: string;
+  deskripsi: string;
+  status: string;
+  severity: string;
+  tanggal_variance: string;
+}
+
+interface MonitoringDetail {
+  patient: MonitoringPatientDetail;
+  execution: MonitoringExecution[];
+  variance: MonitoringVariance[];
+}
+
+type WorkflowMode = 'initiation' | 'monitoring';
+
+const formatNoRawatDisplay = (value?: string) => {
+  const noRawat = String(value || '').trim();
+  if (!noRawat) {
+    return '-';
+  }
+
+  if (noRawat.includes('/')) {
+    return noRawat;
+  }
+
+  if (noRawat.length >= 8) {
+    return `${noRawat.slice(0, 4)}/${noRawat.slice(4, 6)}/${noRawat.slice(6, 8)}/${noRawat.slice(8)}`;
+  }
+
+  return noRawat;
+};
+
+const formatDateDisplay = (value?: string) => {
+  if (!value) {
+    return '-';
+  }
+
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? '-' : date.toLocaleDateString('id-ID');
+};
+
+const formatDateTimeDisplay = (dateValue?: string, timeValue?: string) => {
+  if (!dateValue) {
+    return '-';
+  }
+
+  return `${formatDateDisplay(dateValue)}${timeValue ? ` ${String(timeValue).slice(0, 5)}` : ''}`;
+};
+
+const formatGender = (value?: string) => {
+  return value === 'L' ? 'Laki-laki' : value === 'P' ? 'Perempuan' : '-';
+};
+
+const getExecutionBadgeClass = (status?: string) => {
+  const normalized = String(status || '').toLowerCase();
+  if (normalized === 'completed') return 'bg-emerald-100 text-emerald-800';
+  if (normalized === 'missed') return 'bg-red-100 text-red-800';
+  if (normalized === 'variance') return 'bg-amber-100 text-amber-800';
+  return 'bg-slate-100 text-slate-800';
+};
+
+const getPatientStatusBadgeClass = (status?: string) => {
+  const normalized = String(status || '').toLowerCase();
+  if (normalized === 'selesai') return 'bg-emerald-100 text-emerald-800';
+  if (normalized === 'drop') return 'bg-red-100 text-red-800';
+  if (normalized === 'draft') return 'bg-amber-100 text-amber-800';
+  return 'bg-blue-100 text-blue-800';
+};
 
 const ClinicalPathway = () => {
   const { toast } = useToast();
   const { no_rkm_medis, no_rawat } = useParams<{ no_rkm_medis: string; no_rawat: string }>();
+  const [searchParams] = useSearchParams();
   const [loading, setLoading] = useState(false);
   const [generateLoading, setGenerateLoading] = useState(false);
-  const [dataMiningLoading, setDataMiningLoading] = useState(false);
-  
-  // Identifikasi Pasien
-  const [patientName, setPatientName] = useState('');
-  const [medicalRecordNumber, setMedicalRecordNumber] = useState(no_rkm_medis || '');
-  const [age, setAge] = useState('');
-  const [gender, setGender] = useState('');
-  const [weight, setWeight] = useState('');
-  const [height, setHeight] = useState('');
-  const [roomBed, setRoomBed] = useState('');
-  const [noRawat, setNoRawat] = useState(no_rawat || '');
-  const [formattedNoRawat, setFormattedNoRawat] = useState('');
-  
-  // Diagnosis
-  const [initialDiagnosis, setInitialDiagnosis] = useState('');
-  const [finalDiagnosis, setFinalDiagnosis] = useState('');
-  
-  // Rencana Perawatan
-  const [medicalPlan, setMedicalPlan] = useState('');
-  const [nursingPlan, setNursingPlan] = useState('');
-  
-  // Perkiraan Biaya
-  const [estimatedCost, setEstimatedCost] = useState('');
-  const [medicationCost, setMedicationCost] = useState('');
-  const [procedureCost, setProcedureCost] = useState('');
-  
-  // Hasil Akhir dan Kriteria Keluaran
-  const [treatmentOutcome, setTreatmentOutcome] = useState('');
-  const [dischargeCriteria, setDischargeCriteria] = useState('');
-  
-  // Linimasa
-  const [estimatedLOS, setEstimatedLOS] = useState('');
-  const [actualLOS, setActualLOS] = useState('');
-  
-  // Catatan Varians
-  const [varianceNotes, setVarianceNotes] = useState('');
-  
-  // ICD Codes
-  const [icd10Primary, setIcd10Primary] = useState<IcdEntry>(createEmptyIcdEntry());
-  const [icd10Secondary, setIcd10Secondary] = useState<IcdEntry[]>([createEmptyIcdEntry()]);
-  const [icd9Primary, setIcd9Primary] = useState<IcdEntry>(createEmptyIcdEntry());
-  const [icd9Secondary, setIcd9Secondary] = useState<IcdEntry[]>([createEmptyIcdEntry()]);
-  
-  // ICD Modal States
-  const [isIcdModalOpen, setIsIcdModalOpen] = useState(false);
-  const [icdActiveTab, setIcdActiveTab] = useState('icd10');
-  const [modalIcd10Primary, setModalIcd10Primary] = useState<IcdEntry>(createEmptyIcdEntry());
-  const [modalIcd10Secondary, setModalIcd10Secondary] = useState<IcdEntry[]>([createEmptyIcdEntry()]);
-  const [modalIcd9Primary, setModalIcd9Primary] = useState<IcdEntry>(createEmptyIcdEntry());
-  const [modalIcd9Secondary, setModalIcd9Secondary] = useState<IcdEntry[]>([createEmptyIcdEntry()]);
-  const [icdSearchQueryByKey, setIcdSearchQueryByKey] = useState<Record<string, string>>({});
-  const [icdSearchResultsByKey, setIcdSearchResultsByKey] = useState<Record<string, any[]>>({});
-  const [icdLoadingByKey, setIcdLoadingByKey] = useState<Record<string, boolean>>({});
-  const [snomedSearchQueryByKey, setSnomedSearchQueryByKey] = useState<Record<string, string>>({});
-  const [snomedSearchResultsByKey, setSnomedSearchResultsByKey] = useState<Record<string, SnomedEntry[]>>({});
-  const [snomedLoadingByKey, setSnomedLoadingByKey] = useState<Record<string, boolean>>({});
-  const [snomedHasSearchedByKey, setSnomedHasSearchedByKey] = useState<Record<string, boolean>>({});
-  
-  // Data Mining Modal States
-  const [isDataMiningModalOpen, setIsDataMiningModalOpen] = useState(false);
-  const [dataMiningResults, setDataMiningResults] = useState<any>(null);
-  
-  // AI Generation Modal States
-  const [isAIGenerationModalOpen, setIsAIGenerationModalOpen] = useState(false);
-  const [aiGenerationResults, setAIGenerationResults] = useState<any>(null);
-  
-  // Verifikasi
-  const [doctorSignature, setDoctorSignature] = useState('');
-  const [nurseSignature, setNurseSignature] = useState('');
-  const [pharmacistSignature, setPharmacistSignature] = useState('');
+  const [monitoringLoading, setMonitoringLoading] = useState(false);
+  const [monitoringActionKey, setMonitoringActionKey] = useState<string | null>(null);
+  const [preview, setPreview] = useState<ClinicalPathwayPreview | null>(null);
+  const [monitoring, setMonitoring] = useState<MonitoringDetail | null>(null);
+  const [selectedClinicalPathwayId, setSelectedClinicalPathwayId] = useState<number | null>(null);
+  const normalizedNoRawatParam = useMemo(() => String(no_rawat || '').replace(/\//g, ''), [no_rawat]);
 
-  // Template konstanta untuk clinical pathway
-  const template = {
-    categories: [
-      {
-        name: 'ASESMEN',
-        items: [
-          'Asesmen awal medis',
-          'Asesmen awal keperawatan',
-          'Asesmen nyeri',
-          'Asesmen risiko jatuh',
-          'Asesmen gizi',
-          'EKG/Pemeriksaan penunjang',
-          'Laboratorium'
-        ]
-      },
-      {
-        name: 'KONSULTASI',
-        items: [
-          'Konsultasi spesialis terkait',
-          'Konsultasi gizi',
-          'Konsultasi farmasi',
-          'Konsultasi rehabilitasi medik'
-        ]
-      },
-      {
-        name: 'TINDAKAN MEDIS',
-        items: [
-          'Persiapan tindakan medis',
-          'Tindakan diagnostik',
-          'Tindakan terapeutik',
-          'Monitoring post tindakan'
-        ]
-      },
-      {
-        name: 'TINDAKAN KEPERAWATAN',
-        items: [
-          'Pemasangan infus',
-          'Monitoring vital sign',
-          'Perawatan luka',
-          'Mobilisasi',
-          'Edukasi pasien & keluarga'
-        ]
-      },
-      {
-        name: 'TINDAKAN FARMASI',
-        items: [
-          'Rekonsiliasi obat',
-          'Pemberian obat',
-          'Monitoring efek samping',
-          'Edukasi penggunaan obat'
-        ]
-      },
-      {
-        name: 'AKTIVITAS HARIAN',
-        items: [
-          'Diet/Nutrisi',
-          'Aktivitas/Mobilisasi',
-          'Istirahat/Tidur',
-          'Personal hygiene',
-          'Eliminasi'
-        ]
-      },
-      {
-        name: 'DISCHARGE PLANNING',
-        items: [
-          'Asesmen discharge planning',
-          'Edukasi pulang',
-          'Resep pulang',
-          'Jadwal kontrol',
-          'Rujukan lanjutan'
-        ]
+  const selectedRecommendation = useMemo(
+    () => preview?.master_recommendations.find((item) => item.id === selectedClinicalPathwayId) || null,
+    [preview, selectedClinicalPathwayId]
+  );
+  const hasMasterTemplate = Boolean(preview?.master_template.days.length);
+  const hasHistoricalTemplate = Boolean(preview?.historical_template.days.length);
+
+  const requestedMode = searchParams.get('mode');
+  const workflowMode = useMemo<WorkflowMode>(() => {
+    if (requestedMode === 'monitoring') {
+      return 'monitoring';
+    }
+
+    if (requestedMode === 'initiation') {
+      return 'initiation';
+    }
+
+    if (preview?.existing && preview.registration.status_lanjut === 'Ranap') {
+      return 'monitoring';
+    }
+
+    return 'initiation';
+  }, [requestedMode, preview]);
+
+  const canGeneratePatientPathway =
+    workflowMode === 'initiation' &&
+    !preview?.existing &&
+    !!selectedClinicalPathwayId &&
+    (hasMasterTemplate || hasHistoricalTemplate);
+
+  const loadPreview = async (preferredClinicalPathwayId?: number | null) => {
+    if (!no_rkm_medis || !normalizedNoRawatParam) {
+      return;
+    }
+
+    try {
+      setLoading(true);
+      const query = preferredClinicalPathwayId ? `?clinical_pathway_id=${preferredClinicalPathwayId}` : '';
+      const response = await fetch(`${API_URLS.CLINICAL_PATHWAY}/${no_rkm_medis}/${normalizedNoRawatParam}${query}`);
+      const result = await response.json();
+
+      if (!response.ok || !result.success) {
+        throw new Error(result.message || 'Gagal memuat preview Clinical Pathway');
       }
-    ],
-    days: ['Hari 1', 'Hari 2', 'Hari 3', 'Hari 4', 'Hari 5', 'Hari 6', 'Hari 7']
+
+      setPreview(result.data);
+      setSelectedClinicalPathwayId(
+        result.data.selected_clinical_pathway_id ||
+        result.data.existing?.clinical_pathway_id ||
+        result.data.master_recommendations?.[0]?.id ||
+        null
+      );
+    } catch (error) {
+      console.error('Error loading clinical pathway preview:', error);
+      toast({
+        title: 'Error',
+        description: error instanceof Error ? error.message : 'Gagal memuat preview Clinical Pathway',
+        variant: 'destructive'
+      });
+    } finally {
+      setLoading(false);
+    }
   };
 
-  // Inisialisasi pathwayData dengan template
-  const initializePathwayData = () => {
-    return template.categories.map(category => ({
-      category: category.name,
-      items: category.items.map(item => ({
-        name: item,
-        days: new Array(template.days.length).fill(false),
-        notes: '',
-        variance: ''
-      }))
-    }));
+  const handleSelectClinicalPathway = (clinicalPathwayId: number) => {
+    setSelectedClinicalPathwayId(clinicalPathwayId);
+    void loadPreview(clinicalPathwayId);
   };
 
-  const [pathwayData, setPathwayData] = useState<PathwayItem[]>(initializePathwayData());
-
-  // Format no_rawat with slashes
-  useEffect(() => {
-    if (no_rawat) {
-      const year = no_rawat.substring(0, 4);
-      const month = no_rawat.substring(4, 6);
-      const day = no_rawat.substring(6, 8);
-      const sequence = no_rawat.substring(8);
-      const formatted = `${year}/${month}/${day}/${sequence}`;
-      setFormattedNoRawat(formatted);
+  const loadMonitoring = async () => {
+    if (!normalizedNoRawatParam) {
+      return;
     }
-  }, [no_rawat]);
 
-  // Fetch patient data when component mounts
-  useEffect(() => {
-    if (no_rkm_medis && no_rawat) {
-      fetchPatientData();
+    try {
+      setMonitoringLoading(true);
+      const response = await fetch(`${API_URLS.CLINICAL_PATHWAY}/monitoring/by-no-rawat/${normalizedNoRawatParam}`);
+      const result = await response.json();
+
+      if (!response.ok || !result.success) {
+        setMonitoring(null);
+        return;
+      }
+
+      setMonitoring(result.data);
+    } catch (error) {
+      console.error('Error loading clinical pathway monitoring:', error);
+      setMonitoring(null);
+    } finally {
+      setMonitoringLoading(false);
     }
+  };
+
+  useEffect(() => {
+    void loadPreview();
   }, [no_rkm_medis, no_rawat]);
 
-  const fetchPatientData = async () => {
-    try {
-      setLoading(true);
-      const response = await fetch(`${API_URLS.CLINICAL_PATHWAY}/${no_rkm_medis}/${no_rawat}`);
-      
-      if (!response.ok) {
-        throw new Error('Failed to fetch patient data');
-      }
-      
-      const data = await response.json();
-      
-      if (data.success && data.data) {
-        const responseData = data.data;
-        
-        // Set patient information from patient_info
-        if (responseData.patient_info) {
-          setPatientName(responseData.patient_info.nm_pasien || '');
-          setAge(responseData.patient_info.umur?.toString() || '');
-          setGender(responseData.patient_info.jk || '');
-        }
-        
-        // Set weight and height from latest examination vital signs
-        if (responseData.examinations && responseData.examinations.length > 0) {
-          const latestExam = responseData.examinations[0]; // Latest examination
-          if (latestExam.vital_signs) {
-            setWeight(latestExam.vital_signs.berat?.toString() || '');
-            setHeight(latestExam.vital_signs.tinggi?.toString() || '');
-          }
-        }
-        
-        // Set room/bed from inpatient info if available
-        if (responseData.inpatient_info && responseData.inpatient_info.nm_kamar) {
-          setRoomBed(responseData.inpatient_info.nm_kamar || '');
-        }
-        
-        // Set diagnosis from diagnoses array
-        if (responseData.diagnoses && responseData.diagnoses.length > 0) {
-          const primaryDiagnosis = responseData.diagnoses.find(d => d.prioritas === 1) || responseData.diagnoses[0];
-          setInitialDiagnosis(primaryDiagnosis.nm_penyakit || '');
-        }
-        
-        toast({
-          title: "Berhasil",
-          description: "Data pasien berhasil dimuat",
-        });
-      }
-    } catch (error) {
-      console.error('Error fetching patient data:', error);
-      toast({
-        title: "Error",
-        description: "Gagal memuat data pasien",
-        variant: "destructive",
-      });
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const handleDayChange = (categoryIndex: number, itemIndex: number, dayIndex: number, checked: boolean) => {
-    const newData = [...pathwayData];
-    newData[categoryIndex].items[itemIndex].days[dayIndex] = checked;
-    setPathwayData(newData);
-  };
-
-  const handleNotesChange = (categoryIndex: number, itemIndex: number, notes: string) => {
-    const newData = [...pathwayData];
-    newData[categoryIndex].items[itemIndex].notes = notes;
-    setPathwayData(newData);
-  };
-
-  const handleVarianceChange = (categoryIndex: number, itemIndex: number, variance: string) => {
-    const newData = [...pathwayData];
-    newData[categoryIndex].items[itemIndex].variance = variance;
-    setPathwayData(newData);
-  };
-
-  // ICD Helper Functions
-  const addIcdEntry = (type: 'icd10Secondary' | 'icd9Secondary') => {
-    const newEntry: IcdEntry = createEmptyIcdEntry();
-    switch (type) {
-      case 'icd10Secondary':
-        setIcd10Secondary([...icd10Secondary, newEntry]);
-        break;
-      case 'icd9Secondary':
-        setIcd9Secondary([...icd9Secondary, newEntry]);
-        break;
-    }
-  };
-
-  const removeIcdEntry = (type: 'icd10Secondary' | 'icd9Secondary', index: number) => {
-    switch (type) {
-      case 'icd10Secondary':
-        if (icd10Secondary.length > 1) {
-          setIcd10Secondary(icd10Secondary.filter((_, i) => i !== index));
-        }
-        break;
-      case 'icd9Secondary':
-        if (icd9Secondary.length > 1) {
-          setIcd9Secondary(icd9Secondary.filter((_, i) => i !== index));
-        }
-        break;
-    }
-  };
-
-  const updateIcdEntry = (type: 'icd10Primary' | 'icd10Secondary' | 'icd9Primary' | 'icd9Secondary', index: number | undefined, field: 'code' | 'description', value: string) => {
-    switch (type) {
-      case 'icd10Primary':
-        setIcd10Primary({ ...icd10Primary, [field]: value });
-        break;
-      case 'icd10Secondary':
-        if (index !== undefined) {
-          const newIcd10Secondary = [...icd10Secondary];
-          newIcd10Secondary[index][field] = value;
-          setIcd10Secondary(newIcd10Secondary);
-        }
-        break;
-      case 'icd9Primary':
-        setIcd9Primary({ ...icd9Primary, [field]: value });
-        break;
-      case 'icd9Secondary':
-        if (index !== undefined) {
-          const newIcd9Secondary = [...icd9Secondary];
-          newIcd9Secondary[index][field] = value;
-          setIcd9Secondary(newIcd9Secondary);
-        }
-        break;
-    }
-  };
-
-  const getIcdFieldKey = (icdType: 'icd10' | 'icd9', slot: 'primary' | 'secondary', index?: number) => (
-    `${icdType}-${slot}-${index ?? 0}`
-  );
-
-  const openIcdModal = (type: 'icd10Primary' | 'icd10Secondary' | 'icd9Primary' | 'icd9Secondary') => {
-    setIcdActiveTab(type.startsWith('icd10') ? 'icd10' : 'icd9');
-    setModalIcd10Primary({ ...icd10Primary });
-    setModalIcd10Secondary(icd10Secondary.length ? icd10Secondary.map((entry) => ({ ...entry })) : [createEmptyIcdEntry()]);
-    setModalIcd9Primary({ ...icd9Primary });
-    setModalIcd9Secondary(icd9Secondary.length ? icd9Secondary.map((entry) => ({ ...entry })) : [createEmptyIcdEntry()]);
-    setIcdSearchQueryByKey({});
-    setIcdSearchResultsByKey({});
-    setIcdLoadingByKey({});
-    setSnomedSearchQueryByKey({});
-    setSnomedSearchResultsByKey({});
-    setSnomedLoadingByKey({});
-    setSnomedHasSearchedByKey({});
-    setIsIcdModalOpen(true);
-  };
-
-  const fetchIcdOptions = async (fieldKey: string, icdType: 'icd10' | 'icd9', search: string = '') => {
-    setIcdLoadingByKey((previous) => ({ ...previous, [fieldKey]: true }));
-    try {
-      const response = await fetch(API_URLS.ICD_DATA, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          page: 1,
-          itemsPerPage: 20,
-          search,
-          icdType
-        })
-      });
-
-      if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`);
-      }
-
-      const data = await response.json();
-      setIcdSearchResultsByKey((previous) => ({
-        ...previous,
-        [fieldKey]: data.data || []
-      }));
-    } catch (error) {
-      console.error('Error fetching ICD data:', error);
-      toast({
-        title: "Error",
-        description: "Gagal memuat data ICD",
-        variant: "destructive"
-      });
-      setIcdSearchResultsByKey((previous) => ({
-        ...previous,
-        [fieldKey]: []
-      }));
-    } finally {
-      setIcdLoadingByKey((previous) => ({ ...previous, [fieldKey]: false }));
-    }
-  };
-
-  const fetchSnomedOptions = async (
-    fieldKey: string,
-    relatedIcdCode: string,
-    relatedIcdType: 'icd10' | 'icd9',
-    search: string = ''
-  ) => {
-    setSnomedLoadingByKey((previous) => ({ ...previous, [fieldKey]: true }));
-    try {
-      const response = await fetch(API_URLS.ICD_DATA, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          page: 1,
-          itemsPerPage: 20,
-          search,
-          icdType: 'snomed',
-          relatedIcdCode,
-          relatedIcdType
-        })
-      });
-
-      if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`);
-      }
-
-      const data = await response.json();
-      setSnomedSearchResultsByKey((previous) => ({
-        ...previous,
-        [fieldKey]: data.data || []
-      }));
-      setSnomedHasSearchedByKey((previous) => ({
-        ...previous,
-        [fieldKey]: true
-      }));
-    } catch (error) {
-      console.error('Error fetching SNOMED data:', error);
-      toast({
-        title: "Error",
-        description: "Gagal memuat data SNOMED-CT",
-        variant: "destructive"
-      });
-      setSnomedSearchResultsByKey((previous) => ({
-        ...previous,
-        [fieldKey]: []
-      }));
-      setSnomedHasSearchedByKey((previous) => ({
-        ...previous,
-        [fieldKey]: true
-      }));
-    } finally {
-      setSnomedLoadingByKey((previous) => ({ ...previous, [fieldKey]: false }));
-    }
-  };
-
-  const handleIcdTabChange = (value: string) => {
-    setIcdActiveTab(value);
-  };
-
-  const updateModalEntry = (
-    icdType: 'icd10' | 'icd9',
-    slot: 'primary' | 'secondary',
-    index: number | undefined,
-    updater: (entry: IcdEntry) => IcdEntry
-  ) => {
-    if (icdType === 'icd10' && slot === 'primary') {
-      setModalIcd10Primary((previous) => updater(previous));
+  useEffect(() => {
+    if (workflowMode === 'monitoring') {
+      void loadMonitoring();
       return;
     }
 
-    if (icdType === 'icd10' && slot === 'secondary' && index !== undefined) {
-      setModalIcd10Secondary((previous) => previous.map((entry, entryIndex) => (
-        entryIndex === index ? updater(entry) : entry
-      )));
+    setMonitoring(null);
+  }, [workflowMode, no_rawat, preview?.existing?.id]);
+
+  const handleGeneratePatientPathway = async () => {
+    if (!no_rkm_medis || !normalizedNoRawatParam) {
       return;
     }
 
-    if (icdType === 'icd9' && slot === 'primary') {
-      setModalIcd9Primary((previous) => updater(previous));
-      return;
-    }
-
-    if (icdType === 'icd9' && slot === 'secondary' && index !== undefined) {
-      setModalIcd9Secondary((previous) => previous.map((entry, entryIndex) => (
-        entryIndex === index ? updater(entry) : entry
-      )));
-    }
-  };
-
-  const addModalIcdEntry = (icdType: 'icd10' | 'icd9') => {
-    if (icdType === 'icd10') {
-      setModalIcd10Secondary((previous) => [...previous, createEmptyIcdEntry()]);
-      return;
-    }
-
-    setModalIcd9Secondary((previous) => [...previous, createEmptyIcdEntry()]);
-  };
-
-  const removeModalIcdEntry = (icdType: 'icd10' | 'icd9', index: number) => {
-    if (icdType === 'icd10') {
-      if (modalIcd10Secondary.length > 1) {
-        setModalIcd10Secondary((previous) => previous.filter((_, entryIndex) => entryIndex !== index));
-      }
-      return;
-    }
-
-    if (modalIcd9Secondary.length > 1) {
-      setModalIcd9Secondary((previous) => previous.filter((_, entryIndex) => entryIndex !== index));
-    }
-  };
-
-  const handleModalIcdSelection = (
-    icdType: 'icd10' | 'icd9',
-    slot: 'primary' | 'secondary',
-    index: number | undefined,
-    item: any
-  ) => {
-    const fieldKey = getIcdFieldKey(icdType, slot, index);
-    const code = icdType === 'icd10' ? item.kd_penyakit : item.kode;
-    const description = icdType === 'icd10' ? item.nm_penyakit : item.deskripsi_pendek;
-
-    updateModalEntry(icdType, slot, index, (previous) => ({
-      ...previous,
-      code,
-      description,
-      snomedCode: '',
-      snomedTerm: ''
-    }));
-
-    setIcdSearchQueryByKey((previous) => ({ ...previous, [fieldKey]: description }));
-    setSnomedSearchQueryByKey((previous) => ({ ...previous, [fieldKey]: '' }));
-    void fetchSnomedOptions(fieldKey, code, icdType, '');
-  };
-
-  const handleModalSnomedSelection = (
-    icdType: 'icd10' | 'icd9',
-    slot: 'primary' | 'secondary',
-    index: number | undefined,
-    item: SnomedEntry
-  ) => {
-    updateModalEntry(icdType, slot, index, (previous) => ({
-      ...previous,
-      snomedCode: item.kode,
-      snomedTerm: item.istilah
-    }));
-  };
-
-  const handleModalSnomedClear = (
-    icdType: 'icd10' | 'icd9',
-    slot: 'primary' | 'secondary',
-    index: number | undefined
-  ) => {
-    const fieldKey = getIcdFieldKey(icdType, slot, index);
-    updateModalEntry(icdType, slot, index, (previous) => ({
-      ...previous,
-      snomedCode: '',
-      snomedTerm: ''
-    }));
-    setSnomedSearchQueryByKey((previous) => ({ ...previous, [fieldKey]: '' }));
-    setSnomedSearchResultsByKey((previous) => ({ ...previous, [fieldKey]: [] }));
-    setSnomedHasSearchedByKey((previous) => ({ ...previous, [fieldKey]: false }));
-  };
-
-  const handleSaveIcdModal = () => {
-    setIcd10Primary({ ...modalIcd10Primary });
-    setIcd10Secondary(modalIcd10Secondary.length ? modalIcd10Secondary.map((entry) => ({ ...entry })) : [createEmptyIcdEntry()]);
-    setIcd9Primary({ ...modalIcd9Primary });
-    setIcd9Secondary(modalIcd9Secondary.length ? modalIcd9Secondary.map((entry) => ({ ...entry })) : [createEmptyIcdEntry()]);
-    setIsIcdModalOpen(false);
-    toast({
-      title: "Berhasil",
-      description: "Data ICD dan SNOMED-CT berhasil disimpan ke form",
-    });
-  };
-
-  const renderIcdManagerSection = (
-    icdType: 'icd10' | 'icd9',
-    title: string,
-    primaryEntry: IcdEntry,
-    secondaryEntries: IcdEntry[]
-  ) => {
-    const renderEntryBlock = (
-      slot: 'primary' | 'secondary',
-      entry: IcdEntry,
-      index?: number
-    ) => {
-      const fieldKey = getIcdFieldKey(icdType, slot, index);
-      const icdOptions = icdSearchResultsByKey[fieldKey] || [];
-      const snomedOptions = snomedSearchResultsByKey[fieldKey] || [];
-      const searchQuery = icdSearchQueryByKey[fieldKey] || '';
-      const snomedQuery = snomedSearchQueryByKey[fieldKey] || '';
-      const isIcdLoading = Boolean(icdLoadingByKey[fieldKey]);
-      const isSnomedLoading = Boolean(snomedLoadingByKey[fieldKey]);
-      const hasSnomedResults = Boolean(snomedHasSearchedByKey[fieldKey]);
-
-      return (
-        <div key={fieldKey} className="rounded-lg border p-4 space-y-4">
-          <div className="flex items-center justify-between">
-            <div>
-              <div className="font-medium">
-                {slot === 'primary'
-                  ? `${title} Primer`
-                  : `${title} Sekunder ${typeof index === 'number' ? index + 1 : ''}`.trim()}
-              </div>
-              <div className="text-sm text-muted-foreground">
-                Pilih kode {icdType === 'icd10' ? 'ICD-10' : 'ICD-9-CM'} lalu cari SNOMED-CT di bawahnya.
-              </div>
-            </div>
-            {slot === 'secondary' && typeof index === 'number' && (
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                onClick={() => removeModalIcdEntry(icdType, index)}
-                disabled={secondaryEntries.length === 1}
-              >
-                <X className="w-4 h-4" />
-              </Button>
-            )}
-          </div>
-
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-2">
-            <Input
-              placeholder={`Cari ${icdType === 'icd10' ? 'ICD-10' : 'ICD-9-CM'}...`}
-              value={searchQuery}
-              onChange={(e) => setIcdSearchQueryByKey((previous) => ({
-                ...previous,
-                [fieldKey]: e.target.value
-              }))}
-              className="md:col-span-2"
-            />
-            <Button
-              type="button"
-              variant="outline"
-              onClick={() => fetchIcdOptions(fieldKey, icdType, searchQuery)}
-              disabled={isIcdLoading}
-            >
-              <Search className="h-4 w-4 mr-2" />
-              {isIcdLoading ? 'Mencari...' : `Cari ${icdType === 'icd10' ? 'ICD-10' : 'ICD-9'}`}
-            </Button>
-            <Select
-              value={entry.code || undefined}
-              onValueChange={(value) => {
-                const selectedItem = icdOptions.find((option) => (
-                  (icdType === 'icd10' ? option.kd_penyakit : option.kode) === value
-                ));
-
-                if (selectedItem) {
-                  handleModalIcdSelection(icdType, slot, index, selectedItem);
-                }
-              }}
-            >
-              <SelectTrigger>
-                <SelectValue placeholder={`Pilih ${icdType === 'icd10' ? 'ICD-10' : 'ICD-9-CM'}`} />
-              </SelectTrigger>
-              <SelectContent>
-                {icdOptions.length > 0 ? (
-                  icdOptions.map((option, optionIndex) => {
-                    const code = icdType === 'icd10' ? option.kd_penyakit : option.kode;
-                    const description = icdType === 'icd10' ? option.nm_penyakit : option.deskripsi_pendek;
-
-                    return (
-                      <SelectItem key={`${fieldKey}-${code}-${optionIndex}`} value={code}>
-                        {code} - {description}
-                      </SelectItem>
-                    );
-                  })
-                ) : (
-                  <SelectItem value="__empty" disabled>
-                    {searchQuery ? 'Tidak ada hasil, coba cari lagi' : 'Masukkan kata kunci lalu klik cari'}
-                  </SelectItem>
-                )}
-              </SelectContent>
-            </Select>
-          </div>
-
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
-            <Input placeholder="Kode ICD" value={entry.code || ''} readOnly className="bg-muted" />
-            <Input
-              placeholder="Deskripsi ICD"
-              value={entry.description || ''}
-              readOnly
-              className="md:col-span-2 bg-muted"
-            />
-          </div>
-
-          {entry.code && (
-            <div className="rounded-lg border border-blue-200 bg-blue-50/40 p-4 space-y-4">
-              <div>
-                <div className="font-medium">Pencarian SNOMED-CT</div>
-                <div className="text-sm text-muted-foreground">
-                  Data SNOMED-CT akan disimpan bersama kode {icdType === 'icd10' ? 'ICD-10' : 'ICD-9-CM'} yang dipilih.
-                </div>
-              </div>
-
-              <div className="grid grid-cols-1 md:grid-cols-4 gap-2">
-                <Input
-                  placeholder="Cari kode atau istilah SNOMED-CT"
-                  value={snomedQuery}
-                  onChange={(e) => setSnomedSearchQueryByKey((previous) => ({
-                    ...previous,
-                    [fieldKey]: e.target.value
-                  }))}
-                  className="md:col-span-2"
-                />
-                <Button
-                  type="button"
-                  variant="outline"
-                  onClick={() => fetchSnomedOptions(fieldKey, entry.code, icdType, snomedQuery)}
-                  disabled={isSnomedLoading}
-                >
-                  <Search className="h-4 w-4 mr-2" />
-                  {isSnomedLoading ? 'Mencari...' : 'Cari SNOMED'}
-                </Button>
-                <Select
-                  value={entry.snomedCode || undefined}
-                  onValueChange={(value) => {
-                    const selectedItem = snomedOptions.find((option) => option.kode === value);
-                    if (selectedItem) {
-                      handleModalSnomedSelection(icdType, slot, index, selectedItem);
-                    }
-                  }}
-                >
-                  <SelectTrigger>
-                    <SelectValue placeholder="Pilih SNOMED-CT" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {snomedOptions.length > 0 ? (
-                      snomedOptions.map((option, optionIndex) => (
-                        <SelectItem key={`${fieldKey}-snomed-${option.kode}-${optionIndex}`} value={option.kode}>
-                          {option.kode} - {option.istilah}
-                        </SelectItem>
-                      ))
-                    ) : (
-                      <SelectItem value="__empty-snomed" disabled>
-                        {hasSnomedResults ? 'Tidak ada hasil SNOMED' : 'Pilih ICD lalu cari SNOMED'}
-                      </SelectItem>
-                    )}
-                  </SelectContent>
-                </Select>
-              </div>
-
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
-                <Input placeholder="Kode SNOMED-CT" value={entry.snomedCode || ''} readOnly className="bg-white" />
-                <Input
-                  placeholder="Istilah SNOMED-CT"
-                  value={entry.snomedTerm || ''}
-                  readOnly
-                  className="md:col-span-2 bg-white"
-                />
-              </div>
-
-              {entry.snomedCode && (
-                <div className="flex justify-end">
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    onClick={() => handleModalSnomedClear(icdType, slot, index)}
-                  >
-                    <X className="h-4 w-4 mr-2" />
-                    Hapus SNOMED
-                  </Button>
-                </div>
-              )}
-            </div>
-          )}
-        </div>
-      );
-    };
-
-    return (
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <Database className="h-5 w-5" />
-            {title}
-          </CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          {renderEntryBlock('primary', primaryEntry)}
-          {secondaryEntries.map((entry, index) => renderEntryBlock('secondary', entry, index))}
-          <div className="flex justify-end">
-            <Button type="button" variant="outline" onClick={() => addModalIcdEntry(icdType)}>
-              <Plus className="w-4 h-4 mr-2" />
-              Tambah {title} Sekunder
-            </Button>
-          </div>
-        </CardContent>
-      </Card>
-    );
-  };
-
-  const handleSave = async () => {
-    try {
-      setLoading(true);
-      
-      const clinicalPathwayData = {
-        no_rkm_medis: medicalRecordNumber,
-        no_rawat: noRawat,
-        patient_name: patientName,
-        age,
-        gender,
-        weight,
-        height,
-        room_bed: roomBed,
-        icd10_primary: icd10Primary,
-        icd10_secondary: icd10Secondary,
-        icd9_primary: icd9Primary,
-        icd9_secondary: icd9Secondary,
-        initial_diagnosis: initialDiagnosis,
-        final_diagnosis: finalDiagnosis,
-        medical_plan: medicalPlan,
-        nursing_plan: nursingPlan,
-        estimated_cost: estimatedCost,
-        medication_cost: medicationCost,
-        procedure_cost: procedureCost,
-        treatment_outcome: treatmentOutcome,
-        discharge_criteria: dischargeCriteria,
-        estimated_los: estimatedLOS,
-        actual_los: actualLOS,
-        variance_notes: varianceNotes,
-        doctor_signature: doctorSignature,
-        nurse_signature: nurseSignature,
-        pharmacist_signature: pharmacistSignature,
-        pathway_data: pathwayData
-      };
-      
-      console.log('=== Frontend Data Before Send ===');
-      console.log('icd10_secondary:', JSON.stringify(icd10Secondary, null, 2));
-      console.log('icd9_secondary:', JSON.stringify(icd9Secondary, null, 2));
-      console.log('Full data:', JSON.stringify(clinicalPathwayData, null, 2));
-      
-      const response = await fetch(`${API_URLS.CLINICAL_PATHWAY}/save`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(clinicalPathwayData),
-      });
-      
-      if (!response.ok) {
-        throw new Error('Failed to save clinical pathway');
-      }
-      
-      const result = await response.json();
-      
-      if (result.success) {
-        toast({
-          title: "Berhasil",
-          description: "Clinical Pathway berhasil disimpan",
-        });
-      } else {
-        throw new Error(result.message || 'Failed to save clinical pathway');
-      }
-    } catch (error) {
-      console.error('Error saving clinical pathway:', error);
-      toast({
-        title: "Error",
-        description: "Gagal menyimpan Clinical Pathway",
-        variant: "destructive",
-      });
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const handlePrint = () => {
-    window.print();
-  };
-
-  const handleGenerate = async () => {
     try {
       setGenerateLoading(true);
-      
-      // Prepare patient data for AI generation
-      const patientData = {
-        no_rkm_medis: medicalRecordNumber,
-        no_rawat: noRawat,
-        patient_name: patientName,
-        age,
-        gender,
-        weight,
-        height,
-        room_bed: roomBed,
-        initial_diagnosis: initialDiagnosis,
-        final_diagnosis: finalDiagnosis,
-        icd10_primary: icd10Primary,
-        icd10_secondary: icd10Secondary,
-        icd9_primary: icd9Primary,
-        icd9_secondary: icd9Secondary
-      };
-
-      console.log(patientData);
-      
-      const response = await fetch(`${API_URLS.CLINICAL_PATHWAY}/generate`, {
+      const response = await fetch(`${API_URLS.CLINICAL_PATHWAY}/generate-patient`, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ patientData }),
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          no_rkm_medis,
+          no_rawat: normalizedNoRawatParam,
+          clinical_pathway_id: selectedClinicalPathwayId || undefined
+        })
       });
-      
-      if (!response.ok) {
-        throw new Error('Failed to generate clinical pathway');
-      }
-      
       const result = await response.json();
-      
-      if (result.success && result.data) {
-        const generatedData = result.data;
-        
-        // Store AI generation results for modal display
-        setAIGenerationResults(generatedData);
-        setIsAIGenerationModalOpen(true);
-        
-        toast({
-          title: "Berhasil",
-          description: "AI Generation berhasil dilakukan. Lihat hasil di modal.",
-        });
-      } else {
-        throw new Error(result.message || 'Failed to generate clinical pathway');
+
+      if (!response.ok || !result.success) {
+        throw new Error(result.message || 'Gagal generate Clinical Pathway pasien');
       }
-    } catch (error) {
-      console.error('Error generating clinical pathway:', error);
+
       toast({
-        title: "Error",
-        description: "Gagal generate Clinical Pathway menggunakan AI",
-        variant: "destructive",
+        title: 'Berhasil',
+        description: `Clinical Pathway pasien berhasil digenerate (${result.data?.generated_activity_count || 0} aktivitas).`
+      });
+
+      if (result.data?.preview) {
+        setPreview(result.data.preview);
+        setSelectedClinicalPathwayId(
+          result.data.preview.selected_clinical_pathway_id ||
+          result.data.preview.existing?.clinical_pathway_id ||
+          selectedClinicalPathwayId
+        );
+      } else {
+        await loadPreview();
+      }
+      await loadMonitoring();
+    } catch (error) {
+      console.error('Error generating clinical pathway patient:', error);
+      toast({
+        title: 'Error',
+        description: error instanceof Error ? error.message : 'Gagal generate Clinical Pathway pasien',
+        variant: 'destructive'
       });
     } finally {
-       setGenerateLoading(false);
-     }
-   };
+      setGenerateLoading(false);
+    }
+  };
 
-  const handleDataMining = async () => {
+  const handleRefreshMonitoring = async () => {
+    if (!monitoring?.patient?.id) {
+      return;
+    }
+
     try {
-      setDataMiningLoading(true);
-      
-      // Prepare patient data for data mining
-      const patientData = {
-        no_rkm_medis: medicalRecordNumber,
-        patient_name: patientName,
-        initial_diagnosis: initialDiagnosis,
-        final_diagnosis: finalDiagnosis,
-        icd10_primary: icd10Primary,
-        icd10_secondary: icd10Secondary,
-        icd9_primary: icd9Primary,
-        icd9_secondary: icd9Secondary
-      };
-      
-      const response = await fetch(`${API_URLS.CLINICAL_PATHWAY}/data-mining`, {
+      setMonitoringActionKey('refresh');
+      const response = await fetch(`${API_URLS.CLINICAL_PATHWAY}/monitoring/${monitoring.patient.id}/refresh`, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ patientData }),
+        headers: { 'Content-Type': 'application/json' }
       });
-      
-      if (!response.ok) {
-        throw new Error('Failed to generate clinical pathway from data mining');
-      }
-      
       const result = await response.json();
-      
-      if (result.success && result.data) {
-        const generatedData = result.data;
-        
-        // Store data mining results for modal display
-        setDataMiningResults(generatedData);
-        setIsDataMiningModalOpen(true);
-        
-        toast({
-          title: "Berhasil",
-          description: "Data mining berhasil dilakukan. Lihat hasil di modal.",
-        });
-      } else {
-        throw new Error(result.message || 'Failed to generate clinical pathway from data mining');
+
+      if (!response.ok || !result.success) {
+        throw new Error(result.message || 'Gagal refresh monitoring');
       }
-    } catch (error) {
-      console.error('Error generating clinical pathway from data mining:', error);
+
+      setMonitoring(result.data);
+      await loadPreview();
       toast({
-        title: "Error",
-        description: "Gagal generate Clinical Pathway dari data mining",
-        variant: "destructive",
+        title: 'Berhasil',
+        description: 'Monitoring Clinical Pathway berhasil diperbarui.'
+      });
+    } catch (error) {
+      toast({
+        title: 'Error',
+        description: error instanceof Error ? error.message : 'Gagal refresh monitoring',
+        variant: 'destructive'
       });
     } finally {
-       setDataMiningLoading(false);
-     }
-    };
+      setMonitoringActionKey(null);
+    }
+  };
 
-  const applyDataMiningResults = () => {
-    if (dataMiningResults) {
-      // Update pathway data from data mining results
-      if (dataMiningResults.pathwayData && Array.isArray(dataMiningResults.pathwayData)) {
-        setPathwayData(dataMiningResults.pathwayData);
+  const handleUpdateExecutionStatus = async (executionId: number, status: 'planned' | 'completed' | 'missed') => {
+    if (!monitoring?.patient?.id) {
+      return;
+    }
+
+    try {
+      setMonitoringActionKey(`exec-${executionId}-${status}`);
+      const response = await fetch(
+        `${API_URLS.CLINICAL_PATHWAY}/monitoring/${monitoring.patient.id}/execution/${executionId}/status`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ status })
+        }
+      );
+      const result = await response.json();
+
+      if (!response.ok || !result.success) {
+        throw new Error(result.message || 'Gagal mengubah status aktivitas monitoring');
       }
-      
-      // Update other fields if available
-      if (dataMiningResults.estimatedLOS) {
-        setEstimatedLOS(dataMiningResults.estimatedLOS);
-      }
-      
-      if (dataMiningResults.estimatedCost) {
-        setEstimatedCost(dataMiningResults.estimatedCost);
-      }
-      
-      setIsDataMiningModalOpen(false);
-      
+
+      setMonitoring(result.data);
+      await loadPreview();
+    } catch (error) {
       toast({
-        title: "Berhasil",
-        description: "Hasil data mining telah diterapkan ke clinical pathway",
+        title: 'Error',
+        description: error instanceof Error ? error.message : 'Gagal mengubah status aktivitas monitoring',
+        variant: 'destructive'
       });
+    } finally {
+      setMonitoringActionKey(null);
     }
   };
 
-  const applyMedicationToMedicalPlan = (medicationName: string) => {
-    const currentPlan = medicalPlan;
-    const newMedication = `Obat: ${medicationName}`;
-    
-    if (currentPlan) {
-      // Add medication to existing plan
-      setMedicalPlan(currentPlan + '\n' + newMedication);
-    } else {
-      // Set as new plan
-      setMedicalPlan(newMedication);
+  const handleUpdatePatientStatus = async (status: 'Aktif' | 'Selesai' | 'Drop') => {
+    if (!monitoring?.patient?.id) {
+      return;
     }
-    
-    toast({
-      title: "Berhasil",
-      description: `Obat "${medicationName}" telah ditambahkan ke Rencana Perawatan Medis`,
-    });
-  };
 
-  const applyAIGenerationResults = () => {
-    if (aiGenerationResults) {
-      // Update diagnosis
-      if (aiGenerationResults.diagnosis) {
-        if (aiGenerationResults.diagnosis.primary) {
-          setInitialDiagnosis(aiGenerationResults.diagnosis.primary);
-          setFinalDiagnosis(aiGenerationResults.diagnosis.primary);
-        }
+    try {
+      setMonitoringActionKey(`patient-${status}`);
+      const response = await fetch(`${API_URLS.CLINICAL_PATHWAY}/monitoring/${monitoring.patient.id}/status`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ status })
+      });
+      const result = await response.json();
+
+      if (!response.ok || !result.success) {
+        throw new Error(result.message || 'Gagal mengubah status pasien Clinical Pathway');
       }
-      
-      // Update ICD codes
-      if (aiGenerationResults.icd10Primary) {
-        setIcd10Primary(aiGenerationResults.icd10Primary);
-      }
-      if (aiGenerationResults.icd10Secondary && Array.isArray(aiGenerationResults.icd10Secondary)) {
-        setIcd10Secondary(aiGenerationResults.icd10Secondary);
-      }
-      if (aiGenerationResults.icd9Primary) {
-        setIcd9Primary(aiGenerationResults.icd9Primary);
-      }
-      if (aiGenerationResults.icd9Secondary && Array.isArray(aiGenerationResults.icd9Secondary)) {
-        setIcd9Secondary(aiGenerationResults.icd9Secondary);
-      }
-      
-      // Update treatment plan
-      if (aiGenerationResults.treatmentPlan) {
-        if (aiGenerationResults.treatmentPlan.goals && Array.isArray(aiGenerationResults.treatmentPlan.goals)) {
-          setMedicalPlan(aiGenerationResults.treatmentPlan.goals.join(', '));
-        }
-        if (aiGenerationResults.treatmentPlan.expectedOutcome) {
-          setTreatmentOutcome(aiGenerationResults.treatmentPlan.expectedOutcome);
-        }
-        if (aiGenerationResults.treatmentPlan.estimatedLength) {
-          setEstimatedLOS(aiGenerationResults.treatmentPlan.estimatedLength);
-        }
-      }
-      
-      // Update pathway data
-      if (aiGenerationResults.pathwayData && Array.isArray(aiGenerationResults.pathwayData)) {
-        setPathwayData(aiGenerationResults.pathwayData);
-      }
-      
-      // Update estimated costs
-      if (aiGenerationResults.estimatedCosts) {
-        const totalCost = Object.values(aiGenerationResults.estimatedCosts).reduce((sum: number, cost: any) => sum + (Number(cost) || 0), 0);
-        setEstimatedCost(totalCost.toString());
-        setMedicationCost(aiGenerationResults.estimatedCosts.medication?.toString() || '0');
-        setProcedureCost(aiGenerationResults.estimatedCosts.medical?.toString() || '0');
-      }
-      
-      setIsAIGenerationModalOpen(false);
-      
+
+      setMonitoring(result.data);
+      await loadPreview();
       toast({
-        title: "Berhasil",
-        description: "Hasil AI Generation telah diterapkan ke clinical pathway",
+        title: 'Berhasil',
+        description: `Status Clinical Pathway pasien diubah menjadi ${status}.`
       });
+    } catch (error) {
+      toast({
+        title: 'Error',
+        description: error instanceof Error ? error.message : 'Gagal mengubah status pasien Clinical Pathway',
+        variant: 'destructive'
+      });
+    } finally {
+      setMonitoringActionKey(null);
     }
   };
 
-  const applyAIItemToForm = (type: string, value: any) => {
-    switch (type) {
-      case 'diagnosis':
-        setInitialDiagnosis(value);
-        setFinalDiagnosis(value);
-        break;
-      case 'icd10Primary':
-        setIcd10Primary(value);
-        break;
-      case 'medicalPlan':
-        setMedicalPlan(value);
-        break;
-      case 'treatmentOutcome':
-        setTreatmentOutcome(value);
-        break;
-      case 'estimatedLOS':
-        setEstimatedLOS(value);
-        break;
-      default:
-        break;
-    }
-    
-    toast({
-      title: "Berhasil",
-      description: `${type} telah diterapkan ke form`,
-    });
-  };
+  if (!no_rkm_medis || !no_rawat) {
+    return (
+      <div className="w-full p-4">
+        <Card>
+          <CardHeader>
+            <CardTitle>Clinical Pathway</CardTitle>
+          </CardHeader>
+          <CardContent className="text-sm text-muted-foreground">
+            Buka halaman ini dari daftar pasien agar nomor rawat dan status layanan pasien otomatis terbaca.
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
 
   return (
-    <div className="w-full p-4">
-      {/* Header */}
-      <Card className="mb-6">
-        <CardHeader className="bg-green-500 text-white">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center space-x-4">
-              <div className="w-16 h-16 bg-white rounded-lg flex items-center justify-center">
-                <FileText className="w-8 h-8 text-green-500" />
+    <div className="w-full p-4 space-y-4">
+      <Card>
+        <CardHeader className="pb-4">
+          <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+            <div className="space-y-2">
+              <div className="flex items-center gap-2 text-primary">
+                <FileText className="h-5 w-5" />
+                <span className="text-sm font-semibold uppercase tracking-wide">Clinical Pathway</span>
               </div>
-              <div>
-                <h1 className="text-2xl font-bold">CLINICAL PATHWAYS</h1>
-                <p className="text-lg">Format Umum Clinical Pathway</p>
+              <div className="flex items-center gap-2">
+                <CardTitle className="text-2xl">
+                  {workflowMode === 'monitoring' ? 'Monitoring Clinical Pathway' : 'Inisiasi Clinical Pathway'}
+                </CardTitle>
+                <Badge variant={workflowMode === 'monitoring' ? 'secondary' : 'default'}>
+                  {workflowMode === 'monitoring' ? 'Monitoring' : 'Inisiasi'}
+                </Badge>
               </div>
+              <p className="text-sm text-muted-foreground">
+                {workflowMode === 'monitoring'
+                  ? 'Pasien yang sudah masuk rawat inap menggunakan Clinical Pathway sebagai alat monitoring realisasi, kepatuhan, dan variance.'
+                  : 'Clinical Pathway dibuat pertama kali saat pasien dari rawat jalan atau IGD masuk ke rumah sakit, menggunakan master CP dan histori kasus serupa.'}
+              </p>
             </div>
-            <div className="text-right flex space-x-2">
-              <Button 
-                variant="outline" 
-                className="font-semibold bg-blue-600 text-white hover:bg-blue-700"
-                onClick={handleDataMining}
-                disabled={dataMiningLoading || !patientName || !medicalRecordNumber}
-              >
-                <Database className="w-4 h-4 mr-2" />
-                {dataMiningLoading ? 'Mining...' : 'Data Mining'}
+            <div className="flex flex-wrap gap-2">
+              <Button variant="outline" onClick={() => void loadPreview()} disabled={loading || generateLoading}>
+                {loading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <RefreshCw className="mr-2 h-4 w-4" />}
+                Refresh
               </Button>
-              <Button 
-                 variant="outline" 
-                 className="font-semibold bg-red-600 text-white hover:bg-red-700"
-                 onClick={handleGenerate}
-                 disabled={generateLoading || !patientName || !medicalRecordNumber}
-               >
-                 <Brain className="w-4 h-4 mr-2" />
-                 {generateLoading ? 'AI Generating...' : 'AI Generate'}
-               </Button>
+              {workflowMode === 'monitoring' ? (
+                <Button onClick={handleRefreshMonitoring} disabled={loading || monitoringLoading || monitoringActionKey === 'refresh' || !monitoring?.patient?.id}>
+                  {monitoringLoading || monitoringActionKey === 'refresh'
+                    ? <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    : <RefreshCw className="mr-2 h-4 w-4" />}
+                  Refresh Monitoring
+                </Button>
+              ) : (
+                <Button onClick={handleGeneratePatientPathway} disabled={loading || generateLoading || !canGeneratePatientPathway}>
+                  {generateLoading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <CheckCircle2 className="mr-2 h-4 w-4" />}
+                  Generate Pasien
+                </Button>
+              )}
             </div>
           </div>
         </CardHeader>
       </Card>
 
-      {/* Identifikasi Pasien */}
-      <Card className="mb-6">
-        <CardHeader>
-          <CardTitle className="flex items-center space-x-2">
-            <User className="w-5 h-5" />
-            <span>Identifikasi Pasien</span>
-          </CardTitle>
-        </CardHeader>
-        <CardContent className="p-6">
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-4">
-            <div>
-              <Label htmlFor="patientName">Nama Pasien</Label>
-              <Input
-                id="patientName"
-                value={patientName}
-                onChange={(e) => setPatientName(e.target.value)}
-                placeholder="Masukkan nama pasien"
-              />
-            </div>
-            <div>
-              <Label htmlFor="medicalRecord">No. Rekam Medis</Label>
-              <Input
-                id="medicalRecord"
-                value={medicalRecordNumber}
-                onChange={(e) => setMedicalRecordNumber(e.target.value)}
-                placeholder="Masukkan no. rekam medis"
-              />
-            </div>
-            <div>
-              <Label htmlFor="noRawat">No. Rawat</Label>
-              <Input
-                id="noRawat"
-                value={formattedNoRawat}
-                readOnly
-                className="bg-muted"
-              />
-            </div>
-            <div>
-              <Label htmlFor="age">Umur</Label>
-              <Input
-                id="age"
-                value={age}
-                onChange={(e) => setAge(e.target.value)}
-                placeholder="Masukkan umur"
-              />
-            </div>
-          </div>
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-4">
-            <div>
-              <Label htmlFor="gender">Jenis Kelamin</Label>
-              <Select value={gender} onValueChange={setGender}>
-                <SelectTrigger>
-                  <SelectValue placeholder="Pilih jenis kelamin" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="L">Laki-laki</SelectItem>
-                  <SelectItem value="P">Perempuan</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-            <div>
-              <Label htmlFor="weight">Berat Badan (kg)</Label>
-              <Input
-                id="weight"
-                value={weight}
-                onChange={(e) => setWeight(e.target.value)}
-                placeholder="BB"
-              />
-            </div>
-            <div>
-              <Label htmlFor="height">Tinggi Badan (cm)</Label>
-              <Input
-                id="height"
-                value={height}
-                onChange={(e) => setHeight(e.target.value)}
-                placeholder="TB"
-              />
-            </div>
-            <div>
-              <Label htmlFor="roomBed">Ruang/Tempat Tidur</Label>
-              <Input
-                id="roomBed"
-                value={roomBed}
-                onChange={(e) => setRoomBed(e.target.value)}
-                placeholder="Ruang/TT"
-              />
-            </div>
-          </div>
-        </CardContent>
-      </Card>
-
-      {/* ICD Codes */}
-      <Card className="mb-6">
-        <CardHeader>
-          <CardTitle className="flex items-center space-x-2">
-            <FileText className="w-5 h-5" />
-            <span>Kode ICD</span>
-          </CardTitle>
-        </CardHeader>
-        <CardContent className="p-6">
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-            {/* ICD-10 Column */}
-            <div>
-              <h3 className="text-lg font-semibold mb-4 text-center">ICD-10</h3>
-              
-              {/* ICD-10 Primary */}
-              <div className="mb-6">
-                <Label className="text-sm font-semibold mb-3 block">ICD-10 Primer</Label>
-                <div className="flex gap-2 mb-3">
-                  <Input
-                    placeholder="Kode ICD-10"
-                    value={icd10Primary.code}
-                    onChange={(e) => updateIcdEntry('icd10Primary', undefined, 'code', e.target.value)}
-                    className="w-32"
-                  />
-                  <Input
-                    placeholder="Deskripsi"
-                    value={icd10Primary.description}
-                    onChange={(e) => updateIcdEntry('icd10Primary', undefined, 'description', e.target.value)}
-                    className="flex-1"
-                  />
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    onClick={() => openIcdModal('icd10Primary')}
-                    className="px-3"
-                  >
-                    <Search className="h-4 w-4" />
-                  </Button>
-                </div>
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
-                  <Input
-                    placeholder="Kode SNOMED-CT"
-                    value={icd10Primary.snomedCode || ''}
-                    readOnly
-                    className="bg-muted"
-                  />
-                  <Input
-                    placeholder="Istilah SNOMED-CT Diagnosa"
-                    value={icd10Primary.snomedTerm || ''}
-                    readOnly
-                    className="md:col-span-2 bg-muted"
-                  />
+      {preview ? (
+        <>
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <UserRound className="h-5 w-5" />
+                Ringkasan Pasien
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+              <div className="rounded-lg border p-3">
+                <div className="text-xs text-muted-foreground">Nama Pasien</div>
+                <div className="font-medium">{preview.registration.nm_pasien}</div>
+                <div className="text-sm text-muted-foreground">RM {preview.registration.no_rkm_medis}</div>
+              </div>
+              <div className="rounded-lg border p-3">
+                <div className="text-xs text-muted-foreground">Nomor Rawat</div>
+                <div className="font-medium">{formatNoRawatDisplay(preview.registration.no_rawat)}</div>
+                <div className="text-sm text-muted-foreground">{preview.registration.nm_poli || '-'}</div>
+              </div>
+              <div className="rounded-lg border p-3">
+                <div className="text-xs text-muted-foreground">Status Lanjut</div>
+                <div className="font-medium">{preview.registration.status_lanjut}</div>
+                <div className="text-sm text-muted-foreground">{preview.registration.nm_dokter || '-'}</div>
+              </div>
+              <div className="rounded-lg border p-3">
+                <div className="text-xs text-muted-foreground">Registrasi</div>
+                <div className="font-medium">{formatDateTimeDisplay(preview.registration.tgl_registrasi, preview.registration.jam_reg)}</div>
+                <div className="text-sm text-muted-foreground">
+                  {formatGender(preview.registration.jk)} • {preview.registration.umur || 0} th
                 </div>
               </div>
+            </CardContent>
+          </Card>
 
-              {/* ICD-10 Secondary */}
-              <div>
-                <Label className="text-sm font-semibold mb-3 block">ICD-10 Sekunder</Label>
-                {icd10Secondary.map((icd, index) => (
-                  <div key={index} className="mb-3 rounded-lg border p-3">
-                    <div className="flex gap-2 mb-2">
-                      <Input
-                        placeholder="Kode ICD-10"
-                        value={icd.code}
-                        onChange={(e) => updateIcdEntry('icd10Secondary', index, 'code', e.target.value)}
-                        className="w-32"
-                      />
-                      <Input
-                        placeholder="Deskripsi"
-                        value={icd.description}
-                        onChange={(e) => updateIcdEntry('icd10Secondary', index, 'description', e.target.value)}
-                        className="flex-1"
-                      />
-                      <Button
-                        type="button"
-                        variant="outline"
-                        size="sm"
-                        onClick={() => openIcdModal('icd10Secondary', index)}
-                        className="px-3"
-                      >
-                        <Search className="h-4 w-4" />
-                      </Button>
-                      <Button
-                        type="button"
-                        variant="outline"
-                        size="sm"
-                        onClick={() => removeIcdEntry('icd10Secondary', index)}
-                        disabled={icd10Secondary.length === 1}
-                        className="ml-2"
-                      >
-                        <X className="w-4 h-4" />
-                      </Button>
+          {preview.existing ? (
+            <Card className="border-emerald-200 bg-emerald-50/50">
+              <CardContent className="pt-6">
+                <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+                  <div>
+                    <div className="text-sm font-semibold text-emerald-700">Clinical Pathway pasien sudah ada</div>
+                    <div className="text-sm text-emerald-900">
+                      {preview.existing.kode_cp} - {preview.existing.nama_cp}
                     </div>
-                    <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
-                      <Input
-                        placeholder="Kode SNOMED-CT"
-                        value={icd.snomedCode || ''}
-                        readOnly
-                        className="bg-muted"
-                      />
-                      <Input
-                        placeholder="Istilah SNOMED-CT Diagnosa"
-                        value={icd.snomedTerm || ''}
-                        readOnly
-                        className="md:col-span-2 bg-muted"
-                      />
+                    <div className="text-xs text-emerald-700">
+                      Status {preview.existing.status_cp} • Kepatuhan {Number(preview.existing.compliance_percentage || 0).toFixed(2)}%
                     </div>
                   </div>
-                ))}
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  onClick={() => addIcdEntry('icd10Secondary')}
-                  className="w-full"
-                >
-                  <Plus className="w-4 h-4 mr-2" />
-                  Tambah ICD-10 Sekunder
-                </Button>
-              </div>
-            </div>
-
-            {/* ICD-9 Column */}
-            <div>
-              <h3 className="text-lg font-semibold mb-4 text-center">ICD-9</h3>
-              
-              {/* ICD-9 Primary */}
-              <div className="mb-6">
-                <Label className="text-sm font-semibold mb-3 block">ICD-9 Primer</Label>
-                <div className="flex gap-2 mb-3">
-                  <Input
-                    placeholder="Kode ICD-9"
-                    value={icd9Primary.code}
-                    onChange={(e) => updateIcdEntry('icd9Primary', undefined, 'code', e.target.value)}
-                    className="w-32"
-                  />
-                  <Input
-                    placeholder="Deskripsi"
-                    value={icd9Primary.description}
-                    onChange={(e) => updateIcdEntry('icd9Primary', undefined, 'description', e.target.value)}
-                    className="flex-1"
-                  />
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    onClick={() => openIcdModal('icd9Primary')}
-                    className="px-3"
-                  >
-                    <Search className="h-4 w-4" />
-                  </Button>
+                  <Badge variant="secondary" className="w-fit bg-emerald-100 text-emerald-800">
+                    {preview.existing.status_layanan}
+                  </Badge>
                 </div>
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
-                  <Input
-                    placeholder="Kode SNOMED-CT"
-                    value={icd9Primary.snomedCode || ''}
-                    readOnly
-                    className="bg-muted"
-                  />
-                  <Input
-                    placeholder="Istilah SNOMED-CT"
-                    value={icd9Primary.snomedTerm || ''}
-                    readOnly
-                    className="md:col-span-2 bg-muted"
-                  />
-                </div>
-              </div>
+              </CardContent>
+            </Card>
+          ) : null}
 
-              {/* ICD-9 Secondary */}
-              <div>
-                <Label className="text-sm font-semibold mb-3 block">ICD-9 Sekunder</Label>
-                {icd9Secondary.map((icd, index) => (
-                  <div key={index} className="mb-3 rounded-lg border p-3">
-                    <div className="flex gap-2 mb-2">
-                      <Input
-                        placeholder="Kode ICD-9"
-                        value={icd.code}
-                        onChange={(e) => updateIcdEntry('icd9Secondary', index, 'code', e.target.value)}
-                        className="w-32"
-                      />
-                      <Input
-                        placeholder="Deskripsi"
-                        value={icd.description}
-                        onChange={(e) => updateIcdEntry('icd9Secondary', index, 'description', e.target.value)}
-                        className="flex-1"
-                      />
-                      <Button
-                        type="button"
-                        variant="outline"
-                        size="sm"
-                        onClick={() => openIcdModal('icd9Secondary', index)}
-                        className="px-3"
-                      >
-                        <Search className="h-4 w-4" />
-                      </Button>
-                      <Button
-                        type="button"
-                        variant="outline"
-                        size="sm"
-                        onClick={() => removeIcdEntry('icd9Secondary', index)}
-                        disabled={icd9Secondary.length === 1}
-                        className="ml-2"
-                      >
-                        <X className="w-4 h-4" />
-                      </Button>
-                    </div>
-                    <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
-                      <Input
-                        placeholder="Kode SNOMED-CT"
-                        value={icd.snomedCode || ''}
-                        readOnly
-                        className="bg-muted"
-                      />
-                      <Input
-                        placeholder="Istilah SNOMED-CT"
-                        value={icd.snomedTerm || ''}
-                        readOnly
-                        className="md:col-span-2 bg-muted"
-                      />
-                    </div>
+          {workflowMode === 'monitoring' && !preview.existing ? (
+            <Card className="border-amber-200 bg-amber-50/60">
+              <CardContent className="flex items-start gap-3 pt-6">
+                <AlertTriangle className="mt-0.5 h-5 w-5 text-amber-700" />
+                <div className="space-y-1 text-sm">
+                  <div className="font-semibold text-amber-800">Clinical Pathway belum tersedia untuk monitoring</div>
+                  <div className="text-amber-700">
+                    Sesuai alur kerja, CP sebaiknya dibuat terlebih dahulu dari pasien rawat jalan atau IGD saat pasien masuk rumah sakit.
                   </div>
-                ))}
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  onClick={() => addIcdEntry('icd9Secondary')}
-                  className="w-full"
-                >
-                  <Plus className="w-4 h-4 mr-2" />
-                  Tambah ICD-9 Sekunder
-                </Button>
-              </div>
-            </div>
-          </div>
-        </CardContent>
-      </Card>
+                </div>
+              </CardContent>
+            </Card>
+          ) : null}
 
-      {/* Diagnosis */}
-      <Card className="mb-6">
-        <CardHeader>
-          <CardTitle className="flex items-center space-x-2">
-            <Stethoscope className="w-5 h-5" />
-            <span>Diagnosis</span>
-          </CardTitle>
-        </CardHeader>
-        <CardContent className="p-6">
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div>
-              <Label htmlFor="initialDiagnosis">Diagnosis Awal</Label>
-              <Textarea
-                id="initialDiagnosis"
-                value={initialDiagnosis}
-                onChange={(e) => setInitialDiagnosis(e.target.value)}
-                placeholder="Masukkan diagnosis awal"
-                className="h-24"
-              />
-            </div>
-            <div>
-              <Label htmlFor="finalDiagnosis">Diagnosis Akhir</Label>
-              <Textarea
-                id="finalDiagnosis"
-                value={finalDiagnosis}
-                onChange={(e) => setFinalDiagnosis(e.target.value)}
-                placeholder="Masukkan diagnosis akhir"
-                className="h-24"
-              />
-            </div>
-          </div>
-        </CardContent>
-      </Card>
-
-      {/* Rencana Perawatan */}
-      <Card className="mb-6">
-        <CardHeader>
-          <CardTitle className="flex items-center space-x-2">
-            <Target className="w-5 h-5" />
-            <span>Rencana Perawatan</span>
-          </CardTitle>
-        </CardHeader>
-        <CardContent className="p-6">
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div>
-              <Label htmlFor="medicalPlan">Rencana Perawatan Medis</Label>
-              <Textarea
-                id="medicalPlan"
-                value={medicalPlan}
-                onChange={(e) => setMedicalPlan(e.target.value)}
-                placeholder="Tindakan medis, obat-obatan, pemeriksaan penunjang"
-                className="h-32"
-              />
-            </div>
-            <div>
-              <Label htmlFor="nursingPlan">Rencana Asuhan Keperawatan</Label>
-              <Textarea
-                id="nursingPlan"
-                value={nursingPlan}
-                onChange={(e) => setNursingPlan(e.target.value)}
-                placeholder="Rencana asuhan keperawatan"
-                className="h-32"
-              />
-            </div>
-          </div>
-        </CardContent>
-      </Card>
-
-      {/* Linimasa */}
-      <Card className="mb-6">
-        <CardHeader>
-          <CardTitle className="flex items-center space-x-2">
-            <Calendar className="w-5 h-5" />
-            <span>Linimasa Perawatan</span>
-          </CardTitle>
-        </CardHeader>
-        <CardContent className="p-6">
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div>
-              <Label htmlFor="estimatedLOS">Perkiraan Lama Rawat (hari)</Label>
-              <Input
-                id="estimatedLOS"
-                value={estimatedLOS}
-                onChange={(e) => setEstimatedLOS(e.target.value)}
-                placeholder="Perkiraan hari rawat"
-              />
-            </div>
-            <div>
-              <Label htmlFor="actualLOS">Lama Rawat Aktual (hari)</Label>
-              <Input
-                id="actualLOS"
-                value={actualLOS}
-                onChange={(e) => setActualLOS(e.target.value)}
-                placeholder="Lama rawat aktual"
-              />
-            </div>
-          </div>
-        </CardContent>
-      </Card>
-
-      {/* Perkiraan Biaya */}
-      <Card className="mb-6">
-        <CardHeader>
-          <CardTitle className="flex items-center space-x-2">
-            <DollarSign className="w-5 h-5" />
-            <span>Perkiraan Biaya</span>
-          </CardTitle>
-        </CardHeader>
-        <CardContent className="p-6">
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            <div>
-              <Label htmlFor="estimatedCost">Total Perkiraan Biaya</Label>
-              <Input
-                id="estimatedCost"
-                value={estimatedCost}
-                onChange={(e) => setEstimatedCost(e.target.value)}
-                placeholder="Rp. 0"
-              />
-            </div>
-            <div>
-              <Label htmlFor="medicationCost">Biaya Obat-obatan</Label>
-              <Input
-                id="medicationCost"
-                value={medicationCost}
-                onChange={(e) => setMedicationCost(e.target.value)}
-                placeholder="Rp. 0"
-              />
-            </div>
-            <div>
-              <Label htmlFor="procedureCost">Biaya Tindakan</Label>
-              <Input
-                id="procedureCost"
-                value={procedureCost}
-                onChange={(e) => setProcedureCost(e.target.value)}
-                placeholder="Rp. 0"
-              />
-            </div>
-          </div>
-        </CardContent>
-      </Card>
-
-      {/* Clinical Pathway Table */}
-      <Card className="mb-6">
-        <CardHeader>
-          <CardTitle className="flex items-center space-x-2">
-            <Activity className="w-5 h-5" />
-            <span>Kategori Perawatan & Aktivitas Harian</span>
-          </CardTitle>
-        </CardHeader>
-        <CardContent className="p-0">
-          <div className="overflow-x-auto">
-            <table className="w-full border-collapse">
-              <thead>
-                <tr className="bg-gray-100">
-                  <th className="border border-gray-300 p-3 text-left font-semibold min-w-[200px]">URAIAN KEGIATAN</th>
-                  {[1, 2, 3, 4, 5, 6, 7].map((day) => (
-                    <th key={day} className="border border-gray-300 p-3 text-center font-semibold w-16">
-                      Hari {day}
-                    </th>
-                  ))}
-                  <th className="border border-gray-300 p-3 text-left font-semibold min-w-[150px]">KETERANGAN</th>
-                  <th className="border border-gray-300 p-3 text-left font-semibold min-w-[150px]">VARIANS</th>
-                </tr>
-              </thead>
-              <tbody>
-                {pathwayData.map((category, categoryIndex) => (
-                  <React.Fragment key={categoryIndex}>
-                    <tr className="bg-yellow-100">
-                      <td className="border border-gray-300 p-3 font-semibold" colSpan={10}>
-                        {category.category}
-                      </td>
-                    </tr>
-                    {category.items.map((item, itemIndex) => (
-                      <tr key={itemIndex} className="hover:bg-gray-50">
-                        <td className="border border-gray-300 p-3">{item.name}</td>
-                        {item.days.map((checked, dayIndex) => (
-                          <td key={dayIndex} className="border border-gray-300 p-3 text-center">
-                            <Checkbox
-                              checked={checked}
-                              onCheckedChange={(checked) => 
-                                handleDayChange(categoryIndex, itemIndex, dayIndex, checked as boolean)
-                              }
-                            />
-                          </td>
-                        ))}
-                        <td className="border border-gray-300 p-3">
-                          <Input
-                            value={item.notes}
-                            onChange={(e) => handleNotesChange(categoryIndex, itemIndex, e.target.value)}
-                            placeholder="Keterangan"
-                            className="border-0 bg-transparent text-sm"
-                          />
-                        </td>
-                        <td className="border border-gray-300 p-3">
-                          <Input
-                            value={item.variance || ''}
-                            onChange={(e) => handleVarianceChange(categoryIndex, itemIndex, e.target.value)}
-                            placeholder="Catatan varians"
-                            className="border-0 bg-transparent text-sm"
-                          />
-                        </td>
-                      </tr>
+          <div className="grid gap-4 xl:grid-cols-[1.1fr_1fr]">
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <ClipboardList className="h-5 w-5" />
+                  Diagnosis ICD-10 Aktif
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                {preview.diagnoses.length ? (
+                  <div className="space-y-3">
+                    {preview.diagnoses.map((diagnosis) => (
+                      <div key={`${diagnosis.kd_penyakit}-${diagnosis.prioritas}`} className="rounded-lg border p-3">
+                        <div className="flex items-center justify-between gap-3">
+                          <div className="font-medium">{diagnosis.kd_penyakit}</div>
+                          <Badge variant={diagnosis.prioritas === 1 ? 'default' : 'secondary'}>
+                            Prioritas {diagnosis.prioritas}
+                          </Badge>
+                        </div>
+                        <div className="text-sm text-muted-foreground">{diagnosis.nm_penyakit || '-'}</div>
+                      </div>
                     ))}
-                  </React.Fragment>
-                ))}
-              </tbody>
-            </table>
+                  </div>
+                ) : (
+                  <div className="text-sm text-muted-foreground">
+                    Diagnosis pasien untuk status layanan ini belum ditemukan.
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <Database className="h-5 w-5" />
+                  Ringkasan Migrasi
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+                <div className="rounded-lg border p-3">
+                  <div className="text-xs text-muted-foreground">Master CP Cocok</div>
+                  <div className="text-2xl font-semibold">{preview.master_recommendations.length}</div>
+                  <div className="text-xs text-muted-foreground">Top 10 berdasarkan ICD-10</div>
+                </div>
+                <div className="rounded-lg border p-3">
+                  <div className="text-xs text-muted-foreground">Hari Template Master</div>
+                  <div className="text-2xl font-semibold">{preview.master_template.days.length}</div>
+                  <div className="text-xs text-muted-foreground">Hari dari CP terpilih</div>
+                </div>
+                <div className="rounded-lg border p-3">
+                  <div className="text-xs text-muted-foreground">Kasus Historis</div>
+                  <div className="text-2xl font-semibold">{preview.historical_template.source_case_count}</div>
+                  <div className="text-xs text-muted-foreground">Sumber 1 tahun terakhir</div>
+                </div>
+                <div className="rounded-lg border p-3">
+                  <div className="text-xs text-muted-foreground">Hari Template Histori</div>
+                  <div className="text-2xl font-semibold">{preview.historical_template.days.length}</div>
+                  <div className="text-xs text-muted-foreground">Hari rawat hasil agregasi</div>
+                </div>
+              </CardContent>
+            </Card>
           </div>
-        </CardContent>
-      </Card>
 
-      {/* Hasil Akhir & Kriteria Keluaran */}
-      <Card className="mb-6">
-        <CardHeader>
-          <CardTitle className="flex items-center space-x-2">
-            <Target className="w-5 h-5" />
-            <span>Hasil Akhir Perawatan & Kriteria Keluaran</span>
-          </CardTitle>
-        </CardHeader>
-        <CardContent className="p-6">
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div>
-              <Label htmlFor="treatmentOutcome">Hasil Akhir Perawatan</Label>
-              <Textarea
-                id="treatmentOutcome"
-                value={treatmentOutcome}
-                onChange={(e) => setTreatmentOutcome(e.target.value)}
-                placeholder="Kesembuhan, perbaikan kondisi, rujukan, dll"
-                className="h-24"
-              />
-            </div>
-            <div>
-              <Label htmlFor="dischargeCriteria">Kriteria Keluaran</Label>
-              <Textarea
-                id="dischargeCriteria"
-                value={dischargeCriteria}
-                onChange={(e) => setDischargeCriteria(e.target.value)}
-                placeholder="Kriteria keberhasilan jangka pendek dan panjang"
-                className="h-24"
-              />
-            </div>
-          </div>
-        </CardContent>
-      </Card>
-
-      {/* Catatan Varians */}
-      <Card className="mb-6">
-        <CardHeader>
-          <CardTitle className="flex items-center space-x-2">
-            <AlertTriangle className="w-5 h-5" />
-            <span>Catatan Varians</span>
-          </CardTitle>
-        </CardHeader>
-        <CardContent className="p-6">
-          <div>
-            <Label htmlFor="varianceNotes">Catatan Penyimpangan dari Rencana</Label>
-            <Textarea
-              id="varianceNotes"
-              value={varianceNotes}
-              onChange={(e) => setVarianceNotes(e.target.value)}
-              placeholder="Catatan mengenai penyimpangan dari rencana perawatan, alasan penyimpangan, dan tindakan yang diambil"
-              className="h-32 mt-2"
-            />
-          </div>
-        </CardContent>
-      </Card>
-
-      {/* Verifikasi */}
-      <Card className="mb-6">
-        <CardHeader>
-          <CardTitle>Verifikasi Tenaga Medis</CardTitle>
-        </CardHeader>
-        <CardContent className="p-6">
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-            <div>
-              <Label htmlFor="doctorSignature">Dokter Penanggung Jawab</Label>
-              <Textarea
-                id="doctorSignature"
-                value={doctorSignature}
-                onChange={(e) => setDoctorSignature(e.target.value)}
-                placeholder="Tanda tangan dan nama dokter"
-                className="mt-2 h-24"
-              />
-            </div>
-            <div>
-              <Label htmlFor="nurseSignature">Perawat Penanggung Jawab</Label>
-              <Textarea
-                id="nurseSignature"
-                value={nurseSignature}
-                onChange={(e) => setNurseSignature(e.target.value)}
-                placeholder="Tanda tangan dan nama perawat"
-                className="mt-2 h-24"
-              />
-            </div>
-            <div>
-              <Label htmlFor="pharmacistSignature">Apoteker</Label>
-              <Textarea
-                id="pharmacistSignature"
-                value={pharmacistSignature}
-                onChange={(e) => setPharmacistSignature(e.target.value)}
-                placeholder="Tanda tangan dan nama apoteker"
-                className="mt-2 h-24"
-              />
-            </div>
-          </div>
-        </CardContent>
-      </Card>
-
-      {/* Legend */}
-      <Card className="mb-6">
-        <CardContent className="p-4">
-          <div className="flex flex-wrap gap-4 text-sm">
-            <div className="flex items-center space-x-2">
-              <div className="w-4 h-4 bg-yellow-300 border border-gray-400"></div>
-              <span>Yang harus dilaksanakan</span>
-            </div>
-            <div className="flex items-center space-x-2">
-              <div className="w-4 h-4 bg-gray-300 border border-gray-400"></div>
-              <span>Rujukan bila tidak sesuai</span>
-            </div>
-            <div className="flex items-center space-x-2">
-              <div className="w-4 h-4 bg-white border border-gray-400"></div>
-              <span>Bila tidak sesuai pathway</span>
-            </div>
-            <div className="flex items-center space-x-2">
-              <div className="w-4 h-4 bg-red-200 border-2 border-red-500"></div>
-              <span>Varians dari rencana</span>
-            </div>
-          </div>
-        </CardContent>
-      </Card>
-
-      {/* Action Buttons */}
-      <div className="flex justify-end space-x-4">
-        <Button onClick={handlePrint} variant="outline" className="flex items-center space-x-2" disabled={loading}>
-          <Printer className="w-4 h-4" />
-          <span>Cetak</span>
-        </Button>
-        <Button onClick={handleSave} className="flex items-center space-x-2" disabled={loading}>
-          <Save className="w-4 h-4" />
-          <span>{loading ? 'Menyimpan...' : 'Simpan'}</span>
-        </Button>
-      </div>
-
-      {/* ICD Modal */}
-      <Dialog open={isIcdModalOpen} onOpenChange={setIsIcdModalOpen}>
-        <DialogContent className="max-w-6xl max-h-[90vh] overflow-y-auto">
-          <DialogHeader>
-            <DialogTitle>ICD Management System</DialogTitle>
-            <DialogDescription>
-              Kelola data ICD-10, ICD-9-CM, dan SNOMED-CT dalam satu modal lalu simpan ke form.
-            </DialogDescription>
-          </DialogHeader>
-          
-          <Tabs value={icdActiveTab} onValueChange={handleIcdTabChange} className="w-full">
-            <TabsList className="grid w-full grid-cols-2">
-              <TabsTrigger value="icd10">ICD-10</TabsTrigger>
-              <TabsTrigger value="icd9">ICD-9-CM</TabsTrigger>
-            </TabsList>
-            
-            <TabsContent value="icd10" className="space-y-4">
-              {renderIcdManagerSection('icd10', 'ICD-10', modalIcd10Primary, modalIcd10Secondary)}
-            </TabsContent>
-            
-            <TabsContent value="icd9" className="space-y-4">
-              {renderIcdManagerSection('icd9', 'ICD-9-CM', modalIcd9Primary, modalIcd9Secondary)}
-            </TabsContent>
-          </Tabs>
-          <div className="flex justify-end gap-2 pt-4">
-            <Button variant="outline" onClick={() => setIsIcdModalOpen(false)}>
-              Batal
-            </Button>
-            <Button onClick={handleSaveIcdModal}>
-              <Save className="w-4 h-4 mr-2" />
-              Simpan Data ICD
-            </Button>
-          </div>
-        </DialogContent>
-      </Dialog>
-
-      {/* Data Mining Results Modal */}
-      <Dialog open={isDataMiningModalOpen} onOpenChange={setIsDataMiningModalOpen}>
-        <DialogContent className="max-w-4xl max-h-[80vh] overflow-y-auto">
-          <DialogHeader>
-            <DialogTitle className="flex items-center space-x-2">
-              <Database className="w-5 h-5 text-blue-600" />
-              <span>Hasil Data Mining</span>
-            </DialogTitle>
-            <DialogDescription>
-              Hasil analisis data mining dari kasus serupa dalam 1 tahun terakhir
-            </DialogDescription>
-          </DialogHeader>
-          
-          {dataMiningResults && (
-            <div className="space-y-6">
-              {/* Summary Information */}
+          {workflowMode === 'initiation' ? (
+            <>
               <Card>
                 <CardHeader>
-                  <CardTitle className="text-lg">Ringkasan Analisis</CardTitle>
+                  <CardTitle className="flex items-center gap-2">
+                    <FileText className="h-5 w-5" />
+                    Master Clinical Pathway Otomatis
+                  </CardTitle>
                 </CardHeader>
-                <CardContent>
-                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                    <div className="text-center p-4 bg-blue-50 rounded-lg">
-                      <div className="text-2xl font-bold text-blue-600">
-                        {dataMiningResults.analysisMetadata?.total_cases_analyzed || 0}
-                      </div>
-                      <div className="text-sm text-gray-600">Total Kasus Dianalisis</div>
+                <CardContent className="space-y-3">
+                  {preview.master_recommendations.length ? (
+                    preview.master_recommendations.map((recommendation) => {
+                      const isSelected = selectedClinicalPathwayId === recommendation.id;
+                      return (
+                        <button
+                          key={recommendation.id}
+                          type="button"
+                          onClick={() => handleSelectClinicalPathway(recommendation.id)}
+                          className={`w-full rounded-lg border p-4 text-left transition-colors ${
+                            isSelected
+                              ? 'border-primary bg-primary/5 ring-1 ring-primary/30'
+                              : 'hover:bg-muted/40'
+                          }`}
+                        >
+                          <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+                            <div className="space-y-2">
+                              <div className="flex flex-wrap items-center gap-2">
+                                <span className="font-semibold">{recommendation.kode_cp}</span>
+                                <Badge variant={isSelected ? 'default' : 'secondary'}>
+                                  {recommendation.status_layanan}
+                                </Badge>
+                                <Badge variant="outline">Match {recommendation.matched_icd_count}</Badge>
+                                <Badge variant="outline">LOS {recommendation.target_los || 0} hari</Badge>
+                              </div>
+                              <div className="font-medium">{recommendation.nama_cp}</div>
+                              <div className="flex flex-wrap gap-2 text-xs text-muted-foreground">
+                                {recommendation.matched_diagnoses.map((diagnosis) => (
+                                  <span key={`${recommendation.id}-${diagnosis.kd_penyakit}`} className="rounded bg-muted px-2 py-1">
+                                    {diagnosis.kd_penyakit} - {diagnosis.nm_penyakit || '-'}
+                                  </span>
+                                ))}
+                              </div>
+                            </div>
+                            <div className="text-sm text-muted-foreground">
+                              Confidence {Number(recommendation.confidence_score || 0).toFixed(2)}
+                            </div>
+                          </div>
+                        </button>
+                      );
+                    })
+                  ) : (
+                    <div className="text-sm text-muted-foreground">
+                      Belum ada master Clinical Pathway yang cocok dari diagnosis ICD-10 pasien ini.
                     </div>
-                    <div className="text-center p-4 bg-green-50 rounded-lg">
-                      <div className="text-2xl font-bold text-green-600">
-                        {dataMiningResults.estimatedLOS || 'N/A'}
-                      </div>
-                      <div className="text-sm text-gray-600">Estimasi LOS (hari)</div>
+                  )}
+                  {selectedRecommendation ? (
+                    <div className="rounded-lg border border-dashed p-3 text-sm text-muted-foreground">
+                      Master terpilih: <span className="font-medium text-foreground">{selectedRecommendation.kode_cp} - {selectedRecommendation.nama_cp}</span>.
+                      Template master dan histori di bawah mengikuti CP yang sedang dipilih. Jika template master kosong, sistem akan memakai histori 1 tahun terakhir saat `Generate Pasien` dijalankan.
                     </div>
-                    <div className="text-center p-4 bg-orange-50 rounded-lg">
-                      <div className="text-2xl font-bold text-orange-600">
-                        {dataMiningResults.estimatedCost ? `Rp ${Number(dataMiningResults.estimatedCost).toLocaleString('id-ID')}` : 'N/A'}
-                      </div>
-                      <div className="text-sm text-gray-600">Estimasi Biaya</div>
+                  ) : null}
+                  {!hasMasterTemplate && !hasHistoricalTemplate && selectedRecommendation ? (
+                    <div className="rounded-lg border border-amber-200 bg-amber-50/70 p-3 text-sm text-amber-800">
+                      CP terpilih sudah cocok berdasarkan ICD-10, tetapi belum memiliki template master maupun histori 1 tahun yang cukup untuk digenerate otomatis.
                     </div>
+                  ) : null}
+                  {preview.existing ? (
+                    <div className="rounded-lg border border-amber-200 bg-amber-50/70 p-3 text-sm text-amber-800">
+                      Clinical Pathway pasien ini sudah pernah dibuat. Untuk pasien yang sudah masuk rawat inap, gunakan mode monitoring.
+                    </div>
+                  ) : null}
+                </CardContent>
+              </Card>
+
+              <Card>
+                <CardHeader>
+                  <CardTitle className="flex items-center gap-2">
+                    <FileText className="h-5 w-5" />
+                    Template Master CP Terpilih
+                  </CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  {preview.master_template.days.length ? (
+                    preview.master_template.days.map((day) => (
+                      <div key={day.hari_ke} className="rounded-lg border">
+                        <div className="flex items-center justify-between border-b bg-muted/40 px-4 py-3">
+                          <div>
+                            <div className="font-medium">{day.label_hari}</div>
+                            <div className="text-xs text-muted-foreground">{day.activities.length} aktivitas master</div>
+                          </div>
+                          <Badge variant="secondary">{day.hari_ke}</Badge>
+                        </div>
+                        <div className="divide-y">
+                          {day.activities.map((activity, index) => (
+                            <div key={`${day.hari_ke}-${activity.kategori}-${activity.item_nama}-${index}`} className="grid gap-2 px-4 py-3 md:grid-cols-[180px_1fr_140px]">
+                              <div>
+                                <div className="text-xs text-muted-foreground">Kategori</div>
+                                <div className="font-medium">{activity.kategori}</div>
+                              </div>
+                              <div>
+                                <div className="text-xs text-muted-foreground">{activity.uraian_kegiatan}</div>
+                                <div className="font-medium">{activity.item_nama}</div>
+                                {activity.keterangan ? (
+                                  <div className="text-sm text-muted-foreground">{activity.keterangan}</div>
+                                ) : null}
+                              </div>
+                              <div className="text-sm text-muted-foreground">
+                                <div>Frekuensi: {activity.frequency || 0}</div>
+                                <div>Cakupan: {Number(activity.coverage_percentage || 0).toFixed(2)}%</div>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    ))
+                  ) : (
+                    <div className="rounded-lg border border-dashed p-4 text-sm text-muted-foreground">
+                      Template master untuk CP terpilih belum tersedia. Jika histori 1 tahun ada, sistem masih bisa membentuk template otomatis dari histori tersebut.
+                    </div>
+                  )}
+                  <Separator />
+                  <div className="text-xs text-muted-foreground">
+                    Template master berasal dari definisi Clinical Pathway yang tersimpan di database dan menjadi acuan utama saat generate CP pasien.
                   </div>
                 </CardContent>
               </Card>
 
-              {/* Patient Details */}
-              {dataMiningResults.historicalData && dataMiningResults.historicalData.length > 0 && (
-                <Card>
-                  <CardHeader>
-                    <CardTitle className="text-lg">Detail Pasien Serupa</CardTitle>
-                  </CardHeader>
-                  <CardContent>
-                    <div className="overflow-x-auto">
-                      <table className="w-full text-sm">
-                        <thead>
-                          <tr className="border-b">
-                            <th className="text-left p-2">No. RM</th>
-                            <th className="text-left p-2">JK</th>
-                            <th className="text-left p-2">Tgl Lahir</th>
-                            <th className="text-left p-2">Tgl Masuk</th>
-                            <th className="text-left p-2">Tgl Keluar</th>
-                            <th className="text-left p-2">Status</th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {dataMiningResults.historicalData.slice(0, 5).map((patient: any, index: number) => (
-                            <tr key={index} className="border-b hover:bg-gray-50">
-                              <td className="p-2">{patient.no_rkm_medis}</td>
-                              <td className="p-2">{patient.jk}</td>
-                              <td className="p-2">{patient.tgl_lahir ? new Date(patient.tgl_lahir).toLocaleDateString('id-ID') : '-'}</td>
-                              <td className="p-2">{patient.tgl_masuk ? new Date(patient.tgl_masuk).toLocaleDateString('id-ID') : '-'}</td>
-                              <td className="p-2">{patient.tgl_keluar ? new Date(patient.tgl_keluar).toLocaleDateString('id-ID') : '-'}</td>
-                              <td className="p-2">
-                                <span className={`px-2 py-1 rounded-full text-xs ${
-                                  patient.stts_pulang === 'Sembuh' ? 'bg-green-100 text-green-800' :
-                                  patient.stts_pulang === 'Membaik' ? 'bg-blue-100 text-blue-800' :
-                                  'bg-gray-100 text-gray-800'
-                                }`}>
-                                  {patient.stts_pulang || 'Tidak diketahui'}
-                                </span>
-                              </td>
-                            </tr>
+              <Card>
+                <CardHeader>
+                  <CardTitle className="flex items-center gap-2">
+                    <Activity className="h-5 w-5" />
+                    Template Harian Dari Histori 1 Tahun Terakhir
+                  </CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  {preview.historical_template.days.length ? (
+                    preview.historical_template.days.map((day) => (
+                      <div key={day.hari_ke} className="rounded-lg border">
+                        <div className="flex items-center justify-between border-b bg-muted/40 px-4 py-3">
+                          <div>
+                            <div className="font-medium">{day.label_hari}</div>
+                            <div className="text-xs text-muted-foreground">{day.activities.length} aktivitas hasil agregasi</div>
+                          </div>
+                          <Badge variant="secondary">{day.hari_ke}</Badge>
+                        </div>
+                        <div className="divide-y">
+                          {day.activities.map((activity, index) => (
+                            <div key={`${day.hari_ke}-${activity.kategori}-${activity.item_nama}-${index}`} className="grid gap-2 px-4 py-3 md:grid-cols-[180px_1fr_140px]">
+                              <div>
+                                <div className="text-xs text-muted-foreground">Kategori</div>
+                                <div className="font-medium">{activity.kategori}</div>
+                              </div>
+                              <div>
+                                <div className="text-xs text-muted-foreground">{activity.uraian_kegiatan}</div>
+                                <div className="font-medium">{activity.item_nama}</div>
+                                {activity.keterangan ? (
+                                  <div className="text-sm text-muted-foreground">{activity.keterangan}</div>
+                                ) : null}
+                              </div>
+                              <div className="text-sm text-muted-foreground">
+                                <div>Frekuensi: {activity.frequency || 0}</div>
+                                <div>Cakupan: {Number(activity.coverage_percentage || 0).toFixed(2)}%</div>
+                              </div>
+                            </div>
                           ))}
-                        </tbody>
-                      </table>
-                    </div>
-                  </CardContent>
-                </Card>
-              )}
-
-              {/* Treatment History */}
-              {dataMiningResults.historicalData && dataMiningResults.historicalData.length > 0 && (
-                <Card>
-                  <CardHeader>
-                    <CardTitle className="text-lg">Riwayat Tindakan & Obat</CardTitle>
-                  </CardHeader>
-                  <CardContent>
-                    <div className="space-y-4">
-                      {dataMiningResults.historicalData.slice(0, 5).map((patient: any, index: number) => (
-                        <div key={index} className="border-l-4 border-blue-500 pl-4 py-2">
-                          <div className="font-medium">Pasien {patient.no_rkm_medis}</div>
-                          <div className="text-sm text-gray-600 space-y-1">
-                            {patient.nama_tindakan && (
-                              <div><strong>Tindakan:</strong> {patient.nama_tindakan}</div>
-                            )}
-                            {patient.nama_obat && (
-                              <div><strong>Obat:</strong> {patient.nama_obat}</div>
-                            )}
-                            <div><strong>Diagnosis:</strong> {patient.nm_penyakit || 'Tidak tersedia'}</div>
-                          </div>
                         </div>
+                      </div>
+                    ))
+                  ) : (
+                    <div className="rounded-lg border border-dashed p-4 text-sm text-muted-foreground">
+                      Belum ada histori yang cukup dalam 1 tahun terakhir untuk membentuk template harian otomatis.
+                      {preview.master_template.days.length
+                        ? ' Template master tetap tersedia dan bisa dipakai untuk generate Clinical Pathway pasien ini.'
+                        : ''}
+                    </div>
+                  )}
+                  <Separator />
+                  <div className="text-xs text-muted-foreground">
+                    Template ini dibentuk dari agregasi pemeriksaan, tindakan, resep, permintaan laboratorium, dan permintaan radiologi pada kasus serupa dengan status layanan yang sama.
+                  </div>
+                </CardContent>
+              </Card>
+            </>
+          ) : (
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <Activity className="h-5 w-5" />
+                  Monitoring Clinical Pathway Rawat Inap
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                {monitoringLoading ? (
+                  <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                    Memuat detail monitoring...
+                  </div>
+                ) : monitoring?.patient ? (
+                  <>
+                    <div className="grid gap-3 md:grid-cols-4">
+                      <div className="rounded-lg border p-3">
+                        <div className="text-xs text-muted-foreground">CP Aktif</div>
+                        <div className="font-medium">{monitoring.patient.kode_cp}</div>
+                        <div className="text-sm text-muted-foreground">{monitoring.patient.nama_cp}</div>
+                      </div>
+                      <div className="rounded-lg border p-3">
+                        <div className="text-xs text-muted-foreground">Kepatuhan</div>
+                        <div className="text-2xl font-semibold">{Number(monitoring.patient.compliance_percentage || 0).toFixed(2)}%</div>
+                        <div className="text-xs text-muted-foreground">Variance terbuka {monitoring.patient.variance_count}</div>
+                      </div>
+                      <div className="rounded-lg border p-3">
+                        <div className="text-xs text-muted-foreground">Target LOS</div>
+                        <div className="text-2xl font-semibold">{monitoring.patient.target_los || 0}</div>
+                        <div className="text-xs text-muted-foreground">hari</div>
+                      </div>
+                      <div className="rounded-lg border p-3">
+                        <div className="text-xs text-muted-foreground">Status CP</div>
+                        <div className="mt-1">
+                          <span className={`inline-flex rounded-full px-2 py-1 text-xs font-medium ${getPatientStatusBadgeClass(monitoring.patient.status_cp)}`}>
+                            {monitoring.patient.status_cp}
+                          </span>
+                        </div>
+                        <div className="text-xs text-muted-foreground">Mulai {formatDateDisplay(monitoring.patient.tanggal_mulai)}</div>
+                      </div>
+                    </div>
+
+                    <div className="flex flex-wrap gap-2">
+                      {(['Aktif', 'Selesai', 'Drop'] as const).map((status) => (
+                        <Button
+                          key={status}
+                          variant={monitoring.patient.status_cp === status ? 'default' : 'outline'}
+                          size="sm"
+                          onClick={() => handleUpdatePatientStatus(status)}
+                          disabled={monitoringActionKey === `patient-${status}`}
+                        >
+                          {monitoringActionKey === `patient-${status}` ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+                          {status}
+                        </Button>
                       ))}
                     </div>
-                  </CardContent>
-                </Card>
-              )}
 
-              {/* Medication Mining Results */}
-              {(() => {
-                // Extract unique medications from historical data
-                const medications = dataMiningResults.historicalData ? 
-                  dataMiningResults.historicalData
-                    .filter((patient: any) => patient.nama_obat)
-                    .flatMap((patient: any) => patient.nama_obat.split(','))
-                    .map((obat: string) => obat.trim())
-                    .filter((obat: string) => obat && obat !== '')
-                    .reduce((acc: any[], obat: string) => {
-                      const existing = acc.find(item => item.nama_obat === obat);
-                      if (existing) {
-                        existing.frequency += 1;
-                      } else {
-                        acc.push({ nama_obat: obat, frequency: 1 });
-                      }
-                      return acc;
-                    }, [])
-                    .sort((a: any, b: any) => b.frequency - a.frequency) : [];
-                
-                return medications.length > 0 && (
-                  <Card>
-                    <CardHeader>
-                      <CardTitle className="text-lg">Hasil Mining Obat</CardTitle>
-                    </CardHeader>
-                    <CardContent>
-                      <div className="space-y-3">
-                        {medications.slice(0, 15).map((medication: any, index: number) => (
-                          <div key={index} className="flex justify-between items-center p-3 bg-green-50 rounded-lg border border-green-200">
-                            <div>
-                              <div className="font-medium text-green-800">{medication.nama_obat}</div>
-                              <div className="text-sm text-green-600">
-                                Frekuensi: {medication.frequency} kali dalam {dataMiningResults.historicalData?.length || 0} kasus
+                    <div className="space-y-3">
+                      {monitoring.execution.map((item) => (
+                        <div key={item.id} className="rounded-lg border p-4">
+                          <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+                            <div className="space-y-2">
+                              <div className="flex flex-wrap items-center gap-2">
+                                <Badge variant="outline">Hari {item.hari_ke}</Badge>
+                                <Badge variant="secondary">{item.kategori}</Badge>
+                                <span className={`inline-flex rounded-full px-2 py-1 text-xs font-medium ${getExecutionBadgeClass(item.status)}`}>
+                                  {item.status}
+                                </span>
+                              </div>
+                              <div className="font-medium">{item.aktivitas}</div>
+                              <div className="text-sm text-muted-foreground">{item.kegiatan} • {item.uraian_kegiatan || '-'}</div>
+                              {item.keterangan ? (
+                                <div className="text-sm text-muted-foreground">{item.keterangan}</div>
+                              ) : null}
+                              <div className="text-xs text-muted-foreground">
+                                Rencana {formatDateDisplay(item.tanggal_rencana)} • Realisasi {formatDateDisplay(item.tanggal_realisasi || undefined)}
                               </div>
                             </div>
-                            <Button
-                              size="sm"
-                              variant="outline"
-                              className="border-green-300 text-green-700 hover:bg-green-100"
-                              onClick={() => applyMedicationToMedicalPlan(medication.nama_obat)}
-                            >
-                              Terapkan
-                            </Button>
-                          </div>
-                        ))}
-                      </div>
-                    </CardContent>
-                  </Card>
-                );
-              })()}
-
-              {/* Action Buttons */}
-              <div className="flex justify-end space-x-3 pt-4 border-t">
-                <Button 
-                  variant="outline" 
-                  onClick={() => setIsDataMiningModalOpen(false)}
-                >
-                  Tutup
-                </Button>
-                <Button 
-                  onClick={applyDataMiningResults}
-                  className="bg-blue-600 hover:bg-blue-700"
-                >
-                  <Clipboard className="w-4 h-4 mr-2" />
-                  Terapkan ke Clinical Pathway
-                </Button>
-              </div>
-            </div>
-          )}
-        </DialogContent>
-      </Dialog>
-
-      {/* AI Generation Results Modal */}
-      <Dialog open={isAIGenerationModalOpen} onOpenChange={setIsAIGenerationModalOpen}>
-        <DialogContent className="max-w-4xl max-h-[80vh] overflow-y-auto">
-          <DialogHeader>
-            <DialogTitle className="flex items-center space-x-2">
-              <Brain className="w-5 h-5 text-purple-600" />
-              <span>Hasil AI Generation</span>
-            </DialogTitle>
-            <DialogDescription>
-              Hasil AI generation untuk clinical pathway berdasarkan data pasien
-            </DialogDescription>
-          </DialogHeader>
-          
-          {aiGenerationResults && (
-            <div className="space-y-6">
-              {/* Diagnosis Section */}
-              {aiGenerationResults.diagnosis && (
-                <Card>
-                  <CardHeader>
-                    <CardTitle className="text-lg">Diagnosis</CardTitle>
-                  </CardHeader>
-                  <CardContent>
-                    <div className="space-y-3">
-                      {aiGenerationResults.diagnosis.primary && (
-                        <div className="flex justify-between items-center p-3 bg-blue-50 rounded-lg border border-blue-200">
-                          <div>
-                            <div className="font-medium text-blue-800">Diagnosis Primer</div>
-                            <div className="text-sm text-blue-600">{aiGenerationResults.diagnosis.primary}</div>
-                          </div>
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            className="border-blue-300 text-blue-700 hover:bg-blue-100"
-                            onClick={() => applyAIItemToForm('diagnosis', aiGenerationResults.diagnosis.primary)}
-                          >
-                            Terapkan
-                          </Button>
-                        </div>
-                      )}
-                    </div>
-                  </CardContent>
-                </Card>
-              )}
-
-              {/* ICD Codes Section */}
-              {(aiGenerationResults.icd10Primary || (aiGenerationResults.icd10Secondary && aiGenerationResults.icd10Secondary.length > 0)) && (
-                <Card>
-                  <CardHeader>
-                    <CardTitle className="text-lg">Kode ICD-10</CardTitle>
-                  </CardHeader>
-                  <CardContent>
-                    <div className="space-y-3">
-                      {aiGenerationResults.icd10Primary && (
-                        <div className="flex justify-between items-center p-3 bg-green-50 rounded-lg border border-green-200">
-                          <div>
-                            <div className="font-medium text-green-800">ICD-10 Primer</div>
-                            <div className="text-sm text-green-600">
-                              {aiGenerationResults.icd10Primary.code} - {aiGenerationResults.icd10Primary.description}
+                            <div className="flex flex-wrap gap-2">
+                              {([
+                                ['planned', 'Default'],
+                                ['completed', 'Selesai'],
+                                ['missed', 'Terlewat']
+                              ] as const).map(([status, label]) => (
+                                <Button
+                                  key={`${item.id}-${status}`}
+                                  variant="outline"
+                                  size="sm"
+                                  onClick={() => handleUpdateExecutionStatus(item.id, status)}
+                                  disabled={monitoringActionKey === `exec-${item.id}-${status}`}
+                                >
+                                  {monitoringActionKey === `exec-${item.id}-${status}` ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+                                  {label}
+                                </Button>
+                              ))}
                             </div>
-                          </div>
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            className="border-green-300 text-green-700 hover:bg-green-100"
-                            onClick={() => applyAIItemToForm('icd10Primary', aiGenerationResults.icd10Primary)}
-                          >
-                            Terapkan
-                          </Button>
-                        </div>
-                      )}
-                      {aiGenerationResults.icd10Secondary && aiGenerationResults.icd10Secondary.map((icd: any, index: number) => (
-                        <div key={index} className="flex justify-between items-center p-3 bg-green-50 rounded-lg border border-green-200">
-                          <div>
-                            <div className="font-medium text-green-800">ICD-10 Sekunder {index + 1}</div>
-                            <div className="text-sm text-green-600">
-                              {icd.code} - {icd.description}
-                            </div>
-                          </div>
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            className="border-green-300 text-green-700 hover:bg-green-100"
-                            onClick={() => {
-                              const newIcd10Secondary = [...icd10Secondary];
-                              newIcd10Secondary[index] = icd;
-                              setIcd10Secondary(newIcd10Secondary);
-                              toast({ title: "Berhasil", description: "ICD-10 Sekunder telah diterapkan" });
-                            }}
-                          >
-                            Terapkan
-                          </Button>
-                        </div>
-                      ))}
-                    </div>
-                  </CardContent>
-                </Card>
-              )}
-
-              {/* Treatment Plan Section */}
-              {aiGenerationResults.treatmentPlan && (
-                <Card>
-                  <CardHeader>
-                    <CardTitle className="text-lg">Rencana Perawatan</CardTitle>
-                  </CardHeader>
-                  <CardContent>
-                    <div className="space-y-3">
-                      {aiGenerationResults.treatmentPlan.goals && Array.isArray(aiGenerationResults.treatmentPlan.goals) && (
-                        <div className="flex justify-between items-start p-3 bg-orange-50 rounded-lg border border-orange-200">
-                          <div className="flex-1">
-                            <div className="font-medium text-orange-800">Tujuan Perawatan</div>
-                            <div className="text-sm text-orange-600">
-                              <ul className="list-disc list-inside space-y-1">
-                                {aiGenerationResults.treatmentPlan.goals.map((goal: string, index: number) => (
-                                  <li key={index}>{goal}</li>
-                                ))}
-                              </ul>
-                            </div>
-                          </div>
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            className="border-orange-300 text-orange-700 hover:bg-orange-100 ml-3"
-                            onClick={() => applyAIItemToForm('medicalPlan', aiGenerationResults.treatmentPlan.goals.join(', '))}
-                          >
-                            Terapkan
-                          </Button>
-                        </div>
-                      )}
-                      {aiGenerationResults.treatmentPlan.expectedOutcome && (
-                        <div className="flex justify-between items-center p-3 bg-orange-50 rounded-lg border border-orange-200">
-                          <div>
-                            <div className="font-medium text-orange-800">Hasil yang Diharapkan</div>
-                            <div className="text-sm text-orange-600">{aiGenerationResults.treatmentPlan.expectedOutcome}</div>
-                          </div>
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            className="border-orange-300 text-orange-700 hover:bg-orange-100"
-                            onClick={() => applyAIItemToForm('treatmentOutcome', aiGenerationResults.treatmentPlan.expectedOutcome)}
-                          >
-                            Terapkan
-                          </Button>
-                        </div>
-                      )}
-                      {aiGenerationResults.treatmentPlan.estimatedLength && (
-                        <div className="flex justify-between items-center p-3 bg-orange-50 rounded-lg border border-orange-200">
-                          <div>
-                            <div className="font-medium text-orange-800">Estimasi Lama Perawatan</div>
-                            <div className="text-sm text-orange-600">{aiGenerationResults.treatmentPlan.estimatedLength} hari</div>
-                          </div>
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            className="border-orange-300 text-orange-700 hover:bg-orange-100"
-                            onClick={() => applyAIItemToForm('estimatedLOS', aiGenerationResults.treatmentPlan.estimatedLength)}
-                          >
-                            Terapkan
-                          </Button>
-                        </div>
-                      )}
-                    </div>
-                  </CardContent>
-                </Card>
-              )}
-
-              {/* Estimated Costs Section */}
-              {aiGenerationResults.estimatedCosts && (
-                <Card>
-                  <CardHeader>
-                    <CardTitle className="text-lg">Estimasi Biaya</CardTitle>
-                  </CardHeader>
-                  <CardContent>
-                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                      <div className="text-center p-4 bg-purple-50 rounded-lg">
-                        <div className="text-2xl font-bold text-purple-600">
-                          Rp {Number(aiGenerationResults.estimatedCosts.medication).toLocaleString()}
-                        </div>
-                        <div className="text-sm text-gray-600">Biaya Obat</div>
-                      </div>
-                      <div className="text-center p-4 bg-purple-50 rounded-lg">
-                        <div className="text-2xl font-bold text-purple-600">
-                          Rp {Number(aiGenerationResults.estimatedCosts.medical).toLocaleString()}
-                        </div>
-                        <div className="text-sm text-gray-600">Biaya Tindakan</div>
-                      </div>
-                      <div className="text-center p-4 bg-purple-50 rounded-lg">
-                        <div className="text-2xl font-bold text-purple-600">
-                          Rp {Object.values(aiGenerationResults.estimatedCosts).reduce((sum: number, cost: any) => sum + (Number(cost) || 0), 0).toLocaleString()}
-                        </div>
-                        <div className="text-sm text-gray-600">Total Estimasi</div>
-                      </div>
-                    </div>
-                  </CardContent>
-                </Card>
-              )}
-
-              {/* Pathway Data Section */}
-              {aiGenerationResults.pathwayData && Array.isArray(aiGenerationResults.pathwayData) && (
-                <Card>
-                  <CardHeader>
-                    <CardTitle className="text-lg">Clinical Pathway</CardTitle>
-                  </CardHeader>
-                  <CardContent>
-                    <div className="space-y-4">
-                      {aiGenerationResults.pathwayData.map((category: any, categoryIndex: number) => (
-                        <div key={categoryIndex} className="border rounded-lg p-4">
-                          <h4 className="font-semibold text-gray-800 mb-3">{category.category}</h4>
-                          <div className="space-y-2">
-                            {category.items.slice(0, 3).map((item: any, itemIndex: number) => (
-                              <div key={itemIndex} className="text-sm text-gray-600">
-                                • {item.name}
-                              </div>
-                            ))}
-                            {category.items.length > 3 && (
-                              <div className="text-sm text-gray-500">... dan {category.items.length - 3} item lainnya</div>
-                            )}
                           </div>
                         </div>
                       ))}
                     </div>
-                  </CardContent>
-                </Card>
-              )}
 
-              {/* Action Buttons */}
-              <div className="flex justify-end space-x-3 pt-4 border-t">
-                <Button 
-                  variant="outline" 
-                  onClick={() => setIsAIGenerationModalOpen(false)}
-                >
-                  Tutup
-                </Button>
-                <Button 
-                  onClick={applyAIGenerationResults}
-                  className="bg-purple-600 hover:bg-purple-700"
-                >
-                  <Clipboard className="w-4 h-4 mr-2" />
-                  Terapkan Semua ke Clinical Pathway
-                </Button>
-              </div>
-            </div>
+                    <Separator />
+
+                    <div className="space-y-3">
+                      <div className="font-medium">Variance</div>
+                      {monitoring.variance.length ? (
+                        monitoring.variance.map((item) => (
+                          <div key={item.id} className="rounded-lg border border-amber-200 bg-amber-50/50 p-4">
+                            <div className="flex flex-wrap items-center gap-2">
+                              <Badge variant="outline">Hari {item.hari_ke || '-'}</Badge>
+                              <Badge variant="secondary">{item.kategori_variance}</Badge>
+                              <Badge variant="outline">{item.severity}</Badge>
+                              <Badge variant="outline">{item.status}</Badge>
+                            </div>
+                            <div className="mt-2 text-sm">{item.deskripsi}</div>
+                            <div className="mt-1 text-xs text-muted-foreground">
+                              {formatDateDisplay(item.tanggal_variance)}
+                            </div>
+                          </div>
+                        ))
+                      ) : (
+                        <div className="rounded-lg border border-dashed p-4 text-sm text-muted-foreground">
+                          Belum ada variance pada monitoring Clinical Pathway pasien ini.
+                        </div>
+                      )}
+                    </div>
+                  </>
+                ) : (
+                  <div className="rounded-lg border border-dashed p-4 text-sm text-muted-foreground">
+                    Detail monitoring belum tersedia untuk nomor rawat ini.
+                  </div>
+                )}
+              </CardContent>
+            </Card>
           )}
-        </DialogContent>
-      </Dialog>
+        </>
+      ) : (
+        <Card>
+          <CardContent className="flex items-center gap-3 py-8 text-sm text-muted-foreground">
+            {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <FileText className="h-4 w-4" />}
+            {loading ? 'Memuat preview Clinical Pathway...' : 'Data Clinical Pathway belum tersedia.'}
+          </CardContent>
+        </Card>
+      )}
     </div>
   );
 };

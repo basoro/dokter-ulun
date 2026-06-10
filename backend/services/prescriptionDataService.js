@@ -221,7 +221,7 @@ class PrescriptionDataService {
 
     const kdPoli = String(rows?.[0]?.kd_poli || '').trim();
 
-    if (kdPoli === 'IGDK') {
+    if (kdPoli === 'B0054') {
       const value = this.getEnvValue('STOK_RESEP_IGD');
       if (!value) {
         throw new Error('Konfigurasi STOK_RESEP_IGD belum diisi');
