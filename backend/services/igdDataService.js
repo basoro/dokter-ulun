@@ -1,7 +1,15 @@
 import db from '../config/database.js';
 
 class IgdDataService {
-  static IGD_POLI_CODES = ['B0054', 'IGDK', 'IGD01'];
+  static getIgdPoliCodes() {
+    const rawValue = String(process.env.IGD_POLI_CODES || '').trim();
+    const parsedCodes = rawValue
+      .split(',')
+      .map((code) => code.trim())
+      .filter(Boolean);
+
+    return parsedCodes.length ? parsedCodes : ['B0054', 'IGDK', 'IGD01'];
+  }
 
   static formatDateOnly(dateStr) {
     if (!dateStr) return '';
@@ -29,11 +37,12 @@ class IgdDataService {
 
   static async getIgdData(page = 1, itemsPerPage = 10, search = '', statusFilter = '', triaseLevel = '', dateFrom = '', dateTo = '', tab = 'triase') {
     try {
+      const igdPoliCodes = IgdDataService.getIgdPoliCodes();
       const limit = parseInt(itemsPerPage) === -1 || parseInt(itemsPerPage) > 1000 ? 10000 : Math.min(parseInt(itemsPerPage), 1000);
       const offset = (parseInt(page) - 1) * (limit === 10000 ? 0 : limit);
       // Build WHERE conditions
-      let whereConditions = [`r.kd_poli IN (${IgdDataService.IGD_POLI_CODES.map(() => '?').join(', ')})`];
-      let queryParams = [...IgdDataService.IGD_POLI_CODES];
+      let whereConditions = [`r.kd_poli IN (${igdPoliCodes.map(() => '?').join(', ')})`];
+      let queryParams = [...igdPoliCodes];
 
       console.log('=== IGD Data Service Debug ===');
       console.log('Parameters received:', {
