@@ -8,6 +8,7 @@ import { Badge } from '@/components/ui/badge';
 import { PaginationControls } from '@/components/PaginationControls';
 import { useIsMobile } from '@/hooks/use-mobile';
 import { cn } from '@/lib/utils';
+import { dispatchOpenMedicalRecordTab } from '@/lib/medical-record-tabs';
 
 
 interface Patient {
@@ -61,7 +62,17 @@ const PatientTable: React.FC<PatientTableProps> = ({
   const handleRowClick = (patient: any) => {
     if (patient.no_rkm_medis && patient.no_rawat) {
       const formattedNoRawat = formatNoRawat(patient.no_rawat);
-      console.log(formattedNoRawat)
+
+      if (location.pathname.startsWith('/pasien')) {
+        dispatchOpenMedicalRecordTab({
+          noRkmMedis: String(patient.no_rkm_medis),
+          noRawat: formattedNoRawat,
+          patientName: String(patient.name || patient.nm_pasien || '').trim(),
+          sourcePath: `${location.pathname}${location.search}`
+        });
+        return;
+      }
+
       navigate(`/rekam-medik/${patient.no_rkm_medis}/${formattedNoRawat}`, {
         state: {
           from: `${location.pathname}${location.search}`

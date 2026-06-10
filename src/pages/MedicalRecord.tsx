@@ -9,7 +9,7 @@ import { CartesianGrid, Legend, Line, LineChart, ResponsiveContainer, Tooltip, X
 import {
   User, Calendar, Stethoscope, Syringe, Pill, FlaskConical, Radio,
   Activity, ClipboardList, BedDouble, UserCircle, Building, MapPin,
-  Phone, Heart, CalendarDays, FileText, Plus, X, Trash2, Image as ImageIcon, Clock, ArrowLeft,
+  Phone, Heart, CalendarDays, FileText, Plus, X, Trash2, Image as ImageIcon, Clock,
   Calendar as CalendarIcon, Copy, ChevronDown, ChevronLeft, ChevronRight, ChevronUp, Brain, Check, ChevronsUpDown, Pause, Pencil, Play,
   BadgeAlert, Maximize2, Biohazard
 } from 'lucide-react';
@@ -569,10 +569,23 @@ const buildFocusedItems = <T,>(
     });
 };
 
-const MedicalRecord = () => {
-  const { no_rkm_medis, no_rawat: rawatParam } = useParams();
+interface MedicalRecordProps {
+  noRkmMedis?: string;
+  noRawat?: string;
+  embedded?: boolean;
+}
+
+const MedicalRecord: React.FC<MedicalRecordProps> = ({
+  noRkmMedis,
+  noRawat,
+  embedded = false
+}) => {
+  const routeParams = useParams();
   const [searchParams] = useSearchParams();
+  const no_rkm_medis = noRkmMedis || routeParams.no_rkm_medis;
+  const rawatParam = noRawat || routeParams.no_rawat;
   const formattedNoRawat = formatRouteNoRawat(rawatParam);
+  const routeSearchQuery = embedded ? '' : (searchParams.get('search') || '');
   const [medicalData, setMedicalData] = useState<MedicalRecordData | null>(null);
   const [loading, setLoading] = useState(true);
   const [loadingMoreVisits, setLoadingMoreVisits] = useState(false);
@@ -1922,11 +1935,11 @@ const MedicalRecord = () => {
   }, [formattedNoRawat, no_rkm_medis]);
   
   useEffect(() => {
-    const searchQuery = searchParams.get('search');
+    const searchQuery = routeSearchQuery;
     if (searchQuery) {
       searchPatients(searchQuery);
     }
-  }, [searchParams]);
+  }, [routeSearchQuery]);
 
   const fetchMedicalRecord = useCallback(async ({
     reset = false,
@@ -4926,7 +4939,7 @@ const MedicalRecord = () => {
   ];
 
   // Handle search mode display
-  if (searchParams.get('search')) {
+  if (routeSearchQuery) {
     return (
       <div className="p-6 space-y-6">
         <Card>
@@ -4978,14 +4991,6 @@ const MedicalRecord = () => {
         <CardHeader className="border-b p-3 md:p-4">
           <CardTitle className="flex items-center justify-between">
             <div className="flex items-center gap-2">
-              <Button
-                variant="outline"
-                size="icon"
-                onClick={() => window.history.back()}
-                aria-label="Kembali"
-              >
-                <ArrowLeft className="h-4 w-4" />
-              </Button>
               <UserCircle className="h-5 w-5 mr-2" />
               Data Pasien
             </div>

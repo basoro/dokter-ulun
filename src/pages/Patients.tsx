@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import { formatNoRawat } from '@/App';
@@ -27,7 +27,10 @@ import {
   ChevronsUpDown,
   CheckIcon,
   ChevronDown,
-  FileText
+  ChevronLeft,
+  ChevronRight,
+  FileText,
+  MoreHorizontal
 } from 'lucide-react';
 import { 
   Select,
@@ -59,6 +62,8 @@ import { cn } from '@/lib/utils';
 import RawatJalanTabs from '@/components/RawatJalanTabs';
 import HemodialisaTabs from '@/components/HemodialisaTabs';
 import { API_URLS } from '@/config/api';
+import MedicalRecord from './MedicalRecord';
+import { OPEN_MEDICAL_RECORD_TAB_EVENT, type OpenMedicalRecordTabDetail } from '@/lib/medical-record-tabs';
 
 const parseDateParam = (value: string | null, fallback: Date) => {
   if (!value) return fallback;
@@ -71,6 +76,28 @@ const parsePositiveInt = (value: string | null, fallback: number) => {
   const parsed = Number.parseInt(value || '', 10);
   return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
 };
+
+const formatWorkspaceNoRawat = (value: string) => {
+  if (!value || value.includes('/')) {
+    return value;
+  }
+
+  if (value.length < 9) {
+    return value;
+  }
+
+  return `${value.slice(0, 4)}/${value.slice(4, 6)}/${value.slice(6, 8)}/${value.slice(8)}`;
+};
+
+interface MedicalRecordWorkspaceTab {
+  id: string;
+  noRkmMedis: string;
+  noRawat: string;
+  patientName: string;
+  sourcePath?: string;
+}
+
+const LIST_PASIEN_TAB_ID = 'list-pasien';
 
 // Patients data
 const rawatJalanData = [
@@ -2071,9 +2098,157 @@ const Patients = () => {
   const location = useLocation();
   const isMobile = useIsMobile();
   const path = location.pathname;
+  const [openMedicalRecordTabs, setOpenMedicalRecordTabs] = useState<MedicalRecordWorkspaceTab[]>([]);
+  const [activeMedicalRecordTabId, setActiveMedicalRecordTabId] = useState<string>(LIST_PASIEN_TAB_ID);
+  const [medicalRecordReloadCounters, setMedicalRecordReloadCounters] = useState<Record<string, number>>({});
+  const patientTabRefs = useRef<Record<string, HTMLDivElement | null>>({});
+  const patientTabsScrollContainerRef = useRef<HTMLDivElement | null>(null);
   let title = "Rawat Jalan";
   let description = "Pasien yang mendapatkan pelayanan medis tanpa harus menginap di rumah sakit";
   let tabs = <RawatJalanTabs />;
+
+  useEffect(() => {
+    const handleOpenMedicalRecordTab = (event: Event) => {
+      const detail = (event as CustomEvent<OpenMedicalRecordTabDetail>).detail;
+      if (!detail?.noRkmMedis || !detail?.noRawat) {
+        return;
+      }
+
+      const nextTab: MedicalRecordWorkspaceTab = {
+        id: `${detail.noRkmMedis}-${detail.noRawat}`,
+        noRkmMedis: detail.noRkmMedis,
+        noRawat: detail.noRawat,
+        patientName: detail.patientName || `Pasien ${detail.noRkmMedis}`,
+        sourcePath: detail.sourcePath
+      };
+
+      setOpenMedicalRecordTabs((previous) => {
+        const existingTab = previous.find((tab) => tab.id === nextTab.id);
+        if (existingTab) {
+          const remainingTabs = previous.filter((tab) => tab.id !== nextTab.id);
+          return [nextTab, ...remainingTabs];
+        }
+
+        return [nextTab, ...previous];
+      });
+      setActiveMedicalRecordTabId(nextTab.id);
+      setMedicalRecordReloadCounters((previous) => ({
+        ...previous,
+        [nextTab.id]: (previous[nextTab.id] ?? 0) + 1
+      }));
+    };
+
+    window.addEventListener(OPEN_MEDICAL_RECORD_TAB_EVENT, handleOpenMedicalRecordTab as EventListener);
+
+    return () => {
+      window.removeEventListener(OPEN_MEDICAL_RECORD_TAB_EVENT, handleOpenMedicalRecordTab as EventListener);
+    };
+  }, []);
+
+  const activateMedicalRecordTab = (tabId: string, shouldReload = false) => {
+    setOpenMedicalRecordTabs((previous) => {
+      const targetTab = previous.find((tab) => tab.id === tabId);
+      if (!targetTab) {
+        return previous;
+      }
+
+      const remainingTabs = previous.filter((tab) => tab.id !== tabId);
+      return [targetTab, ...remainingTabs];
+    });
+
+    setActiveMedicalRecordTabId(tabId);
+
+    if (shouldReload) {
+      setMedicalRecordReloadCounters((previous) => ({
+        ...previous,
+        [tabId]: (previous[tabId] ?? 0) + 1
+      }));
+    }
+  };
+
+  const closeMedicalRecordTab = (tabId: string) => {
+    setOpenMedicalRecordTabs((previous) => {
+      const currentIndex = previous.findIndex((tab) => tab.id === tabId);
+      const nextTabs = previous.filter((tab) => tab.id !== tabId);
+
+      setActiveMedicalRecordTabId((currentActiveTabId) => {
+        if (currentActiveTabId !== tabId) {
+          return currentActiveTabId;
+        }
+
+        if (!nextTabs.length) {
+          return LIST_PASIEN_TAB_ID;
+        }
+
+        const fallbackIndex = currentIndex > 0 ? currentIndex - 1 : 0;
+        return nextTabs[Math.min(fallbackIndex, nextTabs.length - 1)].id;
+      });
+
+      return nextTabs;
+    });
+
+    setMedicalRecordReloadCounters((previous) => {
+      if (!(tabId in previous)) {
+        return previous;
+      }
+
+      const nextCounters = { ...previous };
+      delete nextCounters[tabId];
+      return nextCounters;
+    });
+  };
+
+  const closeOtherMedicalRecordTabs = () => {
+    if (activeMedicalRecordTabId === LIST_PASIEN_TAB_ID) {
+      setOpenMedicalRecordTabs([]);
+      setMedicalRecordReloadCounters({});
+      return;
+    }
+
+    setOpenMedicalRecordTabs((previous) => previous.filter((tab) => tab.id === activeMedicalRecordTabId));
+    setMedicalRecordReloadCounters((previous) => {
+      const activeCounter = previous[activeMedicalRecordTabId];
+      return activeCounter === undefined ? {} : { [activeMedicalRecordTabId]: activeCounter };
+    });
+  };
+
+  const closeAllMedicalRecordTabs = () => {
+    setOpenMedicalRecordTabs([]);
+    setActiveMedicalRecordTabId(LIST_PASIEN_TAB_ID);
+    setMedicalRecordReloadCounters({});
+  };
+
+  const scrollPatientTabs = (direction: 'left' | 'right') => {
+    const container = patientTabsScrollContainerRef.current;
+    if (!container) {
+      return;
+    }
+
+    const scrollAmount = Math.max(container.clientWidth * 0.7, 220);
+    container.scrollBy({
+      left: direction === 'left' ? -scrollAmount : scrollAmount,
+      behavior: 'smooth'
+    });
+  };
+
+  const activeMedicalRecordTab = openMedicalRecordTabs.find((tab) => tab.id === activeMedicalRecordTabId) || null;
+
+  useEffect(() => {
+    if (activeMedicalRecordTabId === LIST_PASIEN_TAB_ID) {
+      return;
+    }
+
+    const activeTabElement = patientTabRefs.current[activeMedicalRecordTabId];
+    if (!activeTabElement) {
+      return;
+    }
+
+    activeTabElement.scrollIntoView({
+      behavior: 'smooth',
+      block: 'nearest',
+      inline: 'center'
+    });
+  }, [activeMedicalRecordTabId, openMedicalRecordTabs]);
   
   if (path.includes('booking')) {
     title = "Booking";
@@ -2103,7 +2278,147 @@ const Patients = () => {
         <p className="text-sm md:text-base text-gray-500">{description}</p>
         <Separator className="mt-2" />
       </div>
-      {tabs}
+      <div className="overflow-hidden rounded-lg border bg-background shadow-sm">
+          <div className="border-b bg-muted/30 px-2 pt-2">
+            <div className="flex items-end gap-2">
+                <div className="shrink-0 border-r border-border/60 pr-2">
+                <div
+                  className={cn(
+                    "flex items-center gap-2 rounded-t-md border border-b-0 px-3 py-2 transition-colors",
+                    activeMedicalRecordTabId === LIST_PASIEN_TAB_ID
+                      ? "border-amber-500 bg-amber-50 text-amber-700"
+                      : "border-transparent bg-amber-100/70 text-amber-700 hover:bg-amber-100"
+                  )}
+                >
+                  <button
+                    type="button"
+                    onClick={() => setActiveMedicalRecordTabId(LIST_PASIEN_TAB_ID)}
+                    className="flex min-w-0 items-center gap-2 text-left"
+                  >
+                    <span className="text-sm font-medium whitespace-nowrap">List Pasien</span>
+                  </button>
+                </div>
+                </div>
+                <div className="flex min-w-0 flex-1 items-center gap-2">
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon"
+                    className="h-8 w-8 shrink-0"
+                    onClick={() => scrollPatientTabs('left')}
+                    disabled={openMedicalRecordTabs.length === 0}
+                  >
+                    <ChevronLeft size={16} />
+                  </Button>
+                <div
+                  ref={patientTabsScrollContainerRef}
+                  className="min-w-0 flex-1 overflow-x-auto scroll-smooth"
+                >
+                  <div className="flex min-w-max gap-1">
+                {openMedicalRecordTabs.map((tab) => {
+                  const isActive = tab.id === activeMedicalRecordTabId;
+
+                  return (
+                    <div
+                      key={tab.id}
+                      ref={(element) => {
+                        patientTabRefs.current[tab.id] = element;
+                      }}
+                      className={cn(
+                        "flex items-center gap-2 rounded-t-md border border-b-0 px-3 py-2 transition-colors",
+                        isActive
+                          ? "border-primary bg-background text-primary"
+                          : "border-transparent bg-transparent text-muted-foreground hover:bg-background/70"
+                      )}
+                    >
+                      <button
+                        type="button"
+                        onClick={() => activateMedicalRecordTab(tab.id, true)}
+                        className="flex min-w-0 items-center gap-2 text-left"
+                      >
+                        <span className="max-w-[240px] truncate text-sm font-medium">
+                          {tab.patientName || `Pasien ${tab.noRkmMedis}`}
+                        </span>
+                        <span className="text-xs text-muted-foreground whitespace-nowrap">
+                          {formatWorkspaceNoRawat(tab.noRawat)}
+                        </span>
+                      </button>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon"
+                        className="h-6 w-6 shrink-0"
+                        onClick={() => closeMedicalRecordTab(tab.id)}
+                      >
+                        <X size={14} />
+                      </Button>
+                    </div>
+                  );
+                })}
+                  </div>
+                </div>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon"
+                    className="h-8 w-8 shrink-0"
+                    onClick={() => scrollPatientTabs('right')}
+                    disabled={openMedicalRecordTabs.length === 0}
+                  >
+                    <ChevronRight size={16} />
+                  </Button>
+                  <Popover>
+                    <PopoverTrigger asChild>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon"
+                        className="h-8 w-8 shrink-0"
+                        disabled={openMedicalRecordTabs.length === 0}
+                      >
+                        <MoreHorizontal size={16} />
+                      </Button>
+                    </PopoverTrigger>
+                    <PopoverContent align="end" className="w-52 p-2">
+                      <div className="space-y-1">
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          className="w-full justify-start"
+                          onClick={closeOtherMedicalRecordTabs}
+                          disabled={openMedicalRecordTabs.length === 0}
+                        >
+                          Tutup Tab Lainnya
+                        </Button>
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          className="w-full justify-start text-destructive hover:text-destructive"
+                          onClick={closeAllMedicalRecordTabs}
+                          disabled={openMedicalRecordTabs.length === 0}
+                        >
+                          Tutup Semua Tab
+                        </Button>
+                      </div>
+                    </PopoverContent>
+                  </Popover>
+                </div>
+            </div>
+          </div>
+          <div className={cn(activeMedicalRecordTabId === LIST_PASIEN_TAB_ID ? "block" : "hidden")}>
+            {tabs}
+          </div>
+          {activeMedicalRecordTab ? (
+            <div className={cn("bg-background", activeMedicalRecordTabId === LIST_PASIEN_TAB_ID ? "hidden" : "block")}>
+              <MedicalRecord
+                key={`${activeMedicalRecordTab.id}-${medicalRecordReloadCounters[activeMedicalRecordTab.id] ?? 0}`}
+                noRkmMedis={activeMedicalRecordTab.noRkmMedis}
+                noRawat={activeMedicalRecordTab.noRawat}
+                embedded
+              />
+            </div>
+          ) : null}
+        </div>
     </div>
   );
 };
