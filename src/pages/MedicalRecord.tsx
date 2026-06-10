@@ -687,6 +687,7 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
   const [labTemplatesByIndex, setLabTemplatesByIndex] = useState<Record<number, LabTemplateOption[]>>({});
   const [labTemplateLoadingByIndex, setLabTemplateLoadingByIndex] = useState<Record<number, boolean>>({});
   const [labStatusRawat, setLabStatusRawat] = useState<LabStatusRawat>('Ralan');
+  const [labKlinis, setLabKlinis] = useState('');
 
   const [procedures, setProcedures] = useState<ProcedureFormItem[]>(getDefaultProcedureForm);
   const [procedureOptions, setProcedureOptions] = useState<Record<number, ProcedureOption[]>>({});
@@ -723,6 +724,7 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
   const [radiologySearchQuery, setRadiologySearchQuery] = useState<Record<number, string>>({});
   const [radiologySearchLoading, setRadiologySearchLoading] = useState(false);
   const [radiologyStatusRawat, setRadiologyStatusRawat] = useState<RadiologyStatusRawat>('Ralan');
+  const [radiologyKlinis, setRadiologyKlinis] = useState('');
   const [isExaminationFormOpen, setIsExaminationFormOpen] = useState(false);
   const [isProcedureFormOpen, setIsProcedureFormOpen] = useState(false);
   const [isMedicationFormOpen, setIsMedicationFormOpen] = useState(false);
@@ -1697,6 +1699,12 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
             {deletingLabRequestNo === lab.noorder ? 'Menghapus...' : (allowedToDelete ? 'Hapus' : 'Bukan Data Anda')}
           </Button>
         </div>
+        {lab.klinis ? (
+          <div className="mb-4">
+            <p className="text-sm text-muted-foreground">Klinis</p>
+            <p className="font-medium whitespace-pre-line break-words">{lab.klinis}</p>
+          </div>
+        ) : null}
         <div className="space-y-2">
           <h4 className="font-medium">Pemeriksaan:</h4>
           {(lab.pemeriksaan || []).map((test: any, testIndex: number) => (
@@ -1921,6 +1929,12 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
             {deletingRadiologyRequestNo === rad.noorder ? 'Menghapus...' : (allowedToDelete ? 'Hapus' : 'Bukan Data Anda')}
           </Button>
         </div>
+        {rad.klinis ? (
+          <div className="mb-4">
+            <p className="text-sm text-muted-foreground">Klinis</p>
+            <p className="font-medium whitespace-pre-line break-words">{rad.klinis}</p>
+          </div>
+        ) : null}
         <div className="space-y-2">
           <h4 className="font-medium">Pemeriksaan:</h4>
           {Array.isArray(rad.pemeriksaan) && rad.pemeriksaan.length > 0 ? (
@@ -3109,6 +3123,7 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
     setLabServiceSearchQuery({});
     setLabTemplatesByIndex({});
     setLabTemplateLoadingByIndex({});
+    setLabKlinis('');
     setLabStatusRawat(defaultExaminationStatusRawat as LabStatusRawat);
     setEditingLabRequestNo(null);
     setLabFormNoRawat('');
@@ -3751,6 +3766,7 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
     setRadiologies(getDefaultRadiologyRequestForm());
     setRadiologySearchOpen({});
     setRadiologySearchQuery({});
+    setRadiologyKlinis('');
     setRadiologyStatusRawat(defaultExaminationStatusRawat as RadiologyStatusRawat);
     setEditingRadiologyRequestNo(null);
     setRadiologyFormNoRawat('');
@@ -3820,6 +3836,7 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
     setLabServiceSearchQuery(copiedQueries);
     setLabTemplateLoadingByIndex({});
     setLabStatusRawat(mapRequestSourceToStatusRawat(lab.source));
+    setLabKlinis(String(lab.klinis || ''));
     setEditingLabRequestNo(null);
     setLabFormNoRawat(lab.no_rawat || '');
     setIsLabFormOpen(true);
@@ -3881,6 +3898,7 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
     setLabServiceSearchQuery(editQueries);
     setLabTemplateLoadingByIndex({});
     setLabStatusRawat(mapRequestSourceToStatusRawat(lab.source));
+    setLabKlinis(String(lab.klinis || ''));
     setEditingLabRequestNo(lab.noorder);
     setLabFormNoRawat(lab.no_rawat || '');
     setIsLabFormOpen(true);
@@ -3977,6 +3995,7 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
     });
     setRadiologySearchQuery(copiedQueries);
     setRadiologyStatusRawat(mapRequestSourceToStatusRawat(rad.source));
+    setRadiologyKlinis(String(rad.klinis || ''));
     setEditingRadiologyRequestNo(null);
     setRadiologyFormNoRawat(rad.no_rawat || '');
     setIsRadiologyFormOpen(true);
@@ -4029,6 +4048,7 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
     });
     setRadiologySearchQuery(editQueries);
     setRadiologyStatusRawat(mapRequestSourceToStatusRawat(rad.source));
+    setRadiologyKlinis(String(rad.klinis || ''));
     setEditingRadiologyRequestNo(rad.noorder);
     setRadiologyFormNoRawat(rad.no_rawat || '');
     setIsRadiologyFormOpen(true);
@@ -4912,6 +4932,7 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
             no_rawat: effectiveNoRawat,
             dokter_perujuk: user.username,
             status_rawat: labStatusRawat,
+            klinis: labKlinis.trim(),
             noorder: editingLabRequestNo,
             username: currentUsername,
             examinations: validLabRequests,
@@ -4971,6 +4992,7 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
             no_rawat: effectiveNoRawat,
             dokter_perujuk: user.username,
             status_rawat: radiologyStatusRawat,
+            klinis: radiologyKlinis.trim(),
             noorder: editingRadiologyRequestNo,
             username: currentUsername,
             examinations: validRadiologyRequests
@@ -7447,6 +7469,15 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
                     </Select>
                   </div>
                 </div>
+                <div className="mb-4">
+                  <Label htmlFor="lab-klinis">Klinis</Label>
+                  <Input
+                    id="lab-klinis"
+                    value={labKlinis}
+                    onChange={(event) => setLabKlinis(event.target.value)}
+                    placeholder="Masukkan keterangan klinis"
+                  />
+                </div>
 
                 <div className="space-y-4">
                   <h5 className="font-medium">Permintaan Pemeriksaan Laboratorium:</h5>
@@ -7858,6 +7889,15 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
                           </SelectContent>
                         </Select>
                       </div>
+                    </div>
+                    <div className="mb-4">
+                      <Label htmlFor="rad-klinis">Klinis</Label>
+                      <Input
+                        id="rad-klinis"
+                        value={radiologyKlinis}
+                        onChange={(event) => setRadiologyKlinis(event.target.value)}
+                        placeholder="Masukkan keterangan klinis"
+                      />
                     </div>
 
                     {radiologies.map((radiology, index) => (

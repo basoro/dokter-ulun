@@ -615,6 +615,7 @@ class GetMedicalRecordService {
         pl.tgl_permintaan,
         pl.jam_permintaan,
         pl.dokter_perujuk,
+        dpk.klinis,
         ppl.kd_jenis_prw,
         jpl.nm_perawatan,
         pdpl.id_template,
@@ -627,6 +628,7 @@ class GetMedicalRecordService {
       FROM permintaan_lab pl 
       LEFT JOIN permintaan_pemeriksaan_lab ppl ON ppl.noorder = pl.noorder 
       LEFT JOIN jns_perawatan_lab jpl ON jpl.kd_jenis_prw = ppl.kd_jenis_prw
+      LEFT JOIN diagnosa_pasien_klinis dpk ON dpk.noorder = pl.noorder
       LEFT JOIN permintaan_detail_permintaan_lab pdpl
         ON pdpl.noorder = pl.noorder
         AND pdpl.kd_jenis_prw = ppl.kd_jenis_prw
@@ -646,6 +648,7 @@ class GetMedicalRecordService {
           noorder: row.noorder || '',
           tanggal: this.formatDateOnly(row.tgl_permintaan) + ' ' + row.jam_permintaan,
           dokter_perujuk: row.dokter_perujuk || '',
+          klinis: row.klinis || '',
           pemeriksaanMap: new Map()
         });
       }
@@ -683,6 +686,7 @@ class GetMedicalRecordService {
       noorder: requestEntry.noorder,
       tanggal: requestEntry.tanggal,
       dokter_perujuk: requestEntry.dokter_perujuk,
+      klinis: requestEntry.klinis,
       pemeriksaan: Array.from(requestEntry.pemeriksaanMap.values())
     }));
   }
@@ -810,9 +814,11 @@ class GetMedicalRecordService {
         pr.tgl_permintaan,
         pr.jam_permintaan,
         pr.dokter_perujuk,
+        dpk.klinis,
         ppr.kd_jenis_prw,
         jpr.nm_perawatan
       FROM permintaan_radiologi pr
+      LEFT JOIN diagnosa_pasien_klinis dpk ON dpk.noorder = pr.noorder
       LEFT JOIN permintaan_pemeriksaan_radiologi ppr ON ppr.noorder = pr.noorder
       LEFT JOIN jns_perawatan_radiologi jpr ON jpr.kd_jenis_prw = ppr.kd_jenis_prw
       WHERE pr.no_rawat = ? AND pr.status = ?
@@ -830,6 +836,7 @@ class GetMedicalRecordService {
           noorder: row.noorder || '',
           tanggal: this.formatDateOnly(row.tgl_permintaan) + ' ' + row.jam_permintaan,
           dokter_perujuk: row.dokter_perujuk || '',
+          klinis: row.klinis || '',
           pemeriksaan: []
         });
       }

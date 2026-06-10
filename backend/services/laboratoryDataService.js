@@ -33,6 +33,10 @@ class LaboratoryDataService {
     return null;
   }
 
+  normalizeKlinis(value) {
+    return String(value ?? '').trim();
+  }
+
   async getLabRequests(no_rawat) {
     const connection = await this.getConnection();
     try {
@@ -70,11 +74,24 @@ class LaboratoryDataService {
         LEFT JOIN template_laboratorium tl ON pdpl.id_template = tl.id_template
         WHERE pdpl.noorder = ?
       `;
+      const klinisQuery = `
+        SELECT klinis
+        FROM diagnosa_pasien_klinis
+        WHERE noorder = ?
+        LIMIT 1
+      `;
       
-      const [examinations] = await connection.execute(examinationQuery, [noorder]);
-      const [details] = await connection.execute(detailQuery, [noorder]);
+      const [[examinations], [details], [klinisRows]] = await Promise.all([
+        connection.execute(examinationQuery, [noorder]),
+        connection.execute(detailQuery, [noorder]),
+        connection.execute(klinisQuery, [noorder])
+      ]);
       
-      return { examinations, details };
+      return {
+        examinations,
+        details,
+        klinis: klinisRows?.[0]?.klinis || ''
+      };
     } finally {
       await connection.end();
     }
@@ -115,26 +132,44 @@ class LaboratoryDataService {
     }
   }
 
-  async createLabRequest(no_rawat, dokter_perujuk, examinations, details, status_rawat) {
+  async createLabRequest(no_rawat, dokter_perujuk, examinations, details, status_rawat, klinis = '') {
     const connection = await this.getConnection();
     try {
       await connection.beginTransaction();
       const normalizedStatusRawat = this.normalizeStatusRawat(status_rawat) || 'ralan';
+      const normalizedKlinis = this.normalizeKlinis(klinis);
       
-      // Generate request number
       const today = new Date().toISOString().slice(0, 10).replace(/-/g, '');
-      const timeStr = new Date().toTimeString().slice(0, 8).replace(/:/g, '');
-      const noorder = `LB${today}${timeStr}`;
+      const [sequenceRows] = await connection.execute(
+        `
+          SELECT MAX(noorder) AS last_noorder
+          FROM permintaan_lab
+          WHERE noorder LIKE ?
+        `,
+        [`PL${today}%`]
+      );
+      const lastNoorder = sequenceRows[0]?.last_noorder || '';
+      const lastSequence = Number(String(lastNoorder).slice(`PL${today}`.length)) || 0;
+      const nextSequence = String(lastSequence + 1).padStart(4, '0');
+      const noorder = `PL${today}${nextSequence}`;
       
-      // Insert main laboratory request
       const insertLabRequestQuery = `
         INSERT INTO permintaan_lab (noorder, no_rawat, tgl_permintaan, jam_permintaan, tgl_sampel, jam_sampel, tgl_hasil, jam_hasil, dokter_perujuk, status, kategori)
         VALUES (?, ?, CURDATE(), CURTIME(), '0000-00-00', '00:00:00', '0000-00-00', '00:00:00', ?, ?, 'PK')
       `;
       
       await connection.execute(insertLabRequestQuery, [noorder, no_rawat, dokter_perujuk, normalizedStatusRawat]);
+
+      if (normalizedKlinis) {
+        await connection.execute(
+          `
+            INSERT INTO diagnosa_pasien_klinis (noorder, klinis)
+            VALUES (?, ?)
+          `,
+          [noorder, normalizedKlinis]
+        );
+      }
       
-      // Insert examinations
       if (examinations && examinations.length > 0) {
         for (const examination of examinations) {
           const insertExaminationQuery = `
@@ -145,7 +180,6 @@ class LaboratoryDataService {
         }
       }
       
-      // Insert details
       if (details && details.length > 0) {
         for (const detail of details) {
           const insertDetailQuery = `
@@ -166,12 +200,13 @@ class LaboratoryDataService {
     }
   }
 
-  async updateLabRequest(noorder, examinations, details, status_rawat, username = '') {
+  async updateLabRequest(noorder, examinations, details, status_rawat, username = '', klinis = '') {
     const connection = await this.getConnection();
     try {
       await connection.beginTransaction();
       const normalizedUsername = String(username || '').trim();
       const normalizedStatusRawat = this.normalizeStatusRawat(status_rawat);
+      const normalizedKlinis = this.normalizeKlinis(klinis);
 
       if (normalizedUsername) {
         const [rows] = await connection.execute(
@@ -195,11 +230,20 @@ class LaboratoryDataService {
         );
       }
       
-      // Delete existing examinations and details
+      await connection.execute('DELETE FROM diagnosa_pasien_klinis WHERE noorder = ?', [noorder]);
       await connection.execute('DELETE FROM permintaan_pemeriksaan_lab WHERE noorder = ?', [noorder]);
       await connection.execute('DELETE FROM permintaan_detail_permintaan_lab WHERE noorder = ?', [noorder]);
+
+      if (normalizedKlinis) {
+        await connection.execute(
+          `
+            INSERT INTO diagnosa_pasien_klinis (noorder, klinis)
+            VALUES (?, ?)
+          `,
+          [noorder, normalizedKlinis]
+        );
+      }
       
-      // Insert updated examinations
       if (examinations && examinations.length > 0) {
         for (const examination of examinations) {
           const insertExaminationQuery = `
@@ -210,7 +254,6 @@ class LaboratoryDataService {
         }
       }
       
-      // Insert updated details
       if (details && details.length > 0) {
         for (const detail of details) {
           const insertDetailQuery = `
@@ -251,7 +294,7 @@ class LaboratoryDataService {
         }
       }
 
-      // Delete laboratory request (cascade will handle related records)
+      await connection.execute('DELETE FROM diagnosa_pasien_klinis WHERE noorder = ?', [noorder]);
       const deleteQuery = `DELETE FROM permintaan_lab WHERE noorder = ?`;
       
       await connection.execute(deleteQuery, [noorder]);
