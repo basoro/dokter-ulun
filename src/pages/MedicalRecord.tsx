@@ -1275,6 +1275,25 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
       'Rawat Inap'
     );
   }, [formattedNoRawat, medicalData?.focused_radiology?.ranap, scopedInpatientVisits]);
+  const inpatientRadiologyHistoryAll = useMemo(() => {
+    const combined = [...outpatientRadiologyHistory, ...inpatientRadiologyHistory];
+
+    return combined.sort((a, b) => {
+      const leftTimestamp = Number((a as any)?.__timestamp || 0);
+      const rightTimestamp = Number((b as any)?.__timestamp || 0);
+
+      if (rightTimestamp !== leftTimestamp) {
+        return rightTimestamp - leftTimestamp;
+      }
+
+      const leftIndex = Number((a as any)?.__index || 0);
+      const rightIndex = Number((b as any)?.__index || 0);
+
+      return leftIndex - rightIndex;
+    });
+  }, [inpatientRadiologyHistory, outpatientRadiologyHistory]);
+  const radiologyHistoryInpatientView =
+    defaultExaminationStatusRawat === 'Ranap' ? inpatientRadiologyHistoryAll : inpatientRadiologyHistory;
   const selectedBalanceCairanEntry = useMemo(
     () => balanceCairanEntries.find((entry) => Number(entry.id) === Number(selectedBalanceCairanId)) || null,
     [balanceCairanEntries, selectedBalanceCairanId]
@@ -4414,8 +4433,9 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
   const handleCopyExaminationTTV = (examination: any) => {
     setActiveTab('examinations');
     setIsExaminationFormOpen(true);
-    setExaminationForm({
-      ...getDefaultExaminationForm(),
+    setExaminationForm((prev) => ({
+      ...prev,
+      ...getCurrentExaminationDateTime(),
       suhu: examination.suhu_tubuh || examination.suhu || '',
       tensi: examination.tensi || examination.tekanan_darah || '',
       nadi: examination.nadi || '',
@@ -4425,8 +4445,8 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
       spo2: examination.spo2 || '',
       gcs: examination.gcs || '',
       kesadaran: examination.kesadaran || '',
-      nip: examination.nip || examination.pegawai || ''
-    });
+      nip: examination.nip || examination.pegawai || prev.nip || ''
+    }));
     
     setEditingExamination(null);
     
@@ -4442,16 +4462,17 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
 
     const shouldCopyIE = rawatType === 'Ranap';
 
-    setExaminationForm({
-      ...getDefaultExaminationForm(),
+    setExaminationForm((prev) => ({
+      ...prev,
+      ...getCurrentExaminationDateTime(),
       keluhan: examination.keluhan || examination.s || '',
       pemeriksaan: examination.pemeriksaan || examination.o || '',
       rtl: examination.rtl || examination.p || '',
       penilaian: examination.penilaian || examination.a || '',
-      instruksi: shouldCopyIE ? (examination.instruksi || examination.i || '') : '',
-      evaluasi: shouldCopyIE ? (examination.evaluasi || examination.e || '') : '',
-      nip: examination.nip || examination.pegawai || ''
-    });
+      instruksi: shouldCopyIE ? (examination.instruksi || examination.i || '') : prev.instruksi || '',
+      evaluasi: shouldCopyIE ? (examination.evaluasi || examination.e || '') : prev.evaluasi || '',
+      nip: examination.nip || examination.pegawai || prev.nip || ''
+    }));
 
     setEditingExamination(null);
 
@@ -8511,10 +8532,10 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
                 </div>
               </div>
 
-              <Tabs defaultValue="current" className="space-y-4">
+              <Tabs defaultValue="history" className="space-y-4">
                 <TabsList>
-                  <TabsTrigger value="current">Data Permintaan Radiologi</TabsTrigger>
-                  <TabsTrigger value="history">Riwayat Radiologi</TabsTrigger>
+                  <TabsTrigger value="current">Permintaan Radiologi</TabsTrigger>
+                  <TabsTrigger value="history">Hasil Radiologi</TabsTrigger>
                 </TabsList>
 
                 <TabsContent value="current">
@@ -8566,7 +8587,7 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
                       </TabsContent>
                       <TabsContent value="inpatient">
                         {isFocusedRadiologyLoaded ? (
-                          <div className="space-y-4">{renderRadiologyHistoryCards(inpatientRadiologyHistory)}</div>
+                          <div className="space-y-4">{renderRadiologyHistoryCards(radiologyHistoryInpatientView)}</div>
                         ) : renderDeferredTabState('hasil radiologi')}
                       </TabsContent>
                     </Tabs>
