@@ -1364,14 +1364,22 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
               <p className="font-medium">{rawatType}</p>
             </div>
           </div>
-          <div className="flex space-x-2">
+          <div className="flex flex-wrap gap-2">
             <Button
               size="sm"
               variant="secondary"
-              onClick={() => handleCopyExamination(exam, visit)}
+              onClick={() => handleCopyExaminationTTV(exam)}
             >
               <Copy className="h-4 w-4 mr-1" />
-              Copy
+              Copy TTV
+            </Button>
+            <Button
+              size="sm"
+              variant="secondary"
+              onClick={() => handleCopyExaminationSOAPIE(exam, rawatType)}
+            >
+              <Copy className="h-4 w-4 mr-1" />
+              Copy SOAPIE
             </Button>
             <Button
               size="sm"
@@ -4403,13 +4411,11 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
     });
   };
 
-  const handleCopyExamination = (examination: any, visit: any) => {
+  const handleCopyExaminationTTV = (examination: any) => {
     setActiveTab('examinations');
     setIsExaminationFormOpen(true);
-    // Copy examination data to form with current date/time as default
     setExaminationForm({
-      tgl_perawatan: format(new Date(), 'yyyy-MM-dd'),
-      jam_rawat: format(new Date(), 'HH:mm'),
+      ...getDefaultExaminationForm(),
       suhu: examination.suhu_tubuh || examination.suhu || '',
       tensi: examination.tensi || examination.tekanan_darah || '',
       nadi: examination.nadi || '',
@@ -4419,22 +4425,39 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
       spo2: examination.spo2 || '',
       gcs: examination.gcs || '',
       kesadaran: examination.kesadaran || '',
+      nip: examination.nip || examination.pegawai || ''
+    });
+    
+    setEditingExamination(null);
+    
+    toast({
+      title: "Data Disalin",
+      description: "TTV berhasil disalin ke form tambah pemeriksaan",
+    });
+  };
+
+  const handleCopyExaminationSOAPIE = (examination: any, rawatType: 'Ralan' | 'Ranap') => {
+    setActiveTab('examinations');
+    setIsExaminationFormOpen(true);
+
+    const shouldCopyIE = rawatType === 'Ranap';
+
+    setExaminationForm({
+      ...getDefaultExaminationForm(),
       keluhan: examination.keluhan || examination.s || '',
       pemeriksaan: examination.pemeriksaan || examination.o || '',
       rtl: examination.rtl || examination.p || '',
       penilaian: examination.penilaian || examination.a || '',
-      instruksi: examination.instruksi || examination.i || '',
-      evaluasi: examination.evaluasi || examination.e || '',
+      instruksi: shouldCopyIE ? (examination.instruksi || examination.i || '') : '',
+      evaluasi: shouldCopyIE ? (examination.evaluasi || examination.e || '') : '',
       nip: examination.nip || examination.pegawai || ''
     });
-    
-    // Clear editing state since this is a copy, not an edit
+
     setEditingExamination(null);
-    
-    // Show toast notification
+
     toast({
       title: "Data Disalin",
-      description: "Data pemeriksaan telah disalin ke form tambah pemeriksaan",
+      description: "SOAPIE berhasil disalin ke form tambah pemeriksaan",
     });
   };
 
