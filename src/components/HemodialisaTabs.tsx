@@ -8,7 +8,6 @@ import {
   Search, 
   Filter,
   X,
-  CalendarIcon
 } from 'lucide-react';
 import { 
   Select,
@@ -17,18 +16,13 @@ import {
   SelectTrigger,
   SelectValue 
 } from '@/components/ui/select';
-import {
-  Popover,
-  PopoverContent,
-  PopoverTrigger,
-} from "@/components/ui/popover";
-import { Calendar } from '@/components/ui/calendar';
 import { format } from 'date-fns';
 import PatientTable from '@/components/PatientTable';
 import { DateRange } from 'react-day-picker';
 import { cn } from '@/lib/utils';
 import { formatDateWIB, formatDateTimeWIB } from '@/lib/date-utils';
 import { API_URLS } from '@/config/api';
+import { DatePickerPopover } from '@/components/DatePickerPopover';
 
 const parseDateParam = (value: string | null, fallback: Date) => {
   if (!value) return fallback;
@@ -321,43 +315,27 @@ const HemodialisaTabs = () => {
             </div>
             
             <div className="flex flex-col sm:flex-row gap-2 w-full lg:w-auto">
-              <Popover>
-                <PopoverTrigger asChild>
-                  <Button
-                    id="date"
-                    variant={"outline"}
-                    className={cn(
-                      "w-[350px] justify-start text-left font-normal",
-                      !date && "text-muted-foreground"
-                    )}
-                  >
-                    <CalendarIcon className="mr-2 h-4 w-4" />
-                    {date?.from ? (
-                      date.to ? (
-                        <>
-                          {format(date.from, "LLL dd, y")} -{" "}
-                          {format(date.to, "LLL dd, y")}
-                        </>
-                      ) : (
-                        format(date.from, "LLL dd, y")
-                      )
-                    ) : (
-                      <span>Pilih rentang tanggal</span>
-                    )}
-                  </Button>
-                </PopoverTrigger>
-                <PopoverContent className="w-auto p-0" align="start">
-                  <Calendar
-                    initialFocus
-                    mode="range"
-                    defaultMonth={date?.from}
-                    selected={date}
-                    onSelect={setDate}
-                    numberOfMonths={2}
-                    className="p-3 pointer-events-auto min-w-[600px]"
-                  />
-                </PopoverContent>
-              </Popover>
+              <DatePickerPopover
+                triggerId="date"
+                mode="range"
+                defaultMonth={date?.from}
+                selected={date}
+                onSelect={setDate}
+                numberOfMonths={2}
+                calendarClassName="min-w-[600px]"
+                buttonClassName="w-full sm:w-[280px]"
+                placeholder="Pilih rentang tanggal"
+                displayValue={date?.from ? (
+                  date.to ? (
+                    <>
+                      {format(date.from, "LLL dd, y")} -{" "}
+                      {format(date.to, "LLL dd, y")}
+                    </>
+                  ) : (
+                    format(date.from, "LLL dd, y")
+                  )
+                ) : undefined}
+              />
               
               <Select value={statusFilter} onValueChange={setStatusFilter}>
                 <SelectTrigger className="w-full sm:w-48">

@@ -24,8 +24,8 @@ function Calendar({
       locale={locale}
       className={cn("p-3 pointer-events-auto w-full", className)}
       classNames={{
-        months: "flex flex-col sm:flex-row space-y-4 sm:space-x-4 sm:space-y-0",
-        month: "space-y-4 w-full",
+        months: "flex flex-col gap-4 sm:flex-row sm:gap-6",
+        month: "space-y-4 w-full min-w-0",
         caption: "flex justify-center pt-1 relative items-center",
         caption_label: "text-sm font-medium",
         nav: "space-x-1 flex items-center",

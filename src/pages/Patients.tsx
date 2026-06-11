@@ -10,7 +10,6 @@ import { Button } from '@/components/ui/button';
 import { Separator } from '@/components/ui/separator';
 import { 
   Search, 
-  Calendar, 
   User, 
   Clock, 
   Check, 
@@ -24,7 +23,6 @@ import {
   AlarmClock,
   Filter,
   X,
-  CalendarIcon,
   ChevronsUpDown,
   CheckIcon,
   ChevronDown,
@@ -53,7 +51,6 @@ import {
   CommandItem,
   CommandList
 } from "@/components/ui/command";
-import { Calendar as CalendarComponent } from '@/components/ui/calendar';
 import { format, addDays, differenceInDays, subMonths } from 'date-fns';
 import { indonesianLocale } from '@/lib/date-utils';
 import PatientTable from '@/components/PatientTable';
@@ -63,6 +60,7 @@ import { cn } from '@/lib/utils';
 import RawatJalanTabs from '@/components/RawatJalanTabs';
 import HemodialisaTabs from '@/components/HemodialisaTabs';
 import { API_URLS } from '@/config/api';
+import { DatePickerPopover } from '@/components/DatePickerPopover';
 import MedicalRecord from './MedicalRecord';
 import {
   CLOSE_ALL_MEDICAL_RECORD_TABS_EVENT,
@@ -337,44 +335,28 @@ const BookingTabs = () => {
               </div>
               
               <div className="flex flex-col sm:flex-row gap-2 w-full lg:w-auto">
-                <Popover>
-                  <PopoverTrigger asChild>
-                    <Button
-                      id="date"
-                      variant={"outline"}
-                      className={cn(
-                        "w-[350px] justify-start text-left font-normal",
-                        !dateRange && "text-muted-foreground"
-                      )}
-                    >
-                      <CalendarIcon className="mr-2 h-4 w-4" />
-                      {dateRange?.from ? (
-                        dateRange.to ? (
-                          <>
-                            {format(dateRange.from, "LLL dd, y")} -{" "}
-                            {format(dateRange.to, "LLL dd, y")}
-                          </>
-                        ) : (
-                          format(dateRange.from, "LLL dd, y")
-                        )
-                      ) : (
-                        <span>Pilih rentang tanggal</span>
-                      )}
-                    </Button>
-                  </PopoverTrigger>
-                  <PopoverContent className="w-auto p-0" align="start">
-                    <CalendarComponent
-                      initialFocus
-                      mode="range"
-                      defaultMonth={dateRange?.from}
-                      selected={dateRange}
-                      onSelect={setDateRange}
-                      numberOfMonths={2}
-                      locale={indonesianLocale}
-                      className="p-3 pointer-events-auto min-w-[600px]"
-                    />
-                  </PopoverContent>
-                </Popover>
+                <DatePickerPopover
+                  triggerId="date"
+                  mode="range"
+                  defaultMonth={dateRange?.from}
+                  selected={dateRange}
+                  onSelect={setDateRange}
+                  numberOfMonths={2}
+                  locale={indonesianLocale}
+                  calendarClassName="min-w-[600px]"
+                  buttonClassName="w-[350px]"
+                  placeholder="Pilih rentang tanggal"
+                  displayValue={dateRange?.from ? (
+                    dateRange.to ? (
+                      <>
+                        {format(dateRange.from, "LLL dd, y")} -{" "}
+                        {format(dateRange.to, "LLL dd, y")}
+                      </>
+                    ) : (
+                      format(dateRange.from, "LLL dd, y")
+                    )
+                  ) : undefined}
+                />
                 
                 <Select value={statusFilter} onValueChange={setStatusFilter}>
                   <SelectTrigger className="w-full sm:w-48">
@@ -517,44 +499,28 @@ const BookingTabs = () => {
               </div>
               
               <div className="flex flex-col sm:flex-row gap-2 w-full lg:w-auto">
-                <Popover>
-                  <PopoverTrigger asChild>
-                    <Button
-                      id="date"
-                      variant={"outline"}
-                      className={cn(
-                        "w-[350px] justify-start text-left font-normal",
-                        !dateRange && "text-muted-foreground"
-                      )}
-                    >
-                      <CalendarIcon className="mr-2 h-4 w-4" />
-                      {dateRange?.from ? (
-                        dateRange.to ? (
-                          <>
-                            {format(dateRange.from, "LLL dd, y")} -{" "}
-                            {format(dateRange.to, "LLL dd, y")}
-                          </>
-                        ) : (
-                          format(dateRange.from, "LLL dd, y")
-                        )
-                      ) : (
-                        <span>Pilih rentang tanggal</span>
-                      )}
-                    </Button>
-                  </PopoverTrigger>
-                  <PopoverContent className="w-auto p-0" align="start">
-                    <CalendarComponent
-                      initialFocus
-                      mode="range"
-                      defaultMonth={dateRange?.from}
-                      selected={dateRange}
-                      onSelect={setDateRange}
-                      numberOfMonths={2}
-                      locale={indonesianLocale}
-                      className="p-3 pointer-events-auto min-w-[600px]"
-                    />
-                  </PopoverContent>
-                </Popover>
+                <DatePickerPopover
+                  triggerId="date"
+                  mode="range"
+                  defaultMonth={dateRange?.from}
+                  selected={dateRange}
+                  onSelect={setDateRange}
+                  numberOfMonths={2}
+                  locale={indonesianLocale}
+                  calendarClassName="min-w-[600px]"
+                  buttonClassName="w-[350px]"
+                  placeholder="Pilih rentang tanggal"
+                  displayValue={dateRange?.from ? (
+                    dateRange.to ? (
+                      <>
+                        {format(dateRange.from, "LLL dd, y")} -{" "}
+                        {format(dateRange.to, "LLL dd, y")}
+                      </>
+                    ) : (
+                      format(dateRange.from, "LLL dd, y")
+                    )
+                  ) : undefined}
+                />
                 
                 <Select value={statusFilter} onValueChange={setStatusFilter}>
                   <SelectTrigger className="w-full sm:w-48">
@@ -1519,36 +1485,26 @@ const RawatInapTabs = () => {
       </div>
       
       <div className="flex flex-col sm:flex-row gap-2">
-        <Popover>
-          <PopoverTrigger asChild>
-            <Button variant="outline" className="w-[350px] justify-start text-left font-normal">
-              <CalendarIcon className="mr-2 h-4 w-4" />
-              {dateRange?.from ? (
-                dateRange.to ? (
-                  <>
-                    {format(dateRange.from, "LLL dd, y")} - {format(dateRange.to, "LLL dd, y")}
-                  </>
-                ) : (
-                  format(dateRange.from, "LLL dd, y")
-                )
-              ) : (
-                "Pilih rentang tanggal"
-              )}
-            </Button>
-          </PopoverTrigger>
-          <PopoverContent className="w-auto p-0" align="start">
-            <CalendarComponent
-              initialFocus
-              mode="range"
-              defaultMonth={dateRange?.from}
-              selected={dateRange}
-              onSelect={setDateRange}
-              numberOfMonths={2}
-              locale={indonesianLocale}
-              className="p-3 pointer-events-auto min-w-[600px]"
-            />
-          </PopoverContent>
-        </Popover>
+        <DatePickerPopover
+          mode="range"
+          defaultMonth={dateRange?.from}
+          selected={dateRange}
+          onSelect={setDateRange}
+          numberOfMonths={2}
+          locale={indonesianLocale}
+          calendarClassName="min-w-[600px]"
+          buttonClassName="w-[350px]"
+          placeholder="Pilih rentang tanggal"
+          displayValue={dateRange?.from ? (
+            dateRange.to ? (
+              <>
+                {format(dateRange.from, "LLL dd, y")} - {format(dateRange.to, "LLL dd, y")}
+              </>
+            ) : (
+              format(dateRange.from, "LLL dd, y")
+            )
+          ) : undefined}
+        />
 
         <Select value={getStatusPulangByTab(tab)} onValueChange={(value) => setStatusPulangByTab(tab, value)}>
           <SelectTrigger className="w-full sm:w-auto min-w-[160px]">
@@ -2033,36 +1989,26 @@ const IGDTabs = () => {
       </div>
       
       <div className="flex flex-col sm:flex-row gap-2">
-        <Popover>
-          <PopoverTrigger asChild>
-            <Button variant="outline" className="w-[350px] justify-start text-left font-normal">
-              <CalendarIcon className="mr-2 h-4 w-4" />
-              {dateRange?.from ? (
-                dateRange.to ? (
-                  <>
-                    {format(dateRange.from, "LLL dd, y")} - {format(dateRange.to, "LLL dd, y")}
-                  </>
-                ) : (
-                  format(dateRange.from, "LLL dd, y")
-                )
-              ) : (
-                "Pilih rentang tanggal"
-              )}
-            </Button>
-          </PopoverTrigger>
-          <PopoverContent className="w-auto p-0" align="start">
-            <CalendarComponent
-              initialFocus
-              mode="range"
-              defaultMonth={dateRange?.from}
-              selected={dateRange}
-              onSelect={setDateRange}
-              numberOfMonths={2}
-              locale={indonesianLocale}
-              className="p-3 pointer-events-auto min-w-[600px]"
-            />
-          </PopoverContent>
-        </Popover>
+        <DatePickerPopover
+          mode="range"
+          defaultMonth={dateRange?.from}
+          selected={dateRange}
+          onSelect={setDateRange}
+          numberOfMonths={2}
+          locale={indonesianLocale}
+          calendarClassName="min-w-[600px]"
+          buttonClassName="w-[350px]"
+          placeholder="Pilih rentang tanggal"
+          displayValue={dateRange?.from ? (
+            dateRange.to ? (
+              <>
+                {format(dateRange.from, "LLL dd, y")} - {format(dateRange.to, "LLL dd, y")}
+              </>
+            ) : (
+              format(dateRange.from, "LLL dd, y")
+            )
+          ) : undefined}
+        />
 
         <Select value={statusFilter} onValueChange={setStatusFilter}>
           <SelectTrigger className="w-full sm:w-auto min-w-[140px]">

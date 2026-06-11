@@ -46,6 +46,7 @@ import { format } from 'date-fns';
 import { DateRange } from 'react-day-picker';
 import { cn } from '@/lib/utils';
 import { API_URLS } from '@/config/api';
+import { DatePickerPopover } from '@/components/DatePickerPopover';
 
 const BookingOperasi = () => {
   const [date, setDate] = useState<Date | undefined>(new Date());
@@ -157,43 +158,27 @@ const BookingOperasi = () => {
                 </div>
                 
                 <div className="flex flex-col sm:flex-row gap-2 w-full lg:w-auto">
-                  <Popover>
-                    <PopoverTrigger asChild>
-                      <Button
-                        id="date"
-                        variant={"outline"}
-                        className={cn(
-                          "w-[350px] justify-start text-left font-normal",
-                          !dateRange && "text-muted-foreground"
-                        )}
-                      >
-                        <CalendarIcon className="mr-2 h-4 w-4" />
-                        {dateRange?.from ? (
-                          dateRange.to ? (
-                            <>
-                              {format(dateRange.from, "LLL dd, y")} -{" "}
-                              {format(dateRange.to, "LLL dd, y")}
-                            </>
-                          ) : (
-                            format(dateRange.from, "LLL dd, y")
-                          )
-                        ) : (
-                          <span>Pilih rentang tanggal</span>
-                        )}
-                      </Button>
-                    </PopoverTrigger>
-                    <PopoverContent className="w-auto p-0" align="start">
-                      <Calendar
-                        initialFocus
-                        mode="range"
-                        defaultMonth={dateRange?.from}
-                        selected={dateRange}
-                        onSelect={setDateRange}
-                        numberOfMonths={2}
-                        className="p-3 pointer-events-auto min-w-[600px]"
-                      />
-                    </PopoverContent>
-                  </Popover>
+                  <DatePickerPopover
+                    triggerId="date"
+                    mode="range"
+                    defaultMonth={dateRange?.from}
+                    selected={dateRange}
+                    onSelect={setDateRange}
+                    numberOfMonths={2}
+                    calendarClassName="min-w-[600px]"
+                    buttonClassName="w-full sm:w-[300px]"
+                    placeholder="Pilih rentang tanggal"
+                    displayValue={dateRange?.from ? (
+                      dateRange.to ? (
+                        <>
+                          {format(dateRange.from, "LLL dd, y")} -{" "}
+                          {format(dateRange.to, "LLL dd, y")}
+                        </>
+                      ) : (
+                        format(dateRange.from, "LLL dd, y")
+                      )
+                    ) : undefined}
+                  />
                   
                   <Select value={status} onValueChange={setStatus}>
                     <SelectTrigger className="w-full sm:w-48">

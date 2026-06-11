@@ -7,16 +7,16 @@ import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Checkbox } from "@/components/ui/checkbox";
-import { Calendar as CalendarComponent } from '@/components/ui/calendar';
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
 import { cn } from '@/lib/utils';
 import { indonesianLocale } from '@/lib/date-utils';
 import { format } from 'date-fns';
-import { CalendarIcon, Check, ChevronsUpDown, FileText, Loader2, Paperclip, Search, Trash2 } from 'lucide-react';
+import { Check, ChevronsUpDown, FileText, Loader2, Paperclip, Search, Trash2 } from 'lucide-react';
 import { useToast } from "@/hooks/use-toast";
 import { API_URLS } from '@/config/api';
 import { useAuth } from '@/contexts/AuthContext';
+import { DatePickerPopover } from '@/components/DatePickerPopover';
 
 interface MedicalResume {
   no_rawat: string;
@@ -1388,42 +1388,25 @@ export const MedicalResumeModal: React.FC<MedicalResumeModalProps> = ({ isOpen, 
                     </div>
                     <div>
                       <Label htmlFor="kontrol">Kontrol</Label>
-                      <Popover>
-                        <PopoverTrigger asChild>
-                          <Button
-                            id="kontrol"
-                            variant="outline"
-                            className={cn(
-                              "w-full justify-start text-left font-normal",
-                              !formData.kontrol && "text-muted-foreground"
-                            )}
-                          >
-                            <CalendarIcon className="mr-2 h-4 w-4" />
-                            {formatKontrolDisplay(formData.kontrol)}
-                          </Button>
-                        </PopoverTrigger>
-                        <PopoverContent className="w-96 p-0" align="start">
-                          <div className="space-y-3 p-3">
-                            <CalendarComponent
-                              mode="single"
-                              selected={parseKontrolDate(formData.kontrol)}
-                              onSelect={updateKontrolDate}
-                              locale={indonesianLocale}
-                              initialFocus
-                              className="pointer-events-auto w-full"
+                      <DatePickerPopover
+                        triggerId="kontrol"
+                        mode="single"
+                        selected={parseKontrolDate(formData.kontrol)}
+                        onSelect={updateKontrolDate}
+                        locale={indonesianLocale}
+                        displayValue={formatKontrolDisplay(formData.kontrol)}
+                        contentAfterCalendar={
+                          <div className="space-y-2 px-3 pb-3">
+                            <Label htmlFor="kontrol-time">Jam Kontrol</Label>
+                            <Input
+                              id="kontrol-time"
+                              type="time"
+                              value={getKontrolTimeValue(formData.kontrol)}
+                              onChange={(e) => updateKontrolTime(e.target.value)}
                             />
-                            <div className="space-y-2">
-                              <Label htmlFor="kontrol-time">Jam Kontrol</Label>
-                              <Input
-                                id="kontrol-time"
-                                type="time"
-                                value={getKontrolTimeValue(formData.kontrol)}
-                                onChange={(e) => updateKontrolTime(e.target.value)}
-                              />
-                            </div>
                           </div>
-                        </PopoverContent>
-                      </Popover>
+                        }
+                      />
                     </div>
                     <div>
                       <Label htmlFor="diet">Diet</Label>

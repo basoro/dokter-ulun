@@ -4,12 +4,11 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import { Calendar as CalendarComponent } from "@/components/ui/calendar";
 import { API_URLS } from '@/config/api';
 import { useToast } from "@/hooks/use-toast";
-import { Calculator, Calendar as CalendarIcon, Clock, FileText, Loader2, Trash2, Unlock } from 'lucide-react';
+import { Calculator, Clock, FileText, Loader2, Trash2, Unlock } from 'lucide-react';
 import { format } from 'date-fns';
+import { DatePickerPopover } from '@/components/DatePickerPopover';
 
 type SearchType = 'idrg_diagnosa' | 'idrg_prosedur' | 'inacbg_diagnosa' | 'inacbg_prosedur';
 
@@ -1151,22 +1150,12 @@ export const InacbgTariffSimulationContent: React.FC<InacbgTariffSimulationConte
                   </div>
                   <div>
                     <Label>Tanggal Lahir</Label>
-                    <Popover>
-                      <PopoverTrigger asChild>
-                        <Button variant="outline" className="w-full justify-start text-left font-normal">
-                          <CalendarIcon className="mr-2 h-4 w-4" />
-                          {patientForm.tgl_lahir ? format(new Date(`${formatDateInput(patientForm.tgl_lahir)}T00:00:00`), 'dd/MM/yyyy') : 'Pilih tanggal'}
-                        </Button>
-                      </PopoverTrigger>
-                      <PopoverContent className="w-auto p-0" align="start">
-                        <CalendarComponent
-                          mode="single"
-                          selected={patientForm.tgl_lahir ? new Date(`${formatDateInput(patientForm.tgl_lahir)}T00:00:00`) : undefined}
-                          onSelect={(date) => setPatientForm((prev) => ({ ...prev, tgl_lahir: date ? format(date, 'yyyy-MM-dd') : '' }))}
-                          initialFocus
-                        />
-                      </PopoverContent>
-                    </Popover>
+                    <DatePickerPopover
+                      mode="single"
+                      selected={patientForm.tgl_lahir ? new Date(`${formatDateInput(patientForm.tgl_lahir)}T00:00:00`) : undefined}
+                      onSelect={(date) => setPatientForm((prev) => ({ ...prev, tgl_lahir: date ? format(date, 'yyyy-MM-dd') : '' }))}
+                      displayValue={patientForm.tgl_lahir ? format(new Date(`${formatDateInput(patientForm.tgl_lahir)}T00:00:00`), 'dd/MM/yyyy') : undefined}
+                    />
                   </div>
                   <div>
                     <Label>Gender</Label>
@@ -1193,25 +1182,15 @@ export const InacbgTariffSimulationContent: React.FC<InacbgTariffSimulationConte
                   <div>
                     <Label>Tgl Masuk</Label>
                     <div className="grid grid-cols-[minmax(0,1fr)_120px] gap-2">
-                      <Popover>
-                        <PopoverTrigger asChild>
-                          <Button variant="outline" className="w-full justify-start text-left font-normal">
-                            <CalendarIcon className="mr-2 h-4 w-4" />
-                            {patientForm.tgl_masuk ? format(parseDateFromDateTime(patientForm.tgl_masuk) || new Date(), 'dd/MM/yyyy') : 'Pilih tanggal'}
-                          </Button>
-                        </PopoverTrigger>
-                        <PopoverContent className="w-auto p-0" align="start">
-                          <CalendarComponent
-                            mode="single"
-                            selected={parseDateFromDateTime(patientForm.tgl_masuk)}
-                            onSelect={(date) => setPatientForm((prev) => ({
-                              ...prev,
-                              tgl_masuk: buildDateTimeString(date, getTimePart(prev.tgl_masuk, '00:00'))
-                            }))}
-                            initialFocus
-                          />
-                        </PopoverContent>
-                      </Popover>
+                      <DatePickerPopover
+                        mode="single"
+                        selected={parseDateFromDateTime(patientForm.tgl_masuk)}
+                        onSelect={(date) => setPatientForm((prev) => ({
+                          ...prev,
+                          tgl_masuk: buildDateTimeString(date, getTimePart(prev.tgl_masuk, '00:00'))
+                        }))}
+                        displayValue={patientForm.tgl_masuk ? format(parseDateFromDateTime(patientForm.tgl_masuk) || new Date(), 'dd/MM/yyyy') : undefined}
+                      />
                       <div className="relative">
                         <Clock className="pointer-events-none absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
                         <Input
@@ -1229,25 +1208,15 @@ export const InacbgTariffSimulationContent: React.FC<InacbgTariffSimulationConte
                   <div>
                     <Label>Tgl Pulang</Label>
                     <div className="grid grid-cols-[minmax(0,1fr)_120px] gap-2">
-                      <Popover>
-                        <PopoverTrigger asChild>
-                          <Button variant="outline" className="w-full justify-start text-left font-normal">
-                            <CalendarIcon className="mr-2 h-4 w-4" />
-                            {patientForm.tgl_pulang ? format(parseDateFromDateTime(patientForm.tgl_pulang) || new Date(), 'dd/MM/yyyy') : 'Pilih tanggal'}
-                          </Button>
-                        </PopoverTrigger>
-                        <PopoverContent className="w-auto p-0" align="start">
-                          <CalendarComponent
-                            mode="single"
-                            selected={parseDateFromDateTime(patientForm.tgl_pulang)}
-                            onSelect={(date) => setPatientForm((prev) => ({
-                              ...prev,
-                              tgl_pulang: buildDateTimeString(date, getTimePart(prev.tgl_pulang, '00:00'))
-                            }))}
-                            initialFocus
-                          />
-                        </PopoverContent>
-                      </Popover>
+                      <DatePickerPopover
+                        mode="single"
+                        selected={parseDateFromDateTime(patientForm.tgl_pulang)}
+                        onSelect={(date) => setPatientForm((prev) => ({
+                          ...prev,
+                          tgl_pulang: buildDateTimeString(date, getTimePart(prev.tgl_pulang, '00:00'))
+                        }))}
+                        displayValue={patientForm.tgl_pulang ? format(parseDateFromDateTime(patientForm.tgl_pulang) || new Date(), 'dd/MM/yyyy') : undefined}
+                      />
                       <div className="relative">
                         <Clock className="pointer-events-none absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
                         <Input

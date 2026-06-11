@@ -10,7 +10,7 @@ import {
   User, Calendar, Stethoscope, Syringe, Pill, FlaskConical, Radio,
   Activity, ClipboardList, BedDouble, UserCircle, Building, MapPin,
   Phone, Heart, CalendarDays, FileText, Plus, X, Trash2, Image as ImageIcon, Clock,
-  Calendar as CalendarIcon, Copy, ChevronDown, ChevronLeft, ChevronRight, ChevronUp, Brain, Check, ChevronsUpDown, Pause, Pencil, Play,
+  Copy, ChevronDown, ChevronLeft, ChevronRight, ChevronUp, Brain, Check, ChevronsUpDown, Pause, Pencil, Play,
   BadgeAlert, Maximize2
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -18,7 +18,6 @@ import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Calendar as CalendarComponent } from "@/components/ui/calendar";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -30,6 +29,7 @@ import { formatDateTimeWIB } from "@/lib/date-utils";
 import { cn } from "@/lib/utils";
 import { format } from "date-fns";
 import { API_CONFIG, API_URLS } from '@/config/api';
+import { DatePickerPopover } from '@/components/DatePickerPopover';
 
 type PrescriptionStatus = 'Ralan' | 'Ranap' | 'Pulang' | 'IBS';
 
@@ -6175,25 +6175,13 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
                  <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-4">
                    <div>
                      <Label htmlFor="tgl-perawatan">Tanggal Perawatan</Label>
-                     <Popover>
-                       <PopoverTrigger asChild>
-                         <Button
-                           variant="outline"
-                           className="w-full justify-start text-left font-normal"
-                         >
-                           <CalendarIcon className="mr-2 h-4 w-4" />
-                           {examinationForm.tgl_perawatan ? format(new Date(examinationForm.tgl_perawatan), "dd/MM/yyyy") : "Pilih tanggal"}
-                         </Button>
-                       </PopoverTrigger>
-                       <PopoverContent className="w-96 p-0" align="start">
-                         <CalendarComponent
-                           mode="single"
-                           selected={examinationForm.tgl_perawatan ? new Date(examinationForm.tgl_perawatan) : undefined}
-                           onSelect={(date) => setExaminationForm({...examinationForm, tgl_perawatan: date ? format(date, "yyyy-MM-dd") : ""})}
-                           initialFocus
-                         />
-                       </PopoverContent>
-                     </Popover>
+                    <DatePickerPopover
+                      triggerId="tgl-perawatan"
+                      mode="single"
+                      selected={examinationForm.tgl_perawatan ? new Date(examinationForm.tgl_perawatan) : undefined}
+                      onSelect={(date) => setExaminationForm({...examinationForm, tgl_perawatan: date ? format(date, "yyyy-MM-dd") : ""})}
+                      displayValue={examinationForm.tgl_perawatan ? format(new Date(examinationForm.tgl_perawatan), "dd/MM/yyyy") : undefined}
+                    />
                    </div>
                    <div>
                      <Label htmlFor="jam-rawat">Jam Rawat</Label>
@@ -6758,33 +6746,21 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
                     <div className="grid grid-cols-1 gap-4 mb-4 md:max-w-xl md:grid-cols-2">
                       <div>
                         <Label htmlFor={`med-date-${medIndex}`}>Tanggal Resep</Label>
-                        <Popover>
-                          <PopoverTrigger asChild>
-                            <Button
-                              id={`med-date-${medIndex}`}
-                              variant="outline"
-                              className="w-full justify-start text-left font-normal"
-                            >
-                              <CalendarIcon className="mr-2 h-4 w-4" />
-                              {medication.tanggal ? format(new Date(medication.tanggal), "dd/MM/yyyy") : "Pilih tanggal resep"}
-                            </Button>
-                          </PopoverTrigger>
-                          <PopoverContent className="w-96 p-0" align="start">
-                            <CalendarComponent
-                              mode="single"
-                              selected={medication.tanggal ? new Date(medication.tanggal) : undefined}
-                              onSelect={(date) => {
-                                if (!date) return;
-                                setMedications((previous) => previous.map((item, index) => (
-                                  index === medIndex
-                                    ? { ...item, tanggal: format(date, 'yyyy-MM-dd') }
-                                    : item
-                                )));
-                              }}
-                              initialFocus
-                            />
-                          </PopoverContent>
-                        </Popover>
+                        <DatePickerPopover
+                          triggerId={`med-date-${medIndex}`}
+                          mode="single"
+                          selected={medication.tanggal ? new Date(medication.tanggal) : undefined}
+                          onSelect={(date) => {
+                            if (!date) return;
+                            setMedications((previous) => previous.map((item, index) => (
+                              index === medIndex
+                                ? { ...item, tanggal: format(date, 'yyyy-MM-dd') }
+                                : item
+                            )));
+                          }}
+                          displayValue={medication.tanggal ? format(new Date(medication.tanggal), "dd/MM/yyyy") : undefined}
+                          placeholder="Pilih tanggal resep"
+                        />
                       </div>
                       <div>
                         <Label htmlFor={`med-status-${medIndex}`}>Status Rawat</Label>
@@ -7025,33 +7001,21 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
                     <div className="grid grid-cols-1 gap-4 mb-4 md:grid-cols-2 xl:grid-cols-3">
                        <div>
                          <Label htmlFor={`racikan-date-${compoundIndex}`}>Tanggal Resep</Label>
-                        <Popover>
-                          <PopoverTrigger asChild>
-                            <Button
-                              id={`racikan-date-${compoundIndex}`}
-                              variant="outline"
-                              className="w-full justify-start text-left font-normal"
-                            >
-                              <CalendarIcon className="mr-2 h-4 w-4" />
-                              {compound.tanggal ? format(new Date(compound.tanggal), "dd/MM/yyyy") : "Pilih tanggal resep"}
-                            </Button>
-                          </PopoverTrigger>
-                          <PopoverContent className="w-96 p-0" align="start">
-                            <CalendarComponent
-                              mode="single"
-                              selected={compound.tanggal ? new Date(compound.tanggal) : undefined}
-                              onSelect={(date) => {
-                                if (!date) return;
-                                setCompoundPrescriptions((previous) => previous.map((item, index) => (
-                                  index === compoundIndex
-                                    ? { ...item, tanggal: format(date, 'yyyy-MM-dd') }
-                                    : item
-                                )));
-                              }}
-                              initialFocus
-                            />
-                          </PopoverContent>
-                        </Popover>
+                        <DatePickerPopover
+                          triggerId={`racikan-date-${compoundIndex}`}
+                          mode="single"
+                          selected={compound.tanggal ? new Date(compound.tanggal) : undefined}
+                          onSelect={(date) => {
+                            if (!date) return;
+                            setCompoundPrescriptions((previous) => previous.map((item, index) => (
+                              index === compoundIndex
+                                ? { ...item, tanggal: format(date, 'yyyy-MM-dd') }
+                                : item
+                            )));
+                          }}
+                          displayValue={compound.tanggal ? format(new Date(compound.tanggal), "dd/MM/yyyy") : undefined}
+                          placeholder="Pilih tanggal resep"
+                        />
                        </div>
                        <div>
                          <Label htmlFor={`racikan-nama-${compoundIndex}`}>Nama Racikan</Label>

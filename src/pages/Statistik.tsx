@@ -3,15 +3,13 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Button } from '@/components/ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Calendar } from '@/components/ui/calendar';
-import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
-import { CalendarIcon } from 'lucide-react';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell, LineChart, Line } from 'recharts';
 import { Loader2 } from 'lucide-react';
 import { format, subMonths, startOfMonth, endOfMonth, startOfDay, endOfDay } from 'date-fns';
 import { id } from 'date-fns/locale';
 import { cn } from '@/lib/utils';
 import { API_URLS } from '@/config/api';
+import { DatePickerPopover } from '@/components/DatePickerPopover';
 
 const Statistik = () => {
   const [visitData, setVisitData] = useState<any[]>([]);
@@ -178,54 +176,22 @@ const Statistik = () => {
               <>
                 <div className="flex-1 min-w-[150px]">
                   <label className="text-sm font-medium mb-2 block">Tanggal Mulai</label>
-                  <Popover>
-                    <PopoverTrigger asChild>
-                      <Button
-                        variant="outline"
-                        className={cn(
-                          "w-full justify-start text-left font-normal",
-                          !customStartDate && "text-muted-foreground"
-                        )}
-                      >
-                        <CalendarIcon className="mr-2 h-4 w-4" />
-                        {customStartDate ? format(customStartDate, "dd/MM/yyyy", { locale: id }) : "Pilih tanggal"}
-                      </Button>
-                    </PopoverTrigger>
-                    <PopoverContent className="w-auto p-0">
-                      <Calendar
-                        mode="single"
-                        selected={customStartDate}
-                        onSelect={setCustomStartDate}
-                        initialFocus
-                      />
-                    </PopoverContent>
-                  </Popover>
+                  <DatePickerPopover
+                    mode="single"
+                    selected={customStartDate}
+                    onSelect={setCustomStartDate}
+                    displayValue={customStartDate ? format(customStartDate, "dd/MM/yyyy", { locale: id }) : undefined}
+                  />
                 </div>
 
                 <div className="flex-1 min-w-[150px]">
                   <label className="text-sm font-medium mb-2 block">Tanggal Selesai</label>
-                  <Popover>
-                    <PopoverTrigger asChild>
-                      <Button
-                        variant="outline"
-                        className={cn(
-                          "w-full justify-start text-left font-normal",
-                          !customEndDate && "text-muted-foreground"
-                        )}
-                      >
-                        <CalendarIcon className="mr-2 h-4 w-4" />
-                        {customEndDate ? format(customEndDate, "dd/MM/yyyy", { locale: id }) : "Pilih tanggal"}
-                      </Button>
-                    </PopoverTrigger>
-                    <PopoverContent className="w-auto p-0">
-                      <Calendar
-                        mode="single"
-                        selected={customEndDate}
-                        onSelect={setCustomEndDate}
-                        initialFocus
-                      />
-                    </PopoverContent>
-                  </Popover>
+                  <DatePickerPopover
+                    mode="single"
+                    selected={customEndDate}
+                    onSelect={setCustomEndDate}
+                    displayValue={customEndDate ? format(customEndDate, "dd/MM/yyyy", { locale: id }) : undefined}
+                  />
                 </div>
               </>
             )}
