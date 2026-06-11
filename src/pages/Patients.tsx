@@ -1721,6 +1721,20 @@ const IGDTabs = () => {
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
   const igdTabOptions = ['triase', 'observasi', 'tindakan'] as const;
+  const emptyIgdTabCounts = { triase: 0, observasi: 0, tindakan: 0 };
+  const normalizeIgdTriaseFilter = (value: string | null) => {
+    const normalized = String(value || '').trim().toUpperCase();
+    const legacyMap: Record<string, string> = {
+      T001: 'KL01',
+      T002: 'KL03',
+      T003: 'KL05',
+      T004: 'KL02'
+    };
+
+    if (!normalized) return 'all';
+    if (normalized === 'ALL') return 'all';
+    return legacyMap[normalized] || normalized;
+  };
   const initialIGDTab = igdTabOptions.includes(searchParams.get('tab') as typeof igdTabOptions[number])
     ? searchParams.get('tab') as typeof igdTabOptions[number]
     : 'triase';
@@ -1730,7 +1744,7 @@ const IGDTabs = () => {
   const [activeTab, setActiveTab] = useState<typeof igdTabOptions[number]>(initialIGDTab);
   const [searchQuery, setSearchQuery] = useState(searchParams.get('search') || "");
   const [statusFilter, setStatusFilter] = useState(searchParams.get('status') || "all");
-  const [triaseLevel, setTriaseLevel] = useState(searchParams.get('triase') || "all");
+  const [triaseLevel, setTriaseLevel] = useState(normalizeIgdTriaseFilter(searchParams.get('triase')));
   const [dateRange, setDateRange] = useState<DateRange | undefined>({
     from: parseDateParam(searchParams.get('from'), defaultIGDDate),
     to: parseDateParam(searchParams.get('to'), defaultIGDDate)
@@ -1738,6 +1752,7 @@ const IGDTabs = () => {
   const [currentPage, setCurrentPage] = useState(parsePositiveInt(searchParams.get('page'), 1));
   const [total, setTotal] = useState(0);
   const [itemsPerPage, setItemsPerPage] = useState(parsePositiveInt(searchParams.get('itemsPerPage'), 10));
+  const [tabCounts, setTabCounts] = useState(emptyIgdTabCounts);
 
   const fetchIGDData = async (tab: string) => {
     setLoading(true);
@@ -1804,12 +1819,18 @@ const IGDTabs = () => {
       if (data) {
         setIgdData(data.data || []);
         setTotal(data.total || 0);
+        setTabCounts({
+          triase: Number(data?.tabCounts?.triase || 0),
+          observasi: Number(data?.tabCounts?.observasi || 0),
+          tindakan: Number(data?.tabCounts?.tindakan || 0)
+        });
         console.log('State updated - igdData length:', data.data ? data.data.length : 0);
         console.log('State updated - total:', data.total || 0);
       } else {
         console.warn('=== No Data Received ===');
         setIgdData([]);
         setTotal(0);
+        setTabCounts(emptyIgdTabCounts);
       }
 
     } catch (error) {
@@ -1818,6 +1839,9 @@ const IGDTabs = () => {
       console.error('Exception message:', error.message);
       console.error('Exception stack:', error.stack);
       console.error('Full exception object:', error);
+      setIgdData([]);
+      setTotal(0);
+      setTabCounts(emptyIgdTabCounts);
     } finally {
       console.log('=== IGD Data Fetch Complete ===');
       console.log('Setting loading to false');
@@ -1896,8 +1920,12 @@ const IGDTabs = () => {
     switch ((value || '').toLowerCase()) {
       case 'merah':
         return 'bg-red-100 text-red-800 hover:bg-red-100';
+      case 'merah muda':
+        return 'bg-pink-100 text-pink-800 hover:bg-pink-100';
       case 'kuning':
         return 'bg-yellow-100 text-yellow-800 hover:bg-yellow-100';
+      case 'hijau muda':
+        return 'bg-lime-100 text-lime-800 hover:bg-lime-100';
       case 'hijau':
         return 'bg-green-100 text-green-800 hover:bg-green-100';
       case 'hitam':
@@ -2028,10 +2056,11 @@ const IGDTabs = () => {
           </SelectTrigger>
           <SelectContent>
             <SelectItem value="all">Semua Level</SelectItem>
-            <SelectItem value="T001">Merah</SelectItem>
-            <SelectItem value="T002">Kuning</SelectItem>
-            <SelectItem value="T003">Hijau</SelectItem>
-            <SelectItem value="T004">Hitam</SelectItem>
+            <SelectItem value="KL01">Merah</SelectItem>
+            <SelectItem value="KL02">Merah Muda</SelectItem>
+            <SelectItem value="KL03">Kuning</SelectItem>
+            <SelectItem value="KL04">Hijau Muda</SelectItem>
+            <SelectItem value="KL05">Hijau</SelectItem>
           </SelectContent>
         </Select>
 
@@ -2064,15 +2093,15 @@ const IGDTabs = () => {
       <TabsList className="mb-4">
         <TabsTrigger value="triase">
           <List className="mr-2 h-4 w-4" />
-          <span>Triase</span>
+          <span>Triase ({tabCounts.triase})</span>
         </TabsTrigger>
         <TabsTrigger value="observasi">
           <Clock className="mr-2 h-4 w-4" />
-          <span>Observasi</span>
+          <span>Observasi ({tabCounts.observasi})</span>
         </TabsTrigger>
         <TabsTrigger value="tindakan">
           <Check className="mr-2 h-4 w-4" />
-          <span>Tindakan</span>
+          <span>Tindakan ({tabCounts.tindakan})</span>
         </TabsTrigger>
       </TabsList>
 

@@ -1,6 +1,36 @@
 import db from '../config/database.js';
 
 class IgdDataService {
+  static normalizeTriaseLevelCode(value) {
+    const normalized = String(value || '').trim().toUpperCase();
+    const legacyMap = {
+      T001: 'KL01',
+      T002: 'KL03',
+      T003: 'KL05',
+      T004: 'KL02'
+    };
+
+    return legacyMap[normalized] || normalized;
+  }
+
+  static mapTriaseLevelLabel(kdLevel) {
+    const normalized = String(kdLevel || '').trim().toUpperCase();
+    switch (normalized) {
+      case 'KL01':
+        return 'Merah';
+      case 'KL02':
+        return 'Merah Muda';
+      case 'KL03':
+        return 'Kuning';
+      case 'KL04':
+        return 'Hijau Muda';
+      case 'KL05':
+        return 'Hijau';
+      default:
+        return 'Belum Triase';
+    }
+  }
+
   static getIgdPoliCodes() {
     const rawValue = String(process.env.IGD_POLI_CODES || '').trim();
     const parsedCodes = rawValue
@@ -40,9 +70,21 @@ class IgdDataService {
       const igdPoliCodes = IgdDataService.getIgdPoliCodes();
       const limit = parseInt(itemsPerPage) === -1 || parseInt(itemsPerPage) > 1000 ? 10000 : Math.min(parseInt(itemsPerPage), 1000);
       const offset = (parseInt(page) - 1) * (limit === 10000 ? 0 : limit);
-      // Build WHERE conditions
-      let whereConditions = [`r.kd_poli IN (${igdPoliCodes.map(() => '?').join(', ')})`];
-      let queryParams = [...igdPoliCodes];
+      const normalizedTriaseLevel = this.normalizeTriaseLevelCode(triaseLevel);
+      const triaseSummaryJoin = `
+        LEFT JOIN (
+          SELECT
+            dpt.no_rawat,
+            GROUP_CONCAT(DISTINCT mti.kd_tindakan ORDER BY mti.kd_tindakan SEPARATOR ', ') AS kd_tindakan,
+            GROUP_CONCAT(DISTINCT mti.nm_tindakan ORDER BY mti.nm_tindakan SEPARATOR ', ') AS nm_tindakan,
+            MIN(mti.kd_level) AS kd_level
+          FROM detail_pemeriksaan_triase dpt
+          INNER JOIN master_triase_igd mti ON mti.kd_tindakan = dpt.kd_tindakan
+          GROUP BY dpt.no_rawat
+        ) triase_summary ON triase_summary.no_rawat = r.no_rawat
+      `;
+      const baseWhereConditions = [`r.kd_poli IN (${igdPoliCodes.map(() => '?').join(', ')})`];
+      const baseQueryParams = [...igdPoliCodes];
 
       console.log('=== IGD Data Service Debug ===');
       console.log('Parameters received:', {
@@ -50,59 +92,68 @@ class IgdDataService {
       });
 
       if (search) {
-        whereConditions.push(`(p.nm_pasien LIKE ? OR r.no_rkm_medis LIKE ?)`);
-        queryParams.push(`%${search}%`, `%${search}%`);
+        baseWhereConditions.push(`(p.nm_pasien LIKE ? OR r.no_rkm_medis LIKE ?)`);
+        baseQueryParams.push(`%${search}%`, `%${search}%`);
       }
 
       if (dateFrom) {
-        whereConditions.push(`DATE(r.tgl_registrasi) >= ?`);
-        queryParams.push(dateFrom);
+        baseWhereConditions.push(`DATE(r.tgl_registrasi) >= ?`);
+        baseQueryParams.push(dateFrom);
       }
 
       if (dateTo) {
-        whereConditions.push(`DATE(r.tgl_registrasi) <= ?`);
-        queryParams.push(dateTo);
+        baseWhereConditions.push(`DATE(r.tgl_registrasi) <= ?`);
+        baseQueryParams.push(dateTo);
       }
 
-      if (triaseLevel && triaseLevel !== 'all') {
-        whereConditions.push(`mti.kd_level = ?`);
-        queryParams.push(triaseLevel);
-      }
-
-      // Tab-specific conditions
-      if (tab === 'triase') {
-        whereConditions.push(`mt.no_rawat IS NOT NULL`);
-      } else if (tab === 'observasi') {
-        whereConditions.push(`mt.no_rawat IS NOT NULL AND dpt.no_rawat IS NULL`);
-      } else if (tab === 'tindakan') {
-        whereConditions.push(`dpt.no_rawat IS NOT NULL`);
+      if (normalizedTriaseLevel && normalizedTriaseLevel !== 'ALL') {
+        baseWhereConditions.push(`triase_summary.kd_level = ?`);
+        baseQueryParams.push(normalizedTriaseLevel);
       }
 
       if (statusFilter && statusFilter !== 'all') {
         if (statusFilter === 'Triase') {
-          whereConditions.push(`mt.no_rawat IS NOT NULL AND dpt.no_rawat IS NULL`);
+          baseWhereConditions.push(`mt.no_rawat IS NOT NULL AND triase_summary.no_rawat IS NULL`);
         } else if (statusFilter === 'Selesai') {
-          whereConditions.push(`dpt.no_rawat IS NOT NULL`);
+          baseWhereConditions.push(`triase_summary.no_rawat IS NOT NULL`);
         } else if (statusFilter === 'Menunggu') {
-          whereConditions.push(`mt.no_rawat IS NULL`);
+          baseWhereConditions.push(`mt.no_rawat IS NULL`);
         }
       }
 
-      const whereClause = whereConditions.length > 0 ? `WHERE ${whereConditions.join(' AND ')}` : '';
+      const getTabCondition = (tabKey) => {
+        if (tabKey === 'triase') return `mt.no_rawat IS NOT NULL`;
+        if (tabKey === 'observasi') return `mt.no_rawat IS NOT NULL AND triase_summary.no_rawat IS NULL`;
+        if (tabKey === 'tindakan') return `triase_summary.no_rawat IS NOT NULL`;
+        return '';
+      };
 
-      // Count total records with deduplication
-      const countQuery = `
+      const buildWhereClause = (tabKey) => {
+        const conditions = [...baseWhereConditions];
+        const tabCondition = getTabCondition(tabKey);
+        if (tabCondition) {
+          conditions.push(tabCondition);
+        }
+        return conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
+      };
+
+      const buildCountQuery = (tabKey) => `
         SELECT COUNT(*) as total
         FROM (
           SELECT DISTINCT r.no_rawat
           FROM reg_periksa r
           LEFT JOIN pasien p ON r.no_rkm_medis = p.no_rkm_medis
           LEFT JOIN data_triase_igd mt ON r.no_rawat = mt.no_rawat
-          LEFT JOIN detail_pemeriksaan_triase dpt ON r.no_rawat = dpt.no_rawat
-          LEFT JOIN master_triase_igd mti ON mti.kd_tindakan = dpt.kd_tindakan
-          ${whereClause}
+          ${triaseSummaryJoin}
+          ${buildWhereClause(tabKey)}
         ) unique_records
       `;
+
+      const queryParams = [...baseQueryParams];
+      const whereClause = buildWhereClause(tab);
+
+      // Count total records with deduplication
+      const countQuery = buildCountQuery(tab);
 
       console.log('Count query:', countQuery);
       console.log('Count query params:', queryParams);
@@ -111,6 +162,18 @@ class IgdDataService {
       const total = countResult[0]?.total || 0;
       
       console.log('Total count result:', total);
+
+      const [triaseCountResult, observasiCountResult, tindakanCountResult] = await Promise.all([
+        db.execute(buildCountQuery('triase'), baseQueryParams),
+        db.execute(buildCountQuery('observasi'), baseQueryParams),
+        db.execute(buildCountQuery('tindakan'), baseQueryParams)
+      ]);
+
+      const tabCounts = {
+        triase: Number(triaseCountResult?.[0]?.[0]?.total || 0),
+        observasi: Number(observasiCountResult?.[0]?.[0]?.total || 0),
+        tindakan: Number(tindakanCountResult?.[0]?.[0]?.total || 0)
+      };
 
       const limitClause = limit === 10000 ? '' : `LIMIT ${limit} OFFSET ${offset}`;
 
@@ -127,18 +190,17 @@ class IgdDataService {
           mt.tanggal as tanggal_triase,
           mt.namakasus as namakasus,
           mt.stts_diantar as stts_diantar,
-          COALESCE(GROUP_CONCAT(DISTINCT mti.kd_tindakan ORDER BY mti.kd_tindakan SEPARATOR ', '), '') as kd_tindakan,
+          COALESCE(triase_summary.kd_tindakan, '') as kd_tindakan,
           COALESCE(
-            GROUP_CONCAT(DISTINCT mti.nm_tindakan ORDER BY mti.nm_tindakan SEPARATOR ', '),
+            triase_summary.nm_tindakan,
             NULLIF(mt.tindakan, ''),
             NULLIF(mt.diagnosis, ''),
             NULLIF(mt.keterangan, ''),
             'Belum Ada Tindakan'
           ) as nm_tindakan,
-          COALESCE(MAX(NULLIF(mti.nm_level, '')), 'Belum Triase') as triase_level,
-          COALESCE(MAX(NULLIF(mti.kd_level, '')), '') as kd_level,
+          COALESCE(triase_summary.kd_level, '') as kd_level,
           CASE 
-            WHEN dpt.no_rawat IS NOT NULL THEN 'Selesai'
+            WHEN triase_summary.no_rawat IS NOT NULL THEN 'Selesai'
             WHEN mt.no_rawat IS NOT NULL THEN 'Triase'
             ELSE 'Menunggu'
           END as status
@@ -146,25 +208,8 @@ class IgdDataService {
         LEFT JOIN pasien p ON r.no_rkm_medis = p.no_rkm_medis
         LEFT JOIN dokter d ON r.kd_dokter = d.kd_dokter
         LEFT JOIN data_triase_igd mt ON r.no_rawat = mt.no_rawat
-        LEFT JOIN detail_pemeriksaan_triase dpt ON r.no_rawat = dpt.no_rawat
-        LEFT JOIN master_triase_igd mti ON mti.kd_tindakan = dpt.kd_tindakan
+        ${triaseSummaryJoin}
         ${whereClause}
-        GROUP BY
-          r.no_rawat,
-          r.no_rkm_medis,
-          p.nm_pasien,
-          r.tgl_registrasi,
-          r.jam_reg,
-          r.kd_dokter,
-          d.nm_dokter,
-          mt.tanggal,
-          mt.namakasus,
-          mt.stts_diantar,
-          r.stts,
-          mt.no_rawat,
-          mt.tindakan,
-          mt.diagnosis,
-          mt.keterangan
         ORDER BY r.tgl_registrasi DESC, r.jam_reg DESC
         ${limitClause}
       `;
@@ -183,6 +228,7 @@ class IgdDataService {
       
       const result = (igdResult || []).map((row) => ({
         ...row,
+        triase_level: this.mapTriaseLevelLabel(row.kd_level),
         tgl_registrasi: this.formatDateOnly(row.tgl_registrasi),
         tanggal_triase: this.formatDateOnly(row.tanggal_triase)
       }));
@@ -196,6 +242,7 @@ class IgdDataService {
         success: true,
         data: result,
         total,
+        tabCounts,
         limit,
         offset,
         page: parseInt(page),
