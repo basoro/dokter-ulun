@@ -5,6 +5,7 @@ class ResumePasienDataService {
   enumCaraKeluar = ['Atas Izin Dokter', 'Pindah RS', 'Pulang Atas Permintaan Sendiri', 'Lainnya'];
   enumKeadaan = ['Membaik', 'Sembuh', 'Keadaan Khusus', 'Meninggal'];
   enumDilanjutkan = ['Kembali Ke RS', 'RS Lain', 'Dokter Luar', 'Puskesmes', 'Lainnya'];
+  enumKondisiPulangRalan = ['Hidup', 'Meninggal'];
 
   buildInClausePlaceholders(values = []) {
     return values.map(() => '?').join(', ');
@@ -91,6 +92,11 @@ class ResumePasienDataService {
     }
   }
 
+  normalizeStatusRawat(statusRawat) {
+    const normalized = String(statusRawat || 'Ranap').trim().toLowerCase();
+    return normalized === 'ralan' ? 'Ralan' : 'Ranap';
+  }
+
   normalizeResumePayload(no_rawat, resumeData = {}) {
     const value = (key, fallback = '') => String(resumeData[key] ?? fallback).trim();
     const normalized = {
@@ -154,6 +160,154 @@ class ResumePasienDataService {
     }
 
     return normalized;
+  }
+
+  normalizeResumeRalanPayload(no_rawat, resumeData = {}) {
+    const value = (key, fallback = '') => String(resumeData[key] ?? fallback).trim();
+    const kondisiPulang = value('kondisi_pulang') || (String(resumeData.keadaan || '').trim() === 'Meninggal' ? 'Meninggal' : 'Hidup');
+    const normalized = {
+      no_rawat,
+      kd_dokter: value('kd_dokter'),
+      keluhan_utama: value('keluhan_utama'),
+      jalannya_penyakit: value('jalannya_penyakit'),
+      pemeriksaan_penunjang: value('pemeriksaan_penunjang'),
+      hasil_laborat: value('hasil_laborat'),
+      diagnosa_utama: value('diagnosa_utama'),
+      kd_diagnosa_utama: value('kd_diagnosa_utama'),
+      diagnosa_sekunder: value('diagnosa_sekunder'),
+      kd_diagnosa_sekunder: value('kd_diagnosa_sekunder'),
+      diagnosa_sekunder2: value('diagnosa_sekunder2'),
+      kd_diagnosa_sekunder2: value('kd_diagnosa_sekunder2'),
+      diagnosa_sekunder3: value('diagnosa_sekunder3'),
+      kd_diagnosa_sekunder3: value('kd_diagnosa_sekunder3'),
+      diagnosa_sekunder4: value('diagnosa_sekunder4'),
+      kd_diagnosa_sekunder4: value('kd_diagnosa_sekunder4'),
+      prosedur_utama: value('prosedur_utama'),
+      kd_prosedur_utama: value('kd_prosedur_utama'),
+      prosedur_sekunder: value('prosedur_sekunder'),
+      kd_prosedur_sekunder: value('kd_prosedur_sekunder'),
+      prosedur_sekunder2: value('prosedur_sekunder2'),
+      kd_prosedur_sekunder2: value('kd_prosedur_sekunder2'),
+      prosedur_sekunder3: value('prosedur_sekunder3'),
+      kd_prosedur_sekunder3: value('kd_prosedur_sekunder3'),
+      kondisi_pulang: kondisiPulang,
+      obat_pulang: value('obat_pulang')
+    };
+
+    if (!normalized.kd_dokter) {
+      throw new Error('kd_dokter wajib diisi');
+    }
+
+    if (!this.enumKondisiPulangRalan.includes(normalized.kondisi_pulang)) {
+      throw new Error('kondisi_pulang tidak valid');
+    }
+
+    return normalized;
+  }
+
+  splitGroupedValues(value, maxItems) {
+    return String(value || '')
+      .split(';')
+      .map((item) => item.trim())
+      .filter(Boolean)
+      .slice(0, maxItems);
+  }
+
+  async getRalanResumeDefaults(no_rawat) {
+    const [keluhanRows, diagnosaRows, prosedurRows, terapiPemberianRows, terapiResepRows, terapiRacikanRows] = await Promise.all([
+      executeQuery(
+        `
+          SELECT keluhan
+          FROM pemeriksaan_ralan
+          WHERE no_rawat = ?
+          ORDER BY tgl_perawatan DESC, jam_rawat DESC
+          LIMIT 1
+        `,
+        [no_rawat]
+      ),
+      executeQuery(
+        `
+          SELECT dp.kd_penyakit, py.nm_penyakit
+          FROM diagnosa_pasien dp
+          INNER JOIN penyakit py ON py.kd_penyakit = dp.kd_penyakit
+          WHERE dp.no_rawat = ? AND dp.status = 'Ralan'
+          ORDER BY CAST(COALESCE(NULLIF(dp.prioritas, ''), '0') AS UNSIGNED) ASC, dp.kd_penyakit ASC
+          LIMIT 5
+        `,
+        [no_rawat]
+      ),
+      executeQuery(
+        `
+          SELECT pp.kode, icd9.deskripsi_panjang
+          FROM prosedur_pasien pp
+          INNER JOIN icd9 ON icd9.kode = pp.kode
+          WHERE pp.no_rawat = ? AND pp.status = 'Ralan'
+          ORDER BY CAST(COALESCE(NULLIF(pp.prioritas, ''), '0') AS UNSIGNED) ASC, pp.kode ASC
+          LIMIT 4
+        `,
+        [no_rawat]
+      ),
+      executeQuery(
+        `
+          SELECT GROUP_CONCAT(DISTINCT db.nama_brng ORDER BY db.nama_brng ASC SEPARATOR '\n') AS terapi
+          FROM detail_pemberian_obat dpo
+          INNER JOIN databarang db ON db.kode_brng = dpo.kode_brng
+          WHERE dpo.no_rawat = ? AND LOWER(COALESCE(dpo.status, '')) = 'ralan'
+        `,
+        [no_rawat]
+      ),
+      executeQuery(
+        `
+          SELECT GROUP_CONCAT(DISTINCT db.nama_brng ORDER BY db.nama_brng ASC SEPARATOR '\n') AS terapi
+          FROM resep_obat ro
+          INNER JOIN resep_dokter rd ON rd.no_resep = ro.no_resep
+          INNER JOIN databarang db ON db.kode_brng = rd.kode_brng
+          WHERE ro.no_rawat = ? AND LOWER(COALESCE(ro.status, '')) = 'ralan'
+        `,
+        [no_rawat]
+      ),
+      executeQuery(
+        `
+          SELECT GROUP_CONCAT(DISTINCT db.nama_brng ORDER BY db.nama_brng ASC SEPARATOR '\n') AS terapi
+          FROM resep_obat ro
+          INNER JOIN resep_dokter_racikan_detail rdrd ON rdrd.no_resep = ro.no_resep
+          INNER JOIN databarang db ON db.kode_brng = rdrd.kode_brng
+          WHERE ro.no_rawat = ? AND LOWER(COALESCE(ro.status, '')) = 'ralan'
+        `,
+        [no_rawat]
+      )
+    ]);
+
+    const diagnosaList = Array.isArray(diagnosaRows) ? diagnosaRows : [];
+    const prosedurList = Array.isArray(prosedurRows) ? prosedurRows : [];
+    const terapi = [
+      terapiResepRows?.[0]?.terapi,
+      terapiRacikanRows?.[0]?.terapi,
+      terapiPemberianRows?.[0]?.terapi
+    ].find((item) => String(item || '').trim()) || '';
+
+    return {
+      keluhan_utama: String(keluhanRows?.[0]?.keluhan || '').trim(),
+      diagnosa_utama: diagnosaList[0]?.nm_penyakit || '',
+      kd_diagnosa_utama: diagnosaList[0]?.kd_penyakit || '',
+      diagnosa_sekunder: diagnosaList[1]?.nm_penyakit || '',
+      kd_diagnosa_sekunder: diagnosaList[1]?.kd_penyakit || '',
+      diagnosa_sekunder2: diagnosaList[2]?.nm_penyakit || '',
+      kd_diagnosa_sekunder2: diagnosaList[2]?.kd_penyakit || '',
+      diagnosa_sekunder3: diagnosaList[3]?.nm_penyakit || '',
+      kd_diagnosa_sekunder3: diagnosaList[3]?.kd_penyakit || '',
+      diagnosa_sekunder4: diagnosaList[4]?.nm_penyakit || '',
+      kd_diagnosa_sekunder4: diagnosaList[4]?.kd_penyakit || '',
+      prosedur_utama: prosedurList[0]?.deskripsi_panjang || '',
+      kd_prosedur_utama: prosedurList[0]?.kode || '',
+      prosedur_sekunder: prosedurList[1]?.deskripsi_panjang || '',
+      kd_prosedur_sekunder: prosedurList[1]?.kode || '',
+      prosedur_sekunder2: prosedurList[2]?.deskripsi_panjang || '',
+      kd_prosedur_sekunder2: prosedurList[2]?.kode || '',
+      prosedur_sekunder3: prosedurList[3]?.deskripsi_panjang || '',
+      kd_prosedur_sekunder3: prosedurList[3]?.kode || '',
+      obat_pulang: String(terapi || '').trim()
+    };
   }
 
   // Get resume pasien data with pagination and filters
@@ -362,7 +516,16 @@ class ResumePasienDataService {
   }
 
   // Get resume detail for specific patient
-  async getResumeDetail(no_rawat) {
+  async getResumeDetail(no_rawat, statusRawat = 'Ranap', kdDokter = '') {
+    const normalizedStatusRawat = this.normalizeStatusRawat(statusRawat);
+    if (normalizedStatusRawat === 'Ralan') {
+      return this.getResumeDetailRalan(no_rawat, kdDokter);
+    }
+
+    return this.getResumeDetailRanap(no_rawat);
+  }
+
+  async getResumeDetailRanap(no_rawat) {
     if (!no_rawat) {
       throw new Error('no_rawat is required');
     }
@@ -519,8 +682,123 @@ class ResumePasienDataService {
     }
   }
 
+  async getResumeDetailRalan(no_rawat, kdDokter = '') {
+    if (!no_rawat) {
+      throw new Error('no_rawat is required');
+    }
+
+    const normalizedKdDokter = String(kdDokter || '').trim();
+    if (!normalizedKdDokter) {
+      throw new Error('kd_dokter is required');
+    }
+
+    const query = `
+      SELECT
+        rp.no_rawat,
+        rp.kd_dokter AS kd_dokter_reg,
+        regDok.nm_dokter AS dokter_reg,
+        p.no_rkm_medis,
+        p.nm_pasien,
+        p.jk AS jenis_kelamin,
+        p.tgl_lahir,
+        rpr.kd_dokter,
+        COALESCE(penulis.nm_dokter, rpr.kd_dokter, '') AS dokter_penulis,
+        COALESCE(rpr.keluhan_utama, '') AS keluhan_utama,
+        COALESCE(rpr.jalannya_penyakit, '') AS jalannya_penyakit,
+        COALESCE(rpr.pemeriksaan_penunjang, '') AS pemeriksaan_penunjang,
+        COALESCE(rpr.hasil_laborat, '') AS hasil_laborat,
+        COALESCE(rpr.diagnosa_utama, '') AS diagnosa_utama,
+        COALESCE(rpr.kd_diagnosa_utama, '') AS kd_diagnosa_utama,
+        COALESCE(rpr.diagnosa_sekunder, '') AS diagnosa_sekunder,
+        COALESCE(rpr.kd_diagnosa_sekunder, '') AS kd_diagnosa_sekunder,
+        COALESCE(rpr.diagnosa_sekunder2, '') AS diagnosa_sekunder2,
+        COALESCE(rpr.kd_diagnosa_sekunder2, '') AS kd_diagnosa_sekunder2,
+        COALESCE(rpr.diagnosa_sekunder3, '') AS diagnosa_sekunder3,
+        COALESCE(rpr.kd_diagnosa_sekunder3, '') AS kd_diagnosa_sekunder3,
+        COALESCE(rpr.diagnosa_sekunder4, '') AS diagnosa_sekunder4,
+        COALESCE(rpr.kd_diagnosa_sekunder4, '') AS kd_diagnosa_sekunder4,
+        COALESCE(rpr.prosedur_utama, '') AS prosedur_utama,
+        COALESCE(rpr.kd_prosedur_utama, '') AS kd_prosedur_utama,
+        COALESCE(rpr.prosedur_sekunder, '') AS prosedur_sekunder,
+        COALESCE(rpr.kd_prosedur_sekunder, '') AS kd_prosedur_sekunder,
+        COALESCE(rpr.prosedur_sekunder2, '') AS prosedur_sekunder2,
+        COALESCE(rpr.kd_prosedur_sekunder2, '') AS kd_prosedur_sekunder2,
+        COALESCE(rpr.prosedur_sekunder3, '') AS prosedur_sekunder3,
+        COALESCE(rpr.kd_prosedur_sekunder3, '') AS kd_prosedur_sekunder3,
+        COALESCE(rpr.kondisi_pulang, 'Hidup') AS kondisi_pulang,
+        COALESCE(rpr.obat_pulang, '') AS obat_pulang,
+        CASE WHEN rpr.no_rawat IS NULL THEN 0 ELSE 1 END AS has_resume
+      FROM reg_periksa rp
+      LEFT JOIN pasien p ON rp.no_rkm_medis = p.no_rkm_medis
+      LEFT JOIN dokter regDok ON rp.kd_dokter = regDok.kd_dokter
+      LEFT JOIN resume_pasien rpr
+        ON rp.no_rawat = rpr.no_rawat
+       AND rpr.kd_dokter = ?
+      LEFT JOIN dokter penulis ON rpr.kd_dokter = penulis.kd_dokter
+      WHERE rp.no_rawat = ?
+      LIMIT 1
+    `;
+
+    try {
+      const result = await executeQuery(query, [normalizedKdDokter, no_rawat]);
+
+      if (result.length === 0) {
+        return {
+          success: false,
+          error: 'Resume not found'
+        };
+      }
+
+      const baseData = result[0];
+      const defaults = await this.getRalanResumeDefaults(no_rawat);
+      const formattedData = {
+        ...baseData,
+        ...(Number(baseData.has_resume || 0) ? {} : defaults),
+        no_rawat: baseData.no_rawat,
+        kd_dokter: baseData.kd_dokter || normalizedKdDokter,
+        dokter_penulis: baseData.dokter_penulis || baseData.dokter_reg || normalizedKdDokter,
+        tgl_lahir: this.formatDateOnly(baseData.tgl_lahir),
+        diagnosa_awal: '',
+        alasan: '',
+        pemeriksaan_fisik: '',
+        tindakan_dan_operasi: '',
+        obat_di_rs: '',
+        alergi: '',
+        diet: '',
+        lab_belum: '',
+        edukasi: '',
+        cara_keluar: 'Atas Izin Dokter',
+        ket_keluar: '',
+        keadaan: baseData.kondisi_pulang === 'Meninggal' ? 'Meninggal' : 'Membaik',
+        ket_keadaan: '',
+        dilanjutkan: 'Kembali Ke RS',
+        ket_dilanjutkan: '',
+        kontrol: '',
+        obat_pulang: String(baseData.obat_pulang || '').trim() || String(defaults.obat_pulang || '').trim(),
+        has_resume: Number(baseData.has_resume || 0)
+      };
+
+      return {
+        success: true,
+        data: formattedData
+      };
+    } catch (error) {
+      console.error('Error getting ralan resume detail:', error);
+      throw error;
+    }
+  }
+
   // Create or update resume pasien
-  async saveResume(no_rawat, resumeData) {
+  async saveResume(no_rawat, resumeData, statusRawat = 'Ranap') {
+    const normalizedStatusRawat = this.normalizeStatusRawat(statusRawat);
+    if (normalizedStatusRawat === 'Ralan') {
+      return this.saveResumeRalan(no_rawat, resumeData);
+    }
+
+    return this.saveResumeRanap(no_rawat, resumeData);
+  }
+
+  async saveResumeRanap(no_rawat, resumeData) {
     if (!no_rawat) {
       throw new Error('no_rawat is required');
     }
@@ -640,8 +918,150 @@ class ResumePasienDataService {
     }
   }
 
+  async saveResumeRalan(no_rawat, resumeData) {
+    if (!no_rawat) {
+      throw new Error('no_rawat is required');
+    }
+
+    try {
+      const normalized = this.normalizeResumeRalanPayload(no_rawat, resumeData);
+      const existingRows = await executeQuery(
+        `
+          SELECT no_rawat
+          FROM resume_pasien
+          WHERE no_rawat = ? AND kd_dokter = ?
+          LIMIT 1
+        `,
+        [normalized.no_rawat, normalized.kd_dokter]
+      );
+
+      if (existingRows.length > 0) {
+        await executeQuery(
+          `
+            UPDATE resume_pasien
+            SET
+              keluhan_utama = ?,
+              jalannya_penyakit = ?,
+              pemeriksaan_penunjang = ?,
+              hasil_laborat = ?,
+              diagnosa_utama = ?,
+              kd_diagnosa_utama = ?,
+              diagnosa_sekunder = ?,
+              kd_diagnosa_sekunder = ?,
+              diagnosa_sekunder2 = ?,
+              kd_diagnosa_sekunder2 = ?,
+              diagnosa_sekunder3 = ?,
+              kd_diagnosa_sekunder3 = ?,
+              diagnosa_sekunder4 = ?,
+              kd_diagnosa_sekunder4 = ?,
+              prosedur_utama = ?,
+              kd_prosedur_utama = ?,
+              prosedur_sekunder = ?,
+              kd_prosedur_sekunder = ?,
+              prosedur_sekunder2 = ?,
+              kd_prosedur_sekunder2 = ?,
+              prosedur_sekunder3 = ?,
+              kd_prosedur_sekunder3 = ?,
+              kondisi_pulang = ?,
+              obat_pulang = ?
+            WHERE no_rawat = ? AND kd_dokter = ?
+          `,
+          [
+            normalized.keluhan_utama,
+            normalized.jalannya_penyakit,
+            normalized.pemeriksaan_penunjang,
+            normalized.hasil_laborat,
+            normalized.diagnosa_utama,
+            normalized.kd_diagnosa_utama,
+            normalized.diagnosa_sekunder,
+            normalized.kd_diagnosa_sekunder,
+            normalized.diagnosa_sekunder2,
+            normalized.kd_diagnosa_sekunder2,
+            normalized.diagnosa_sekunder3,
+            normalized.kd_diagnosa_sekunder3,
+            normalized.diagnosa_sekunder4,
+            normalized.kd_diagnosa_sekunder4,
+            normalized.prosedur_utama,
+            normalized.kd_prosedur_utama,
+            normalized.prosedur_sekunder,
+            normalized.kd_prosedur_sekunder,
+            normalized.prosedur_sekunder2,
+            normalized.kd_prosedur_sekunder2,
+            normalized.prosedur_sekunder3,
+            normalized.kd_prosedur_sekunder3,
+            normalized.kondisi_pulang,
+            normalized.obat_pulang,
+            normalized.no_rawat,
+            normalized.kd_dokter
+          ]
+        );
+      } else {
+        await executeQuery(
+          `
+            INSERT INTO resume_pasien (
+              no_rawat, kd_dokter, keluhan_utama, jalannya_penyakit, pemeriksaan_penunjang,
+              hasil_laborat, diagnosa_utama, kd_diagnosa_utama, diagnosa_sekunder,
+              kd_diagnosa_sekunder, diagnosa_sekunder2, kd_diagnosa_sekunder2,
+              diagnosa_sekunder3, kd_diagnosa_sekunder3, diagnosa_sekunder4,
+              kd_diagnosa_sekunder4, prosedur_utama, kd_prosedur_utama, prosedur_sekunder,
+              kd_prosedur_sekunder, prosedur_sekunder2, kd_prosedur_sekunder2,
+              prosedur_sekunder3, kd_prosedur_sekunder3, kondisi_pulang, obat_pulang
+            ) VALUES (
+              ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
+            )
+          `,
+          [
+            normalized.no_rawat,
+            normalized.kd_dokter,
+            normalized.keluhan_utama,
+            normalized.jalannya_penyakit,
+            normalized.pemeriksaan_penunjang,
+            normalized.hasil_laborat,
+            normalized.diagnosa_utama,
+            normalized.kd_diagnosa_utama,
+            normalized.diagnosa_sekunder,
+            normalized.kd_diagnosa_sekunder,
+            normalized.diagnosa_sekunder2,
+            normalized.kd_diagnosa_sekunder2,
+            normalized.diagnosa_sekunder3,
+            normalized.kd_diagnosa_sekunder3,
+            normalized.diagnosa_sekunder4,
+            normalized.kd_diagnosa_sekunder4,
+            normalized.prosedur_utama,
+            normalized.kd_prosedur_utama,
+            normalized.prosedur_sekunder,
+            normalized.kd_prosedur_sekunder,
+            normalized.prosedur_sekunder2,
+            normalized.kd_prosedur_sekunder2,
+            normalized.prosedur_sekunder3,
+            normalized.kd_prosedur_sekunder3,
+            normalized.kondisi_pulang,
+            normalized.obat_pulang
+          ]
+        );
+      }
+
+      return {
+        success: true,
+        message: 'Resume rawat jalan berhasil disimpan'
+      };
+    } catch (error) {
+      console.error('Error saving ralan resume:', error);
+      throw error;
+    }
+  }
+
   // Delete resume pasien
-  async deleteResume(no_rawat) {
+  async deleteResume(no_rawat, statusRawat = 'Ranap', kdDokter = '') {
+    const normalizedStatusRawat = this.normalizeStatusRawat(statusRawat);
+    if (normalizedStatusRawat === 'Ralan') {
+      return this.deleteResumeRalan(no_rawat, kdDokter);
+    }
+
+    return this.deleteResumeRanap(no_rawat);
+  }
+
+  async deleteResumeRanap(no_rawat) {
     if (!no_rawat) {
       throw new Error('no_rawat is required');
     }
@@ -664,6 +1084,38 @@ class ResumePasienDataService {
       };
     } catch (error) {
       console.error('Error deleting resume:', error);
+      throw error;
+    }
+  }
+
+  async deleteResumeRalan(no_rawat, kdDokter = '') {
+    if (!no_rawat) {
+      throw new Error('no_rawat is required');
+    }
+
+    const normalizedKdDokter = String(kdDokter || '').trim();
+    if (!normalizedKdDokter) {
+      throw new Error('kd_dokter is required');
+    }
+
+    const query = 'DELETE FROM resume_pasien WHERE no_rawat = ? AND kd_dokter = ?';
+
+    try {
+      const result = await executeQuery(query, [no_rawat, normalizedKdDokter]);
+
+      if (result.affectedRows === 0) {
+        return {
+          success: false,
+          error: 'Resume not found'
+        };
+      }
+
+      return {
+        success: true,
+        message: 'Resume rawat jalan berhasil dihapus'
+      };
+    } catch (error) {
+      console.error('Error deleting ralan resume:', error);
       throw error;
     }
   }

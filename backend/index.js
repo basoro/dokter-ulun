@@ -1740,6 +1740,7 @@ app.post('/api/resume-pasien-data', async (req, res) => {
 app.get('/api/resume-pasien-data/:no_rawat', async (req, res) => {
   try {
     const { no_rawat } = req.params;
+    const { status_rawat = 'Ranap', kd_dokter = '' } = req.query;
     
     if (!no_rawat) {
       return res.status(400).json({
@@ -1748,7 +1749,7 @@ app.get('/api/resume-pasien-data/:no_rawat', async (req, res) => {
       });
     }
 
-    const result = await ResumePasienDataService.getResumeDetail(no_rawat);
+    const result = await ResumePasienDataService.getResumeDetail(no_rawat, status_rawat, kd_dokter);
     res.json(result);
   } catch (error) {
     console.error('Resume detail error:', error);
@@ -1763,6 +1764,7 @@ app.post('/api/resume-pasien-data/:no_rawat', async (req, res) => {
   try {
     const { no_rawat } = req.params;
     const resumeData = req.body;
+    const statusRawat = String(req.body?.status_rawat || 'Ranap').trim();
     
     if (!no_rawat) {
       return res.status(400).json({
@@ -1771,7 +1773,7 @@ app.post('/api/resume-pasien-data/:no_rawat', async (req, res) => {
       });
     }
 
-    const result = await ResumePasienDataService.saveResume(no_rawat, resumeData);
+    const result = await ResumePasienDataService.saveResume(no_rawat, resumeData, statusRawat);
     res.json(result);
   } catch (error) {
     console.error('Save resume error:', error);
@@ -1785,6 +1787,7 @@ app.post('/api/resume-pasien-data/:no_rawat', async (req, res) => {
 app.delete('/api/resume-pasien-data/:no_rawat', async (req, res) => {
   try {
     const { no_rawat } = req.params;
+    const { status_rawat = 'Ranap', kd_dokter = '' } = req.query;
     
     if (!no_rawat) {
       return res.status(400).json({
@@ -1793,7 +1796,7 @@ app.delete('/api/resume-pasien-data/:no_rawat', async (req, res) => {
       });
     }
 
-    const result = await ResumePasienDataService.deleteResume(no_rawat);
+    const result = await ResumePasienDataService.deleteResume(no_rawat, status_rawat, kd_dokter);
     res.json(result);
   } catch (error) {
     console.error('Delete resume error:', error);

@@ -80,6 +80,7 @@ interface MedicalResumeModalProps {
   isOpen: boolean;
   onClose: () => void;
   noRawat: string;
+  defaultStatusRawat?: 'Ralan' | 'Ranap';
 }
 
 interface ResumeRanapExamination {
@@ -319,12 +320,19 @@ const createEmptySourceData = (): ResumeSourceData => ({
   dischargeMedicationRequests: [],
 });
 
-export const MedicalResumeModal: React.FC<MedicalResumeModalProps> = ({ isOpen, onClose, noRawat }) => {
+export const MedicalResumeModal: React.FC<MedicalResumeModalProps> = ({
+  isOpen,
+  onClose,
+  noRawat,
+  defaultStatusRawat = 'Ranap'
+}) => {
   const { user } = useAuth();
   const { toast } = useToast();
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  const currentStatusRawat = defaultStatusRawat === 'Ralan' ? 'Ralan' : 'Ranap';
+  const isRalan = currentStatusRawat === 'Ralan';
   const currentDoctorCode = user?.kd_dokter || user?.username || '';
   const currentDoctorName = user?.name || user?.username || '-';
   const caraKeluarOptions = ['Atas Izin Dokter', 'Pindah RS', 'Pulang Atas Permintaan Sendiri', 'Lainnya'];
@@ -390,7 +398,7 @@ export const MedicalResumeModal: React.FC<MedicalResumeModalProps> = ({ isOpen, 
     if (isOpen) {
       void fetchResume();
     }
-  }, [isOpen, noRawat]);
+  }, [currentDoctorCode, currentStatusRawat, isOpen, noRawat]);
 
   useEffect(() => {
     if (!loading) {
@@ -411,7 +419,9 @@ export const MedicalResumeModal: React.FC<MedicalResumeModalProps> = ({ isOpen, 
 
     setLoading(true);
     try {
-      const response = await fetch(`${API_URLS.RESUME_PASIEN_DATA}/${encodeURIComponent(noRawat)}`);
+      const response = await fetch(
+        `${API_URLS.RESUME_PASIEN_DATA}/${encodeURIComponent(noRawat)}?status_rawat=${encodeURIComponent(currentStatusRawat)}&kd_dokter=${encodeURIComponent(currentDoctorCode)}`
+      );
       if (!response.ok) {
         throw new Error(`HTTP error! status: ${response.status}`);
       }
@@ -551,6 +561,7 @@ export const MedicalResumeModal: React.FC<MedicalResumeModalProps> = ({ isOpen, 
           ...formData,
           kd_dokter: currentDoctorCode,
           no_rawat: noRawat,
+          status_rawat: currentStatusRawat,
         }),
       });
 
@@ -583,9 +594,12 @@ export const MedicalResumeModal: React.FC<MedicalResumeModalProps> = ({ isOpen, 
     if (confirm('Apakah Anda yakin ingin menghapus resume medis ini?')) {
       try {
         setDeleting(true);
-        const response = await fetch(`${API_URLS.RESUME_PASIEN_DATA}/${encodeURIComponent(noRawat)}`, {
+        const response = await fetch(
+          `${API_URLS.RESUME_PASIEN_DATA}/${encodeURIComponent(noRawat)}?status_rawat=${encodeURIComponent(currentStatusRawat)}&kd_dokter=${encodeURIComponent(currentDoctorCode)}`,
+          {
           method: 'DELETE',
-        });
+          }
+        );
 
         const result = await response.json();
         if (!response.ok || !result.success) {
@@ -834,17 +848,21 @@ export const MedicalResumeModal: React.FC<MedicalResumeModalProps> = ({ isOpen, 
         return {
           target,
           title: 'Pilih Keluhan Utama',
-          description: 'Tampilkan semua data subjektif dari tabel pemeriksaan ranap sesuai nomor rawat, lalu pilih yang ingin dimasukkan.',
-          emptyMessage: 'Belum ada data keluhan utama dari pemeriksaan ranap.',
+          description: isRalan
+            ? 'Tampilkan semua data subjektif dari tabel pemeriksaan_ralan sesuai nomor rawat, lalu pilih yang ingin dimasukkan.'
+            : 'Tampilkan semua data subjektif dari tabel pemeriksaan ranap sesuai nomor rawat, lalu pilih yang ingin dimasukkan.',
+          emptyMessage: isRalan
+            ? 'Belum ada data keluhan utama dari pemeriksaan_ralan.'
+            : 'Belum ada data keluhan utama dari pemeriksaan ranap.',
           multiple: true,
-          items: currentSourceData.examinations
+          items: (isRalan ? currentSourceData.outpatientExaminations : currentSourceData.examinations)
             .filter((item) => String(item.s || '').trim())
             .slice()
             .sort((a, b) => getExaminationSortTimestamp(a) - getExaminationSortTimestamp(b))
             .map((item, index) => ({
               id: `keluhan-${index}-${item.tanggal}`,
               title: item.tanggal || `Pemeriksaan ${index + 1}`,
-              subtitle: item.pegawai || 'Pemeriksaan Ranap',
+              subtitle: item.pegawai || (isRalan ? 'Pemeriksaan Rawat Jalan' : 'Pemeriksaan Ranap'),
               description: item.s,
               value: item.s
             }))
@@ -872,16 +890,20 @@ export const MedicalResumeModal: React.FC<MedicalResumeModalProps> = ({ isOpen, 
         return {
           target,
           title: 'Pilih Jalannya Penyakit',
-          description: 'Tampilkan semua entri SOAPIE dari tabel pemeriksaan ranap sesuai nomor rawat, lalu pilih data yang diperlukan.',
-          emptyMessage: 'Belum ada data jalannya penyakit dari pemeriksaan ranap.',
+          description: isRalan
+            ? 'Tampilkan semua entri SOAP dari tabel pemeriksaan_ralan sesuai nomor rawat, lalu pilih data yang diperlukan.'
+            : 'Tampilkan semua entri SOAPIE dari tabel pemeriksaan ranap sesuai nomor rawat, lalu pilih data yang diperlukan.',
+          emptyMessage: isRalan
+            ? 'Belum ada data jalannya penyakit dari pemeriksaan_ralan.'
+            : 'Belum ada data jalannya penyakit dari pemeriksaan ranap.',
           multiple: true,
-          items: currentSourceData.examinations
+          items: (isRalan ? currentSourceData.outpatientExaminations : currentSourceData.examinations)
             .slice()
             .sort((a, b) => getExaminationSortTimestamp(a) - getExaminationSortTimestamp(b))
             .map((item, index) => ({
               id: `soap-${index}-${item.tanggal}`,
               title: item.tanggal || `Pemeriksaan ${index + 1}`,
-              subtitle: item.pegawai || 'Pemeriksaan Ranap',
+              subtitle: item.pegawai || (isRalan ? 'Pemeriksaan Rawat Jalan' : 'Pemeriksaan Ranap'),
               description: [item.s, item.o, item.a, item.p, item.i, item.e].filter(Boolean).join('\n'),
               value: [
                 item.tanggal ? `Tanggal: ${item.tanggal}` : '',
@@ -900,7 +922,7 @@ export const MedicalResumeModal: React.FC<MedicalResumeModalProps> = ({ isOpen, 
         return {
           target,
           title: 'Pilih Pemeriksaan Penunjang',
-          description: 'Tampilkan semua data pemeriksaan laboratorium dan radiologi sesuai nomor rawat, lalu pilih yang ingin dimasukkan.',
+          description: `Tampilkan semua data pemeriksaan laboratorium dan radiologi ${isRalan ? 'rawat jalan' : 'sesuai nomor rawat'}, lalu pilih yang ingin dimasukkan.`,
           emptyMessage: 'Belum ada data pemeriksaan lab atau radiologi untuk nomor rawat ini.',
           multiple: true,
           items: [
@@ -933,7 +955,7 @@ export const MedicalResumeModal: React.FC<MedicalResumeModalProps> = ({ isOpen, 
         return {
           target,
           title: 'Pilih Hasil Laborat',
-          description: 'Tampilkan semua hasil pemeriksaan laboratorium sesuai nomor rawat, lalu pilih yang ingin dimasukkan.',
+          description: `Tampilkan semua hasil pemeriksaan laboratorium ${isRalan ? 'rawat jalan' : 'sesuai nomor rawat'}, lalu pilih yang ingin dimasukkan.`,
           emptyMessage: 'Belum ada hasil pemeriksaan laboratorium untuk nomor rawat ini.',
           multiple: true,
           items: currentSourceData.laboratoryResults
@@ -1183,7 +1205,7 @@ export const MedicalResumeModal: React.FC<MedicalResumeModalProps> = ({ isOpen, 
         <div className="space-y-4">
           <Card>
             <CardHeader>
-              <CardTitle className="text-base">Informasi Rawat Inap</CardTitle>
+              <CardTitle className="text-base">{isRalan ? 'Informasi Rawat Jalan' : 'Informasi Rawat Inap'}</CardTitle>
             </CardHeader>
             <CardContent className="grid grid-cols-1 md:grid-cols-3 gap-4 text-sm">
               <div>
@@ -1198,18 +1220,27 @@ export const MedicalResumeModal: React.FC<MedicalResumeModalProps> = ({ isOpen, 
                 <p className="text-muted-foreground">Dokter Penulis</p>
                 <p className="font-medium">{formData.dokter_penulis || currentDoctorName}</p>
               </div>
-              <div>
-                <p className="text-muted-foreground">Tanggal Masuk</p>
-                <p className="font-medium">{formData.tgl_masuk || '-'}</p>
-              </div>
-              <div>
-                <p className="text-muted-foreground">Tanggal Keluar</p>
-                <p className="font-medium">{formData.tgl_keluar || '-'}</p>
-              </div>
-              <div>
-                <p className="text-muted-foreground">Bangsal / Kamar</p>
-                <p className="font-medium">{formData.nm_bangsal || '-'} {formData.kd_kamar ? `- ${formData.kd_kamar}` : ''}</p>
-              </div>
+              {isRalan ? (
+                <div>
+                  <p className="text-muted-foreground">Dokter Pemeriksa</p>
+                  <p className="font-medium">{formData.dokter_reg || '-'}</p>
+                </div>
+              ) : (
+                <>
+                  <div>
+                    <p className="text-muted-foreground">Tanggal Masuk</p>
+                    <p className="font-medium">{formData.tgl_masuk || '-'}</p>
+                  </div>
+                  <div>
+                    <p className="text-muted-foreground">Tanggal Keluar</p>
+                    <p className="font-medium">{formData.tgl_keluar || '-'}</p>
+                  </div>
+                  <div>
+                    <p className="text-muted-foreground">Bangsal / Kamar</p>
+                    <p className="font-medium">{formData.nm_bangsal || '-'} {formData.kd_kamar ? `- ${formData.kd_kamar}` : ''}</p>
+                  </div>
+                </>
+              )}
             </CardContent>
           </Card>
 
@@ -1232,49 +1263,63 @@ export const MedicalResumeModal: React.FC<MedicalResumeModalProps> = ({ isOpen, 
                     ) : null}
                     <Button onClick={handleSave} disabled={saving}>
                       {saving ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : null}
-                      Simpan
+                      {formData.has_resume ? 'Update' : 'Simpan'}
                     </Button>
                   </div>
                 </CardTitle>
               </CardHeader>
               <CardContent className="space-y-6">
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <div>
-                    <Label htmlFor="diagnosa_awal">Diagnosa Awal</Label>
-                    <Input id="diagnosa_awal" value={formData.diagnosa_awal} onChange={(e) => updateField('diagnosa_awal', e.target.value)} />
-                  </div>
-                  <div>
-                    <Label htmlFor="alasan">Alasan</Label>
-                    <Input id="alasan" value={formData.alasan} onChange={(e) => updateField('alasan', e.target.value)} />
-                  </div>
+                  {!isRalan ? (
+                    <>
+                      <div>
+                        <Label htmlFor="diagnosa_awal">Diagnosa Awal</Label>
+                        <Input id="diagnosa_awal" value={formData.diagnosa_awal} onChange={(e) => updateField('diagnosa_awal', e.target.value)} />
+                      </div>
+                      <div>
+                        <Label htmlFor="alasan">Alasan</Label>
+                        <Input id="alasan" value={formData.alasan} onChange={(e) => updateField('alasan', e.target.value)} />
+                      </div>
+                    </>
+                  ) : null}
                   <div className="md:col-span-2">
                     {renderFieldLabel('keluhan_utama', 'Keluhan Utama', 'keluhan_utama')}
                     <Textarea id="keluhan_utama" rows={6} value={formData.keluhan_utama} onChange={(e) => updateField('keluhan_utama', e.target.value)} />
                   </div>
-                  <div className="md:col-span-2">
-                    {renderFieldLabel('pemeriksaan_fisik', 'Pemeriksaan Fisik', 'pemeriksaan_fisik')}
-                    <Textarea id="pemeriksaan_fisik" rows={6} value={formData.pemeriksaan_fisik} onChange={(e) => updateField('pemeriksaan_fisik', e.target.value)} />
-                  </div>
-                  <div className="md:col-span-2">
-                    {renderFieldLabel('jalannya_penyakit', 'Jalannya Penyakit', 'jalannya_penyakit')}
-                    <Textarea id="jalannya_penyakit" rows={6} value={formData.jalannya_penyakit} onChange={(e) => updateField('jalannya_penyakit', e.target.value)} />
-                  </div>
-                  <div>
-                    {renderFieldLabel('pemeriksaan_penunjang', 'Pemeriksaan Penunjang', 'pemeriksaan_penunjang')}
-                    <Textarea id="pemeriksaan_penunjang" rows={6} value={formData.pemeriksaan_penunjang} onChange={(e) => updateField('pemeriksaan_penunjang', e.target.value)} />
-                  </div>
-                  <div>
-                    {renderFieldLabel('hasil_laborat', 'Hasil Laborat', 'hasil_laborat')}
-                    <Textarea id="hasil_laborat" rows={6} value={formData.hasil_laborat} onChange={(e) => updateField('hasil_laborat', e.target.value)} />
-                  </div>
-                  <div>
-                    {renderFieldLabel('tindakan_dan_operasi', 'Tindakan dan Operasi', 'tindakan_dan_operasi')}
-                    <Textarea id="tindakan_dan_operasi" rows={6} value={formData.tindakan_dan_operasi} onChange={(e) => updateField('tindakan_dan_operasi', e.target.value)} />
-                  </div>
-                  <div>
-                    {renderFieldLabel('obat_di_rs', 'Obat di RS', 'obat_di_rs')}
-                    <Textarea id="obat_di_rs" rows={6} value={formData.obat_di_rs} onChange={(e) => updateField('obat_di_rs', e.target.value)} />
-                  </div>
+                  {!isRalan ? (
+                    <div className="md:col-span-2">
+                      {renderFieldLabel('pemeriksaan_fisik', 'Pemeriksaan Fisik', 'pemeriksaan_fisik')}
+                      <Textarea id="pemeriksaan_fisik" rows={6} value={formData.pemeriksaan_fisik} onChange={(e) => updateField('pemeriksaan_fisik', e.target.value)} />
+                    </div>
+                  ) : null}
+                  {!isRalan ? (
+                    <>
+                      <div className="md:col-span-2">
+                        {renderFieldLabel('jalannya_penyakit', 'Jalannya Penyakit', 'jalannya_penyakit')}
+                        <Textarea id="jalannya_penyakit" rows={6} value={formData.jalannya_penyakit} onChange={(e) => updateField('jalannya_penyakit', e.target.value)} />
+                      </div>
+                      <div>
+                        {renderFieldLabel('pemeriksaan_penunjang', 'Pemeriksaan Penunjang', 'pemeriksaan_penunjang')}
+                        <Textarea id="pemeriksaan_penunjang" rows={6} value={formData.pemeriksaan_penunjang} onChange={(e) => updateField('pemeriksaan_penunjang', e.target.value)} />
+                      </div>
+                      <div>
+                        {renderFieldLabel('hasil_laborat', 'Hasil Laborat', 'hasil_laborat')}
+                        <Textarea id="hasil_laborat" rows={6} value={formData.hasil_laborat} onChange={(e) => updateField('hasil_laborat', e.target.value)} />
+                      </div>
+                    </>
+                  ) : null}
+                  {!isRalan ? (
+                    <>
+                      <div>
+                        {renderFieldLabel('tindakan_dan_operasi', 'Tindakan dan Operasi', 'tindakan_dan_operasi')}
+                        <Textarea id="tindakan_dan_operasi" rows={6} value={formData.tindakan_dan_operasi} onChange={(e) => updateField('tindakan_dan_operasi', e.target.value)} />
+                      </div>
+                      <div>
+                        {renderFieldLabel('obat_di_rs', 'Obat di RS', 'obat_di_rs')}
+                        <Textarea id="obat_di_rs" rows={6} value={formData.obat_di_rs} onChange={(e) => updateField('obat_di_rs', e.target.value)} />
+                      </div>
+                    </>
+                  ) : null}
                 </div>
 
                 <div className="space-y-4">
@@ -1290,46 +1335,50 @@ export const MedicalResumeModal: React.FC<MedicalResumeModalProps> = ({ isOpen, 
                       onSelect={(name, code) => updateDiagnosisFields('diagnosa_utama', 'kd_diagnosa_utama', name, code)}
                       onClear={() => updateDiagnosisFields('diagnosa_utama', 'kd_diagnosa_utama', '', '')}
                     />
-                    <SearchableMedicalCodeField
-                      label="Diagnosa Sekunder 1"
-                      placeholder="Pilih diagnosa sekunder 1"
-                      emptyMessage="Tidak ada diagnosa ditemukan."
-                      selectedName={formData.diagnosa_sekunder}
-                      selectedCode={formData.kd_diagnosa_sekunder}
-                      type="icd10"
-                      onSelect={(name, code) => updateDiagnosisFields('diagnosa_sekunder', 'kd_diagnosa_sekunder', name, code)}
-                      onClear={() => updateDiagnosisFields('diagnosa_sekunder', 'kd_diagnosa_sekunder', '', '')}
-                    />
-                    <SearchableMedicalCodeField
-                      label="Diagnosa Sekunder 2"
-                      placeholder="Pilih diagnosa sekunder 2"
-                      emptyMessage="Tidak ada diagnosa ditemukan."
-                      selectedName={formData.diagnosa_sekunder2}
-                      selectedCode={formData.kd_diagnosa_sekunder2}
-                      type="icd10"
-                      onSelect={(name, code) => updateDiagnosisFields('diagnosa_sekunder2', 'kd_diagnosa_sekunder2', name, code)}
-                      onClear={() => updateDiagnosisFields('diagnosa_sekunder2', 'kd_diagnosa_sekunder2', '', '')}
-                    />
-                    <SearchableMedicalCodeField
-                      label="Diagnosa Sekunder 3"
-                      placeholder="Pilih diagnosa sekunder 3"
-                      emptyMessage="Tidak ada diagnosa ditemukan."
-                      selectedName={formData.diagnosa_sekunder3}
-                      selectedCode={formData.kd_diagnosa_sekunder3}
-                      type="icd10"
-                      onSelect={(name, code) => updateDiagnosisFields('diagnosa_sekunder3', 'kd_diagnosa_sekunder3', name, code)}
-                      onClear={() => updateDiagnosisFields('diagnosa_sekunder3', 'kd_diagnosa_sekunder3', '', '')}
-                    />
-                    <SearchableMedicalCodeField
-                      label="Diagnosa Sekunder 4"
-                      placeholder="Pilih diagnosa sekunder 4"
-                      emptyMessage="Tidak ada diagnosa ditemukan."
-                      selectedName={formData.diagnosa_sekunder4}
-                      selectedCode={formData.kd_diagnosa_sekunder4}
-                      type="icd10"
-                      onSelect={(name, code) => updateDiagnosisFields('diagnosa_sekunder4', 'kd_diagnosa_sekunder4', name, code)}
-                      onClear={() => updateDiagnosisFields('diagnosa_sekunder4', 'kd_diagnosa_sekunder4', '', '')}
-                    />
+                    {!isRalan ? (
+                      <>
+                        <SearchableMedicalCodeField
+                          label="Diagnosa Sekunder 1"
+                          placeholder="Pilih diagnosa sekunder 1"
+                          emptyMessage="Tidak ada diagnosa ditemukan."
+                          selectedName={formData.diagnosa_sekunder}
+                          selectedCode={formData.kd_diagnosa_sekunder}
+                          type="icd10"
+                          onSelect={(name, code) => updateDiagnosisFields('diagnosa_sekunder', 'kd_diagnosa_sekunder', name, code)}
+                          onClear={() => updateDiagnosisFields('diagnosa_sekunder', 'kd_diagnosa_sekunder', '', '')}
+                        />
+                        <SearchableMedicalCodeField
+                          label="Diagnosa Sekunder 2"
+                          placeholder="Pilih diagnosa sekunder 2"
+                          emptyMessage="Tidak ada diagnosa ditemukan."
+                          selectedName={formData.diagnosa_sekunder2}
+                          selectedCode={formData.kd_diagnosa_sekunder2}
+                          type="icd10"
+                          onSelect={(name, code) => updateDiagnosisFields('diagnosa_sekunder2', 'kd_diagnosa_sekunder2', name, code)}
+                          onClear={() => updateDiagnosisFields('diagnosa_sekunder2', 'kd_diagnosa_sekunder2', '', '')}
+                        />
+                        <SearchableMedicalCodeField
+                          label="Diagnosa Sekunder 3"
+                          placeholder="Pilih diagnosa sekunder 3"
+                          emptyMessage="Tidak ada diagnosa ditemukan."
+                          selectedName={formData.diagnosa_sekunder3}
+                          selectedCode={formData.kd_diagnosa_sekunder3}
+                          type="icd10"
+                          onSelect={(name, code) => updateDiagnosisFields('diagnosa_sekunder3', 'kd_diagnosa_sekunder3', name, code)}
+                          onClear={() => updateDiagnosisFields('diagnosa_sekunder3', 'kd_diagnosa_sekunder3', '', '')}
+                        />
+                        <SearchableMedicalCodeField
+                          label="Diagnosa Sekunder 4"
+                          placeholder="Pilih diagnosa sekunder 4"
+                          emptyMessage="Tidak ada diagnosa ditemukan."
+                          selectedName={formData.diagnosa_sekunder4}
+                          selectedCode={formData.kd_diagnosa_sekunder4}
+                          type="icd10"
+                          onSelect={(name, code) => updateDiagnosisFields('diagnosa_sekunder4', 'kd_diagnosa_sekunder4', name, code)}
+                          onClear={() => updateDiagnosisFields('diagnosa_sekunder4', 'kd_diagnosa_sekunder4', '', '')}
+                        />
+                      </>
+                    ) : null}
                   </div>
                 </div>
 
@@ -1346,124 +1395,135 @@ export const MedicalResumeModal: React.FC<MedicalResumeModalProps> = ({ isOpen, 
                       onSelect={(name, code) => updateProcedureFields('prosedur_utama', 'kd_prosedur_utama', name, code)}
                       onClear={() => updateProcedureFields('prosedur_utama', 'kd_prosedur_utama', '', '')}
                     />
-                    <SearchableMedicalCodeField
-                      label="Prosedur Sekunder 1"
-                      placeholder="Pilih prosedur sekunder 1"
-                      emptyMessage="Tidak ada prosedur ditemukan."
-                      selectedName={formData.prosedur_sekunder}
-                      selectedCode={formData.kd_prosedur_sekunder}
-                      type="icd9"
-                      onSelect={(name, code) => updateProcedureFields('prosedur_sekunder', 'kd_prosedur_sekunder', name, code)}
-                      onClear={() => updateProcedureFields('prosedur_sekunder', 'kd_prosedur_sekunder', '', '')}
-                    />
-                    <SearchableMedicalCodeField
-                      label="Prosedur Sekunder 2"
-                      placeholder="Pilih prosedur sekunder 2"
-                      emptyMessage="Tidak ada prosedur ditemukan."
-                      selectedName={formData.prosedur_sekunder2}
-                      selectedCode={formData.kd_prosedur_sekunder2}
-                      type="icd9"
-                      onSelect={(name, code) => updateProcedureFields('prosedur_sekunder2', 'kd_prosedur_sekunder2', name, code)}
-                      onClear={() => updateProcedureFields('prosedur_sekunder2', 'kd_prosedur_sekunder2', '', '')}
-                    />
-                    <SearchableMedicalCodeField
-                      label="Prosedur Sekunder 3"
-                      placeholder="Pilih prosedur sekunder 3"
-                      emptyMessage="Tidak ada prosedur ditemukan."
-                      selectedName={formData.prosedur_sekunder3}
-                      selectedCode={formData.kd_prosedur_sekunder3}
-                      type="icd9"
-                      onSelect={(name, code) => updateProcedureFields('prosedur_sekunder3', 'kd_prosedur_sekunder3', name, code)}
-                      onClear={() => updateProcedureFields('prosedur_sekunder3', 'kd_prosedur_sekunder3', '', '')}
-                    />
+                    {!isRalan ? (
+                      <>
+                        <SearchableMedicalCodeField
+                          label="Prosedur Sekunder 1"
+                          placeholder="Pilih prosedur sekunder 1"
+                          emptyMessage="Tidak ada prosedur ditemukan."
+                          selectedName={formData.prosedur_sekunder}
+                          selectedCode={formData.kd_prosedur_sekunder}
+                          type="icd9"
+                          onSelect={(name, code) => updateProcedureFields('prosedur_sekunder', 'kd_prosedur_sekunder', name, code)}
+                          onClear={() => updateProcedureFields('prosedur_sekunder', 'kd_prosedur_sekunder', '', '')}
+                        />
+                        <SearchableMedicalCodeField
+                          label="Prosedur Sekunder 2"
+                          placeholder="Pilih prosedur sekunder 2"
+                          emptyMessage="Tidak ada prosedur ditemukan."
+                          selectedName={formData.prosedur_sekunder2}
+                          selectedCode={formData.kd_prosedur_sekunder2}
+                          type="icd9"
+                          onSelect={(name, code) => updateProcedureFields('prosedur_sekunder2', 'kd_prosedur_sekunder2', name, code)}
+                          onClear={() => updateProcedureFields('prosedur_sekunder2', 'kd_prosedur_sekunder2', '', '')}
+                        />
+                        <SearchableMedicalCodeField
+                          label="Prosedur Sekunder 3"
+                          placeholder="Pilih prosedur sekunder 3"
+                          emptyMessage="Tidak ada prosedur ditemukan."
+                          selectedName={formData.prosedur_sekunder3}
+                          selectedCode={formData.kd_prosedur_sekunder3}
+                          type="icd9"
+                          onSelect={(name, code) => updateProcedureFields('prosedur_sekunder3', 'kd_prosedur_sekunder3', name, code)}
+                          onClear={() => updateProcedureFields('prosedur_sekunder3', 'kd_prosedur_sekunder3', '', '')}
+                        />
+                      </>
+                    ) : null}
                   </div>
                 </div>
 
                 <div className="space-y-4">
-                  <h3 className="font-semibold">Rencana Pulang</h3>
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <h3 className="font-semibold">{isRalan ? 'Terapi Pulang' : 'Rencana Pulang'}</h3>
+                  {isRalan ? (
                     <div>
-                      <Label htmlFor="alergi">Alergi</Label>
-                      <Input id="alergi" value={formData.alergi} onChange={(e) => updateField('alergi', e.target.value)} />
-                    </div>
-                    <div>
-                      <Label htmlFor="kontrol">Kontrol</Label>
-                      <DatePickerPopover
-                        triggerId="kontrol"
-                        mode="single"
-                        selected={parseKontrolDate(formData.kontrol)}
-                        onSelect={updateKontrolDate}
-                        locale={indonesianLocale}
-                        displayValue={formatKontrolDisplay(formData.kontrol)}
-                        contentAfterCalendar={
-                          <div className="space-y-2 px-3 pb-3">
-                            <Label htmlFor="kontrol-time">Jam Kontrol</Label>
-                            <Input
-                              id="kontrol-time"
-                              type="time"
-                              value={getKontrolTimeValue(formData.kontrol)}
-                              onChange={(e) => updateKontrolTime(e.target.value)}
-                            />
-                          </div>
-                        }
-                      />
-                    </div>
-                    <div>
-                      <Label htmlFor="diet">Diet</Label>
-                      <Textarea id="diet" rows={6} value={formData.diet} onChange={(e) => updateField('diet', e.target.value)} />
-                    </div>
-                    <div>
-                      <Label htmlFor="lab_belum">Lab Belum</Label>
-                      <Textarea id="lab_belum" rows={6} value={formData.lab_belum} onChange={(e) => updateField('lab_belum', e.target.value)} />
-                    </div>
-                    <div>
-                      <Label htmlFor="edukasi">Edukasi</Label>
-                      <Textarea id="edukasi" rows={6} value={formData.edukasi} onChange={(e) => updateField('edukasi', e.target.value)} />
-                    </div>
-                    <div>
-                      <Label htmlFor="obat_pulang">Obat Pulang</Label>
+                      <Label htmlFor="obat_pulang">Terapi/Catatan Dokter</Label>
                       <Textarea id="obat_pulang" rows={6} value={formData.obat_pulang} onChange={(e) => updateField('obat_pulang', e.target.value)} />
                     </div>
-                    <div>
-                      <Label>Cara Keluar</Label>
-                      <Select value={formData.cara_keluar} onValueChange={(value) => updateField('cara_keluar', value)}>
-                        <SelectTrigger><SelectValue placeholder="Pilih cara keluar" /></SelectTrigger>
-                        <SelectContent>
-                          {caraKeluarOptions.map((item) => <SelectItem key={item} value={item}>{item}</SelectItem>)}
-                        </SelectContent>
-                      </Select>
+                  ) : (
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <div>
+                        <Label htmlFor="alergi">Alergi</Label>
+                        <Input id="alergi" value={formData.alergi} onChange={(e) => updateField('alergi', e.target.value)} />
+                      </div>
+                      <div>
+                        <Label htmlFor="kontrol">Kontrol</Label>
+                        <DatePickerPopover
+                          triggerId="kontrol"
+                          mode="single"
+                          selected={parseKontrolDate(formData.kontrol)}
+                          onSelect={updateKontrolDate}
+                          locale={indonesianLocale}
+                          displayValue={formatKontrolDisplay(formData.kontrol)}
+                          contentAfterCalendar={
+                            <div className="space-y-2 px-3 pb-3">
+                              <Label htmlFor="kontrol-time">Jam Kontrol</Label>
+                              <Input
+                                id="kontrol-time"
+                                type="time"
+                                value={getKontrolTimeValue(formData.kontrol)}
+                                onChange={(e) => updateKontrolTime(e.target.value)}
+                              />
+                            </div>
+                          }
+                        />
+                      </div>
+                      <div>
+                        <Label htmlFor="diet">Diet</Label>
+                        <Textarea id="diet" rows={6} value={formData.diet} onChange={(e) => updateField('diet', e.target.value)} />
+                      </div>
+                      <div>
+                        <Label htmlFor="lab_belum">Lab Belum</Label>
+                        <Textarea id="lab_belum" rows={6} value={formData.lab_belum} onChange={(e) => updateField('lab_belum', e.target.value)} />
+                      </div>
+                      <div>
+                        <Label htmlFor="edukasi">Edukasi</Label>
+                        <Textarea id="edukasi" rows={6} value={formData.edukasi} onChange={(e) => updateField('edukasi', e.target.value)} />
+                      </div>
+                      <div>
+                        <Label htmlFor="obat_pulang">Obat Pulang</Label>
+                        <Textarea id="obat_pulang" rows={6} value={formData.obat_pulang} onChange={(e) => updateField('obat_pulang', e.target.value)} />
+                      </div>
+                      <div>
+                        <Label>Cara Keluar</Label>
+                        <Select value={formData.cara_keluar} onValueChange={(value) => updateField('cara_keluar', value)}>
+                          <SelectTrigger><SelectValue placeholder="Pilih cara keluar" /></SelectTrigger>
+                          <SelectContent>
+                            {caraKeluarOptions.map((item) => <SelectItem key={item} value={item}>{item}</SelectItem>)}
+                          </SelectContent>
+                        </Select>
+                      </div>
+                      <div>
+                        <Label htmlFor="ket_keluar">Keterangan Cara Keluar</Label>
+                        <Input id="ket_keluar" value={formData.ket_keluar} onChange={(e) => updateField('ket_keluar', e.target.value)} />
+                      </div>
+                      <div>
+                        <Label>Keadaan</Label>
+                        <Select value={formData.keadaan} onValueChange={(value) => updateField('keadaan', value)}>
+                          <SelectTrigger><SelectValue placeholder="Pilih keadaan" /></SelectTrigger>
+                          <SelectContent>
+                            {keadaanOptions.map((item) => <SelectItem key={item} value={item}>{item}</SelectItem>)}
+                          </SelectContent>
+                        </Select>
+                      </div>
+                      <div>
+                        <Label htmlFor="ket_keadaan">Keterangan Keadaan</Label>
+                        <Input id="ket_keadaan" value={formData.ket_keadaan} onChange={(e) => updateField('ket_keadaan', e.target.value)} />
+                      </div>
+                      <div>
+                        <Label>Dilanjutkan</Label>
+                        <Select value={formData.dilanjutkan} onValueChange={(value) => updateField('dilanjutkan', value)}>
+                          <SelectTrigger><SelectValue placeholder="Pilih tindak lanjut" /></SelectTrigger>
+                          <SelectContent>
+                            {dilanjutkanOptions.map((item) => <SelectItem key={item} value={item}>{item}</SelectItem>)}
+                          </SelectContent>
+                        </Select>
+                      </div>
+                      <div>
+                        <Label htmlFor="ket_dilanjutkan">Keterangan Dilanjutkan</Label>
+                        <Input id="ket_dilanjutkan" value={formData.ket_dilanjutkan} onChange={(e) => updateField('ket_dilanjutkan', e.target.value)} />
+                      </div>
                     </div>
-                    <div>
-                      <Label htmlFor="ket_keluar">Keterangan Cara Keluar</Label>
-                      <Input id="ket_keluar" value={formData.ket_keluar} onChange={(e) => updateField('ket_keluar', e.target.value)} />
-                    </div>
-                    <div>
-                      <Label>Keadaan</Label>
-                      <Select value={formData.keadaan} onValueChange={(value) => updateField('keadaan', value)}>
-                        <SelectTrigger><SelectValue placeholder="Pilih keadaan" /></SelectTrigger>
-                        <SelectContent>
-                          {keadaanOptions.map((item) => <SelectItem key={item} value={item}>{item}</SelectItem>)}
-                        </SelectContent>
-                      </Select>
-                    </div>
-                    <div>
-                      <Label htmlFor="ket_keadaan">Keterangan Keadaan</Label>
-                      <Input id="ket_keadaan" value={formData.ket_keadaan} onChange={(e) => updateField('ket_keadaan', e.target.value)} />
-                    </div>
-                    <div>
-                      <Label>Dilanjutkan</Label>
-                      <Select value={formData.dilanjutkan} onValueChange={(value) => updateField('dilanjutkan', value)}>
-                        <SelectTrigger><SelectValue placeholder="Pilih tindak lanjut" /></SelectTrigger>
-                        <SelectContent>
-                          {dilanjutkanOptions.map((item) => <SelectItem key={item} value={item}>{item}</SelectItem>)}
-                        </SelectContent>
-                      </Select>
-                    </div>
-                    <div>
-                      <Label htmlFor="ket_dilanjutkan">Keterangan Dilanjutkan</Label>
-                      <Input id="ket_dilanjutkan" value={formData.ket_dilanjutkan} onChange={(e) => updateField('ket_dilanjutkan', e.target.value)} />
-                    </div>
-                  </div>
+                  )}
                 </div>
               </CardContent>
             </Card>

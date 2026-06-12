@@ -145,6 +145,7 @@ export const FloatingButtonsModal: React.FC<FloatingButtonsModalProps> = ({
         isOpen={activeModal === 'resume'} 
         onClose={closeModal}
         noRawat={noRawat}
+        defaultStatusRawat={defaultStatusRawat}
       />
       <InternalReferralModal 
         isOpen={activeModal === 'referral'} 
