@@ -4,7 +4,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import { Badge } from '@/components/ui/badge';
-import { API_CONFIG, API_URLS } from '@/config/api';
+import { API_URLS } from '@/config/api';
 import { useAuth } from '@/contexts/AuthContext';
 import { toast } from '@/hooks/use-toast';
 
@@ -219,7 +219,7 @@ const matchesChatFilter = (turn: ChatTurn, filterMode: ChatFilterMode) => {
   }
 
   if (turn.role !== 'assistant') {
-    return filterMode === 'all';
+    return false;
   }
 
   if (filterMode === 'natural') {
@@ -238,29 +238,6 @@ const getRowValue = (row: Record<string, unknown>, keys: readonly string[]) => {
   }
 
   return null;
-};
-
-const normalizeNoRawatForRoute = (value: string) => value.replace(/\//g, '');
-
-const getMedicalRecordLink = (row: Record<string, unknown>) => {
-  const noRkmMedis = getRowValue(row, ROW_CONTEXT_KEYS.noRkmMedis);
-  const noRawat = getRowValue(row, ROW_CONTEXT_KEYS.noRawat);
-
-  if (!noRkmMedis || !noRawat) {
-    return null;
-  }
-
-  const baseUrl =
-    API_CONFIG.BASE_URL_WITHOUT_API ||
-    (typeof window !== 'undefined' ? window.location.origin : '');
-
-  if (!baseUrl) {
-    return null;
-  }
-
-  return `${baseUrl}/rekam-medik/${encodeURIComponent(noRkmMedis)}/${encodeURIComponent(
-    normalizeNoRawatForRoute(noRawat)
-  )}`;
 };
 
 const hasContextValue = (context?: Partial<AssistantContext> | null) =>
@@ -624,8 +601,8 @@ const AIAssistant = () => {
                         return (
                           <>
                       <div className="mb-2 flex items-center gap-2 text-xs font-medium opacity-80">
-                        {turn.role === 'user' ? <User2 className="h-4 w-4" /> : <Bot className="h-4 w-4" />}
-                        <span>{turn.role === 'user' ? 'Dokter' : 'AI Asisten'}</span>
+                        <Bot className="h-4 w-4" />
+                        <span>AI Asisten</span>
                             <span
                               className={`rounded-full border px-2 py-0.5 text-[10px] font-semibold ${modeMeta.className}`}
                             >
@@ -677,7 +654,6 @@ const AIAssistant = () => {
                                       {column}
                                     </th>
                                   ))}
-                                  <th className="p-3 text-left font-medium">Aksi</th>
                                 </tr>
                               </thead>
                               <tbody>
@@ -690,7 +666,6 @@ const AIAssistant = () => {
                                   const isSelectable =
                                     canSelectRowAsContext(turn.payload?.intent, turn.payload?.careType) && Boolean(rowContext);
                                   const isActiveRow = isSelectable && isSameContextRow(row, activeContext);
-                                  const medicalRecordLink = getMedicalRecordLink(row);
 
                                   return (
                                     <tr
@@ -707,28 +682,6 @@ const AIAssistant = () => {
                                           {formatCellValue(row[column])}
                                         </td>
                                       ))}
-                                      <td className="p-3 align-top">
-                                        {medicalRecordLink ? (
-                                          <Button
-                                            asChild
-                                            type="button"
-                                            variant="outline"
-                                            size="sm"
-                                            className="h-8"
-                                          >
-                                            <a
-                                              href={medicalRecordLink}
-                                              target="_blank"
-                                              rel="noreferrer"
-                                              onClick={(event) => event.stopPropagation()}
-                                            >
-                                              Buka Rekam Medis
-                                            </a>
-                                          </Button>
-                                        ) : (
-                                          <span className="text-xs text-muted-foreground">-</span>
-                                        )}
-                                      </td>
                                     </tr>
                                   );
                                 })}
