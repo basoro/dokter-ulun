@@ -34,6 +34,7 @@ import Header from "./components/Header";
 import { Sheet, SheetContent } from "@/components/ui/sheet";
 import { AuthProvider, useAuth } from "./contexts/AuthContext";
 import MedicalRecordSearchModal from "./components/modals/MedicalRecordSearchModal";
+import PwaInstallPrompt from "./components/PwaInstallPrompt";
 
 const queryClient = new QueryClient();
 
@@ -182,6 +183,7 @@ const AppContent = () => {
         open={medicalRecordSearchOpen}
         onOpenChange={setMedicalRecordSearchOpen}
       />
+      <PwaInstallPrompt />
     </div>
   );
 };
