@@ -18,16 +18,16 @@ class DoctorAiAssistantService {
       'Tampilkan data pasien rawat inap saya pindah kamar',
       'Tampilkan data pasien rawat inap saya yang belum resume',
       'Tampilkan data pasien rawat inap saya yang sudah resume',
-      'Tampilkan data pasien saya dari tanggal [tanggal awal] sampai [tanggal akhir]',
-      'Carikan saya data rekam medis pasien bernama [nama pasien]',
-      'Tampilkan kunjungan terakhir pasien [nama pasien]',
-      'Tampilkan diagnosis pasien [nama pasien]',
-      'Tampilkan resep pasien [nama pasien]',
-      'Berikan saya hasil lab untuk pasien [nama pasien] tanggal [tanggal]',
-      'Berikan saya hasil radiologi pasien [nama pasien] tanggal [tanggal]',
-      'Tampilkan riwayat rawat inap pasien [nama pasien]',
-      'Tampilkan laporan operasi pasien [nama pasien]',
-      'Cari pasien dengan no rekam medis [nomor]'
+      'Tampilkan data pasien saya dari tanggal 2026-06-01 sampai 2026-06-12',
+      'Carikan saya data rekam medis pasien bernama Siti Aminah',
+      'Tampilkan kunjungan terakhir pasien Siti Aminah',
+      'Tampilkan diagnosis pasien Siti Aminah',
+      'Tampilkan resep pasien Siti Aminah',
+      'Berikan saya hasil lab untuk pasien Siti Aminah tanggal 2026-06-12',
+      'Berikan saya hasil radiologi pasien Siti Aminah tanggal 2026-06-12',
+      'Tampilkan riwayat rawat inap pasien Siti Aminah',
+      'Tampilkan laporan operasi pasien Siti Aminah',
+      'Cari pasien dengan no rekam medis 000123'
     ];
 
     if (!this.openAIApiKey) {
@@ -602,6 +602,456 @@ class DoctorAiAssistantService {
     ).slice(0, 12);
   }
 
+  shouldUseNaturalSqlFallback(plan = {}) {
+    const normalizedIntent = String(plan.intent || '').trim();
+    const confidence = Number(plan.confidence || 0);
+
+    return normalizedIntent === 'unsupported' || confidence < 0.45;
+  }
+
+  getNaturalSqlAllowedDatasets() {
+    return [
+      'doctor_visits',
+      'doctor_diagnoses',
+      'doctor_prescriptions',
+      'doctor_lab_results',
+      'doctor_radiology_results',
+      'doctor_inpatient_history',
+      'doctor_operations'
+    ];
+  }
+
+  getNaturalSqlDatasetReference() {
+    return `
+Dataset yang boleh dipakai:
+1. doctor_visits
+   Kolom: no_rawat, tgl_registrasi, no_reg, status_lanjut, stts, kd_dokter, kd_poli, nm_poli, no_rkm_medis, no_ktp, nm_pasien, jk, tgl_lahir
+2. doctor_diagnoses
+   Kolom: no_rawat, no_rkm_medis, nm_pasien, tgl_registrasi, nm_poli, kd_dokter, kd_penyakit, nm_penyakit, prioritas, status
+3. doctor_prescriptions
+   Kolom: no_rawat, no_rkm_medis, nm_pasien, tgl_registrasi, nm_poli, no_resep, tanggal_resep, jam_resep, nama_brng, jml, aturan_pakai, kd_dokter
+4. doctor_lab_results
+   Kolom: no_rawat, no_rkm_medis, nm_pasien, tgl_registrasi, nm_poli, tgl_periksa, jam, nm_perawatan, pemeriksaan, hasil, nilai_rujukan, keterangan
+5. doctor_radiology_results
+   Kolom: no_rawat, no_rkm_medis, nm_pasien, tgl_registrasi, nm_poli, tgl_periksa, jam, nm_perawatan, hasil
+6. doctor_inpatient_history
+   Kolom: no_rawat, no_rkm_medis, nm_pasien, tgl_registrasi, nm_poli, tgl_masuk, jam_masuk, tgl_keluar, jam_keluar, stts_pulang, kd_kamar, kelas, nm_bangsal, status_resume, kd_dokter
+7. doctor_operations
+   Kolom: no_rawat, no_rkm_medis, nm_pasien, tanggal_op, nm_op, hasil_op, pre_op, post_op, kd_dokter
+    `.trim();
+  }
+
+  buildNaturalSqlBaseQuery(accessibleDoctorCodes = []) {
+    const normalizedDoctorCodes = Array.isArray(accessibleDoctorCodes) && accessibleDoctorCodes.length > 0
+      ? accessibleDoctorCodes
+      : [];
+
+    if (normalizedDoctorCodes.length === 0) {
+      throw new Error('Kode dokter untuk natural SQL tidak tersedia');
+    }
+
+    const params = [];
+    const buildDoctorScopeClause = () => {
+      params.push(...normalizedDoctorCodes);
+      return this.buildInClausePlaceholders(normalizedDoctorCodes);
+    };
+
+    const visitDoctorPlaceholders = buildDoctorScopeClause();
+    const prescriptionDoctorPlaceholders = buildDoctorScopeClause();
+    const inpatientDoctorPlaceholders = buildDoctorScopeClause();
+    const operationDoctorPlaceholders = buildDoctorScopeClause();
+
+    const sql = `
+      WITH
+      doctor_visits AS (
+        SELECT
+          rp.no_rawat,
+          DATE(rp.tgl_registrasi) AS tgl_registrasi,
+          rp.no_reg,
+          rp.status_lanjut,
+          rp.stts,
+          rp.kd_dokter,
+          rp.kd_poli,
+          pol.nm_poli,
+          p.no_rkm_medis,
+          p.no_ktp,
+          p.nm_pasien,
+          p.jk,
+          p.tgl_lahir
+        FROM reg_periksa rp
+        INNER JOIN pasien p ON p.no_rkm_medis = rp.no_rkm_medis
+        LEFT JOIN poliklinik pol ON pol.kd_poli = rp.kd_poli
+        WHERE rp.kd_dokter IN (${visitDoctorPlaceholders})
+      ),
+      doctor_diagnoses AS (
+        SELECT
+          dv.no_rawat,
+          dv.no_rkm_medis,
+          dv.nm_pasien,
+          dv.tgl_registrasi,
+          dv.nm_poli,
+          dv.kd_dokter,
+          dp.kd_penyakit,
+          py.nm_penyakit,
+          dp.prioritas,
+          dp.status
+        FROM doctor_visits dv
+        INNER JOIN diagnosa_pasien dp ON dp.no_rawat = dv.no_rawat
+        LEFT JOIN penyakit py ON py.kd_penyakit = dp.kd_penyakit
+      ),
+      doctor_prescriptions AS (
+        SELECT
+          dv.no_rawat,
+          dv.no_rkm_medis,
+          dv.nm_pasien,
+          dv.tgl_registrasi,
+          dv.nm_poli,
+          ro.no_resep,
+          CASE
+            WHEN ro.tgl_perawatan IS NULL OR ro.tgl_perawatan = '0000-00-00' THEN ro.tgl_peresepan
+            ELSE ro.tgl_perawatan
+          END AS tanggal_resep,
+          CASE
+            WHEN ro.jam IS NULL OR ro.jam = '00:00:00' THEN ro.jam_peresepan
+            ELSE ro.jam
+          END AS jam_resep,
+          db.nama_brng,
+          dpo.jml,
+          COALESCE(ap.aturan, '') AS aturan_pakai,
+          ro.kd_dokter
+        FROM doctor_visits dv
+        INNER JOIN resep_obat ro ON ro.no_rawat = dv.no_rawat
+        LEFT JOIN detail_pemberian_obat dpo
+          ON dpo.tgl_perawatan = ro.tgl_perawatan
+          AND dpo.jam = ro.jam
+        LEFT JOIN databarang db ON db.kode_brng = dpo.kode_brng
+        LEFT JOIN aturan_pakai ap
+          ON ap.no_rawat = ro.no_rawat
+          AND ap.kode_brng = dpo.kode_brng
+          AND ap.tgl_perawatan = ro.tgl_perawatan
+          AND ap.jam = ro.jam
+        WHERE ro.kd_dokter IN (${prescriptionDoctorPlaceholders})
+      ),
+      doctor_lab_results AS (
+        SELECT
+          dv.no_rawat,
+          dv.no_rkm_medis,
+          dv.nm_pasien,
+          dv.tgl_registrasi,
+          dv.nm_poli,
+          DATE(pl.tgl_periksa) AS tgl_periksa,
+          pl.jam,
+          jp.nm_perawatan,
+          COALESCE(tl.Pemeriksaan, '') AS pemeriksaan,
+          COALESCE(dpl.nilai, '') AS hasil,
+          COALESCE(dpl.nilai_rujukan, '') AS nilai_rujukan,
+          COALESCE(dpl.keterangan, '') AS keterangan
+        FROM doctor_visits dv
+        INNER JOIN periksa_lab pl ON pl.no_rawat = dv.no_rawat
+        LEFT JOIN jns_perawatan_lab jp ON jp.kd_jenis_prw = pl.kd_jenis_prw
+        LEFT JOIN detail_periksa_lab dpl
+          ON dpl.no_rawat = pl.no_rawat
+          AND dpl.kd_jenis_prw = pl.kd_jenis_prw
+          AND dpl.tgl_periksa = pl.tgl_periksa
+          AND dpl.jam = pl.jam
+        LEFT JOIN template_laboratorium tl ON tl.id_template = dpl.id_template
+      ),
+      doctor_radiology_results AS (
+        SELECT
+          dv.no_rawat,
+          dv.no_rkm_medis,
+          dv.nm_pasien,
+          dv.tgl_registrasi,
+          dv.nm_poli,
+          DATE(pr.tgl_periksa) AS tgl_periksa,
+          pr.jam,
+          jpr.nm_perawatan,
+          COALESCE(hr.hasil, '') AS hasil
+        FROM doctor_visits dv
+        INNER JOIN periksa_radiologi pr ON pr.no_rawat = dv.no_rawat
+        LEFT JOIN jns_perawatan_radiologi jpr ON jpr.kd_jenis_prw = pr.kd_jenis_prw
+        LEFT JOIN hasil_radiologi hr ON hr.no_rawat = pr.no_rawat AND hr.tgl_periksa = pr.tgl_periksa
+      ),
+      doctor_inpatient_history AS (
+        SELECT DISTINCT
+          ki.no_rawat,
+          p.no_rkm_medis,
+          p.nm_pasien,
+          DATE(rp.tgl_registrasi) AS tgl_registrasi,
+          pol.nm_poli,
+          ki.tgl_masuk,
+          ki.jam_masuk,
+          ki.tgl_keluar,
+          ki.jam_keluar,
+          COALESCE(ki.stts_pulang, '') AS stts_pulang,
+          ki.kd_kamar,
+          k.kelas,
+          b.nm_bangsal,
+          CASE
+            WHEN rpr.no_rawat IS NULL THEN 'belum_resume'
+            ELSE 'sudah_resume'
+          END AS status_resume,
+          dr.kd_dokter
+        FROM kamar_inap ki
+        INNER JOIN reg_periksa rp ON rp.no_rawat = ki.no_rawat
+        INNER JOIN pasien p ON p.no_rkm_medis = rp.no_rkm_medis
+        INNER JOIN dpjp_ranap dr ON dr.no_rawat = ki.no_rawat
+        LEFT JOIN poliklinik pol ON pol.kd_poli = rp.kd_poli
+        LEFT JOIN kamar k ON k.kd_kamar = ki.kd_kamar
+        LEFT JOIN bangsal b ON b.kd_bangsal = k.kd_bangsal
+        LEFT JOIN resume_pasien_ranap rpr ON rpr.no_rawat = ki.no_rawat
+        WHERE dr.kd_dokter IN (${inpatientDoctorPlaceholders})
+      ),
+      doctor_operations AS (
+        SELECT
+          lo.no_rawat,
+          p.no_rkm_medis,
+          p.nm_pasien,
+          lo.tanggal_op,
+          lo.nm_op,
+          lo.hasil_op,
+          lo.pre_op,
+          lo.post_op,
+          lo.kd_dokter
+        FROM mlite_lap_op lo
+        INNER JOIN reg_periksa rp ON rp.no_rawat = lo.no_rawat
+        INNER JOIN pasien p ON p.no_rkm_medis = rp.no_rkm_medis
+        WHERE lo.kd_dokter IN (${operationDoctorPlaceholders})
+          AND lo.deleted_at IS NULL
+      )
+    `.trim();
+
+    return {
+      sql,
+      params
+    };
+  }
+
+  normalizeNaturalSql(sql = '') {
+    return String(sql || '').replace(/\s+/g, ' ').trim();
+  }
+
+  sanitizeNaturalSqlParams(params) {
+    if (!Array.isArray(params)) {
+      return [];
+    }
+
+    return params.slice(0, 30).map((value) => {
+      if (value === null || value === undefined) {
+        return null;
+      }
+
+      if (typeof value === 'number' || typeof value === 'boolean') {
+        return value;
+      }
+
+      return String(value).slice(0, 200);
+    });
+  }
+
+  applyNaturalSqlLimit(sql) {
+    if (/\blimit\s+\d+\b/i.test(sql)) {
+      return sql.replace(/\blimit\s+(\d+)\b/i, (_, limitValue) => {
+        const normalizedLimit = Math.min(parseInt(limitValue, 10) || 100, 100);
+        return `LIMIT ${normalizedLimit}`;
+      });
+    }
+
+    return `${sql} LIMIT 100`;
+  }
+
+  validateNaturalSqlQuery(sql, params = []) {
+    const normalizedSql = this.normalizeNaturalSql(sql);
+
+    if (!normalizedSql) {
+      throw new Error('Natural SQL kosong');
+    }
+
+    if (!/^select\b/i.test(normalizedSql)) {
+      throw new Error('Natural SQL hanya boleh menggunakan SELECT');
+    }
+
+    if (normalizedSql.length > 4000) {
+      throw new Error('Natural SQL terlalu panjang');
+    }
+
+    if (/;|--|\/\*|\*\/|#/i.test(normalizedSql)) {
+      throw new Error('Natural SQL mengandung token yang tidak diizinkan');
+    }
+
+    if (/\b(insert|update|delete|drop|alter|truncate|replace|create|grant|revoke|call|execute|handler|outfile|dumpfile|load_file|benchmark|sleep|information_schema|mysql\.|sys\.)\b/i.test(normalizedSql)) {
+      throw new Error('Natural SQL mengandung keyword yang tidak diizinkan');
+    }
+
+    const allowedDatasets = new Set(this.getNaturalSqlAllowedDatasets());
+    const datasetMatches = Array.from(normalizedSql.matchAll(/\b(?:from|join)\s+([a-zA-Z_][a-zA-Z0-9_]*)\b/gi));
+
+    if (datasetMatches.length === 0) {
+      throw new Error('Natural SQL harus membaca dari dataset yang diizinkan');
+    }
+
+    for (const match of datasetMatches) {
+      const datasetName = String(match[1] || '').trim().toLowerCase();
+      if (!allowedDatasets.has(datasetName)) {
+        throw new Error(`Dataset "${datasetName}" tidak diizinkan`);
+      }
+    }
+
+    const placeholderCount = (normalizedSql.match(/\?/g) || []).length;
+    if (placeholderCount !== params.length) {
+      throw new Error('Jumlah parameter natural SQL tidak sesuai');
+    }
+
+    return this.applyNaturalSqlLimit(normalizedSql);
+  }
+
+  async createNaturalSqlPlan({ message, username, doctorName, conversationContext, normalizedHistory }) {
+    const today = this.getCurrentDateWib();
+    const historySummary = normalizedHistory
+      .slice(-6)
+      .map((entry) => `${entry.role === 'assistant' ? 'AI' : 'Dokter'}: ${entry.message}`)
+      .join('\n');
+
+    const response = await fetch('https://api.openai.com/v1/chat/completions', {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${this.openAIApiKey}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        model: 'gpt-4o-mini',
+        response_format: { type: 'json_object' },
+        temperature: 0.1,
+        messages: [
+          {
+            role: 'system',
+            content: `
+Anda adalah penerjemah bahasa natural ke query MySQL SELECT yang aman untuk asisten dokter.
+Tanggal hari ini di WIB adalah ${today}.
+Dokter login: ${doctorName || username} (${username}).
+
+Konteks aktif:
+- patientName: ${conversationContext.patientName || 'null'}
+- targetDate: ${conversationContext.targetDate || 'null'}
+- startDate: ${conversationContext.startDate || 'null'}
+- endDate: ${conversationContext.endDate || 'null'}
+- noRawat: ${conversationContext.noRawat || 'null'}
+- noRkmMedis: ${conversationContext.noRkmMedis || 'null'}
+- identifier: ${conversationContext.identifier || 'null'}
+- identifierType: ${conversationContext.identifierType || 'null'}
+
+Riwayat percakapan:
+${historySummary || 'Tidak ada'}
+
+${this.getNaturalSqlDatasetReference()}
+
+Aturan wajib:
+- Hanya boleh membuat satu query SELECT.
+- JANGAN gunakan tabel asli database, hanya dataset yang boleh dipakai.
+- Gunakan placeholder ? untuk semua nilai dinamis, lalu kirim nilainya di params.
+- JANGAN gunakan INSERT, UPDATE, DELETE, DROP, ALTER, CREATE, TRUNCATE, atau statement selain SELECT.
+- JANGAN gunakan tanda ;, komentar SQL, atau multi-statement.
+- Batasi hasil maksimal 100 baris.
+- Jika user bertanya jumlah/ringkasan, gunakan COUNT/SUM/GROUP BY sesuai kebutuhan.
+- Jika user menyebut "pasien ini", "yang sama", atau sejenisnya, gunakan konteks aktif.
+- Jika user menyebut "tanggal yang sama", gunakan targetDate dari konteks aktif.
+- Jika user menyebut "hari ini", gunakan ${today}.
+- Jika tidak bisa dijawab dengan dataset yang tersedia, kembalikan sql = null.
+
+Balas JSON saja dengan skema:
+{
+  "sql": "SELECT ...",
+  "params": ["..."],
+  "answer": "penjelasan singkat alami untuk dokter",
+  "followUp": ["saran 1", "saran 2"],
+  "confidence": 0.0,
+  "notes": "catatan singkat"
+}
+            `.trim()
+          },
+          {
+            role: 'user',
+            content: message
+          }
+        ]
+      })
+    });
+
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({}));
+      throw new Error(`OpenAI API error: ${response.status} - ${errorData.error?.message || 'Unknown error'}`);
+    }
+
+    const data = await response.json();
+    const content = data?.choices?.[0]?.message?.content || '{}';
+
+    try {
+      const parsed = JSON.parse(content);
+      return {
+        sql: parsed.sql ? String(parsed.sql).trim() : null,
+        params: this.sanitizeNaturalSqlParams(parsed.params),
+        answer: parsed.answer ? String(parsed.answer).trim() : '',
+        followUp: Array.isArray(parsed.followUp)
+          ? parsed.followUp.map((item) => String(item || '').trim()).filter(Boolean).slice(0, 6)
+          : [],
+        confidence: Number(parsed.confidence || 0),
+        notes: parsed.notes ? String(parsed.notes).trim() : ''
+      };
+    } catch (error) {
+      console.error('Failed to parse natural SQL plan:', error);
+      return {
+        sql: null,
+        params: [],
+        answer: '',
+        followUp: [],
+        confidence: 0,
+        notes: 'Fallback to null because JSON parsing failed'
+      };
+    }
+  }
+
+  async tryNaturalSqlFallback({ message, username, doctorName, conversationContext, normalizedHistory }) {
+    const accessibleDoctorCodes = getAccessibleDoctorCodesByPhpNative(username);
+    const naturalPlan = await this.createNaturalSqlPlan({
+      message,
+      username,
+      doctorName,
+      conversationContext,
+      normalizedHistory
+    });
+
+    if (!naturalPlan.sql) {
+      return null;
+    }
+
+    const validatedSql = this.validateNaturalSqlQuery(naturalPlan.sql, naturalPlan.params);
+    const baseQuery = this.buildNaturalSqlBaseQuery(accessibleDoctorCodes);
+    const rows = await executeQuery(
+      `${baseQuery.sql}\n${validatedSql}`,
+      [...baseQuery.params, ...naturalPlan.params]
+    );
+
+    const answer = rows.length > 0
+      ? (naturalPlan.answer || `Saya menemukan ${rows.length} baris data yang sesuai dengan permintaan Anda.`)
+      : 'Saya tidak menemukan data yang sesuai dengan permintaan Anda.';
+
+    return this.buildResponse({
+      intent: 'natural_select',
+      answer,
+      rows,
+      sql: validatedSql,
+      suggestions: naturalPlan.followUp.length > 0 ? naturalPlan.followUp : this.defaultSuggestions,
+      plan: {
+        patientName: conversationContext.patientName || null,
+        targetDate: conversationContext.targetDate || null,
+        startDate: conversationContext.startDate || null,
+        endDate: conversationContext.endDate || null,
+        careType: conversationContext.careType || null
+      },
+      previousContext: conversationContext
+    });
+  }
+
   async ask({ message, username, doctorName, conversationHistory = [] }) {
     if (!this.openAIApiKey) {
       throw new Error('OpenAI API key is not configured');
@@ -628,6 +1078,24 @@ class DoctorAiAssistantService {
       normalizedHistory
     });
     const resolvedPlan = this.resolvePlanWithContext(plan, normalizedMessage, conversationContext);
+
+    if (this.shouldUseNaturalSqlFallback(resolvedPlan)) {
+      try {
+        const naturalResponse = await this.tryNaturalSqlFallback({
+          message: normalizedMessage,
+          username: normalizedUsername,
+          doctorName: String(doctorName || '').trim(),
+          conversationContext,
+          normalizedHistory
+        });
+
+        if (naturalResponse) {
+          return naturalResponse;
+        }
+      } catch (error) {
+        console.error('Natural SQL fallback error:', error);
+      }
+    }
 
     switch (resolvedPlan.intent) {
       case 'patient_medical_record_search':

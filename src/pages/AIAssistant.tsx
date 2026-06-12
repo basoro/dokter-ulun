@@ -4,16 +4,6 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import { Badge } from '@/components/ui/badge';
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle
-} from '@/components/ui/dialog';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
 import { API_CONFIG, API_URLS } from '@/config/api';
 import { useAuth } from '@/contexts/AuthContext';
 import { toast } from '@/hooks/use-toast';
@@ -52,7 +42,7 @@ interface ChatTurn {
   payload?: AssistantPayload;
 }
 
-const PLACEHOLDER_REGEX = /\[([^\]]+)\]/g;
+type ChatFilterMode = 'all' | 'intent' | 'natural';
 const ROW_CONTEXT_KEYS = {
   patientName: ['nm_pasien', 'patient_name', 'nama_pasien'],
   noRawat: ['no_rawat', 'nomor_rawat'],
@@ -77,78 +67,20 @@ const EMPTY_CONTEXT: AssistantContext = {
   lastIntent: null
 };
 
-const promptGroups = [
-  {
-    title: 'Pasien Hari Ini',
-    description: 'Lihat daftar dan ringkasan pasien dokter login untuk hari ini.',
-    prompts: [
-      'Tampilkan data pasien saya hari ini',
-      'Tampilkan data pasien saya kemarin',
-      'Berapa pasien saya untuk hari ini?'
-    ]
-  },
-  {
-    title: 'Daftar Pasien Lanjutan',
-    description: 'Gunakan variasi waktu, status rawat inap, atau rentang tanggal.',
-    prompts: [
-      'Tampilkan data pasien saya rawat inap belum pulang',
-      'Berapa pasien rawat inap saya yang belum pulang?',
-      'Tampilkan data pasien rawat bersama saya',
-      'Berapa pasien rawat bersama saya?',
-      'Tampilkan data pasien rawat gabung saya',
-      'Berapa pasien rawat gabung saya?',
-      'Tampilkan data pasien rawat inap saya pindah kamar',
-      'Berapa pasien rawat inap saya pindah kamar?',
-      'Tampilkan data pasien rawat inap saya yang belum resume',
-      'Berapa pasien rawat inap saya yang belum resume?',
-      'Tampilkan data pasien rawat inap saya yang sudah resume',
-      'Berapa pasien rawat inap saya yang sudah resume?',
-      'Tampilkan data pasien saya dari tanggal [tanggal awal] sampai [tanggal akhir]',
-      'Tampilkan data pasien saya rawat inap dari tanggal [tanggal awal] sampai [tanggal akhir]'
-    ]
-  },
-  {
-    title: 'Pencarian Pasien',
-    description: 'Cari pasien berdasarkan nama atau nomor identitas.',
-    prompts: [
-      'Carikan saya data rekam medis pasien bernama [nama pasien]',
-      'Cari pasien dengan no rekam medis [nomor]',
-      'Tampilkan kunjungan terakhir pasien [nama pasien]'
-    ]
-  },
-  {
-    title: 'Pemeriksaan',
-    description: 'Ambil hasil pemeriksaan penunjang dan data klinis pasien.',
-    prompts: [
-      'Berikan saya hasil lab untuk pasien [nama pasien] tanggal [tanggal]',
-      'Berikan saya hasil radiologi pasien [nama pasien] tanggal [tanggal]',
-      'Tampilkan diagnosis pasien [nama pasien]',
-      'Tampilkan resep pasien [nama pasien]'
-    ]
-  },
-  {
-    title: 'Riwayat Klinis',
-    description: 'Lihat riwayat perawatan lanjutan pasien.',
-    prompts: [
-      'Tampilkan riwayat rawat inap pasien [nama pasien]',
-      'Tampilkan laporan operasi pasien [nama pasien]'
-    ]
-  }
+const examplePrompts = [
+  'Tampilkan data pasien saya hari ini',
+  'Tampilkan data pasien saya kemarin',
+  'Berapa pasien rawat inap saya yang belum pulang?',
+  'Tampilkan data pasien rawat gabung saya',
+  'Cari pasien dengan no rekam medis 000123',
+  'Tampilkan kunjungan terakhir pasien Siti Aminah',
+  'Tampilkan diagnosis pasien Siti Aminah',
+  'Tampilkan resep pasien Siti Aminah',
+  'Berikan hasil lab pasien Siti Aminah tanggal 2026-06-12',
+  'Berikan hasil radiologi pasien Siti Aminah tanggal 2026-06-12',
+  'Tampilkan riwayat rawat inap pasien Siti Aminah',
+  'Tampilkan laporan operasi pasien Siti Aminah'
 ];
-
-const examplePrompts = promptGroups.flatMap((group) => group.prompts);
-
-const formatCellValue = (value: unknown) => {
-  if (value === null || value === undefined || value === '') {
-    return '-';
-  }
-
-  if (typeof value === 'object') {
-    return JSON.stringify(value);
-  }
-
-  return String(value);
-};
 
 const getTodayWibString = () => {
   const formatter = new Intl.DateTimeFormat('en-CA', {
@@ -174,42 +106,17 @@ const getRelativeDateWibString = (dayOffset: number) => {
   return formatter.format(currentDate);
 };
 
-const extractPromptVariables = (template: string) => {
-  const variables = Array.from(template.matchAll(PLACEHOLDER_REGEX)).map((match) => match[1].trim());
-  return Array.from(new Set(variables));
-};
+const formatCellValue = (value: unknown) => {
+  if (value === null || value === undefined || value === '') {
+    return '-';
+  }
 
-const getVariableLabel = (variable: string) => {
-  const normalized = variable.toLowerCase();
-  if (normalized.includes('nama')) return 'Nama Pasien';
-  if (normalized.includes('tanggal')) return 'Tanggal';
-  if (normalized.includes('rawat')) return 'No. Rawat';
-  if (normalized.includes('rm')) return 'No. Rekam Medis';
-  if (normalized.includes('nik')) return 'NIK';
-  if (normalized.includes('nomor')) return 'Nomor';
-  return variable;
-};
+  if (typeof value === 'object') {
+    return JSON.stringify(value);
+  }
 
-const getVariableInputType = (variable: string) => {
-  const normalized = variable.toLowerCase();
-  if (normalized.includes('tanggal')) return 'date';
-  return 'text';
+  return String(value);
 };
-
-const buildDefaultVariableValue = (variable: string, context?: AssistantPayload['context']) => {
-  const normalized = variable.toLowerCase();
-  if (normalized.includes('nama')) return context?.patientName || '';
-  if (normalized.includes('awal') && normalized.includes('tanggal')) return context?.startDate || context?.targetDate || getTodayWibString();
-  if (normalized.includes('akhir') && normalized.includes('tanggal')) return context?.endDate || context?.targetDate || getTodayWibString();
-  if (normalized.includes('tanggal')) return context?.targetDate || getTodayWibString();
-  if (normalized.includes('rawat')) return context?.noRawat || '';
-  if (normalized.includes('rm')) return context?.noRkmMedis || context?.identifier || '';
-  if (normalized.includes('nomor')) return context?.identifier || context?.noRkmMedis || '';
-  return '';
-};
-
-const fillPromptTemplate = (template: string, values: Record<string, string>) =>
-  template.replace(PLACEHOLDER_REGEX, (_, key) => values[String(key).trim()] || `[${key}]`);
 
 const suggestionMatchesContext = (prompt: string, context: AssistantContext, lastIntent?: string | null) => {
   const normalizedPrompt = prompt.toLowerCase();
@@ -266,6 +173,60 @@ const filterPromptsByInput = (prompts: string[], input: string) => {
   return prompts
     .filter((prompt) => prompt.toLowerCase().includes(normalizedInput))
     .slice(0, 6);
+};
+
+const materializeSuggestion = (prompt: string, context: AssistantContext) => {
+  const defaultPatientName = context.patientName || 'Siti Aminah';
+  const defaultIdentifier = context.noRkmMedis || context.identifier || '000123';
+  const defaultDate = context.targetDate || getTodayWibString();
+  const defaultStartDate = context.startDate || getRelativeDateWibString(-7);
+  const defaultEndDate = context.endDate || getTodayWibString();
+
+  return prompt
+    .replace(/\[nama pasien\]/gi, defaultPatientName)
+    .replace(/\[tanggal awal\]/gi, defaultStartDate)
+    .replace(/\[tanggal akhir\]/gi, defaultEndDate)
+    .replace(/\[tanggal\]/gi, defaultDate)
+    .replace(/\[nomor\]/gi, defaultIdentifier)
+    .replace(/\s+/g, ' ')
+    .trim();
+};
+
+const getAssistantModeMeta = (intent?: string | null) => {
+  if (intent === 'natural_select') {
+    return {
+      label: 'Natural SQL',
+      className: 'border-emerald-200 bg-emerald-50 text-emerald-700'
+    };
+  }
+
+  if (intent === 'intro') {
+    return {
+      label: 'Sistem',
+      className: 'border-slate-200 bg-slate-50 text-slate-700'
+    };
+  }
+
+  return {
+    label: 'Intent',
+    className: 'border-blue-200 bg-blue-50 text-blue-700'
+  };
+};
+
+const matchesChatFilter = (turn: ChatTurn, filterMode: ChatFilterMode) => {
+  if (filterMode === 'all') {
+    return true;
+  }
+
+  if (turn.role !== 'assistant') {
+    return filterMode === 'all';
+  }
+
+  if (filterMode === 'natural') {
+    return turn.payload?.intent === 'natural_select';
+  }
+
+  return Boolean(turn.payload?.intent && turn.payload.intent !== 'natural_select');
 };
 
 const getRowValue = (row: Record<string, unknown>, keys: readonly string[]) => {
@@ -395,10 +356,10 @@ const canSelectRowAsContext = (
 const createInitialAssistantTurn = (): ChatTurn => ({
   id: 'assistant-intro',
   role: 'assistant',
-  message: 'Saya siap membantu pencarian data berbasis database untuk dokter login.',
+  message: 'Saya siap membantu dengan chat natural. Pertanyaan Anda akan dipahami secara kontekstual dan hanya dijalankan sebagai query database baca-saja yang aman.',
   payload: {
     intent: 'intro',
-    answer: 'Saya hanya menjalankan query MySQL `SELECT` yang aman dan dibatasi pada kebutuhan pencarian data dokter.',
+    answer: 'Saya memakai mode hybrid: intent klinis yang sudah dikenal tetap diprioritaskan, lalu pertanyaan yang lebih bebas bisa diterjemahkan ke query MySQL `SELECT` yang aman.',
     rows: [],
     columns: [],
     sqlPreview: null,
@@ -410,12 +371,10 @@ const AIAssistant = () => {
   const { user } = useAuth();
   const [message, setMessage] = useState('');
   const [loading, setLoading] = useState(false);
-  const [promptDialogOpen, setPromptDialogOpen] = useState(false);
-  const [activePromptTemplate, setActivePromptTemplate] = useState('');
-  const [activePromptVariables, setActivePromptVariables] = useState<string[]>([]);
-  const [promptVariableValues, setPromptVariableValues] = useState<Record<string, string>>({});
   const [selectedContext, setSelectedContext] = useState<AssistantContext | null>(null);
   const [chatHistory, setChatHistory] = useState<ChatTurn[]>([createInitialAssistantTurn()]);
+  const [chatFilterMode, setChatFilterMode] = useState<ChatFilterMode>('all');
+  const [expandedSqlPreviewIds, setExpandedSqlPreviewIds] = useState<string[]>([]);
 
   const lastAssistantPayload = useMemo(
     () => [...chatHistory].reverse().find((turn) => turn.role === 'assistant' && turn.payload)?.payload || null,
@@ -439,34 +398,31 @@ const AIAssistant = () => {
     () => filterPromptsByInput(quickSuggestionPrompts, message),
     [quickSuggestionPrompts, message]
   );
-  const handlePromptTemplateClick = (template: string) => {
-    const variables = extractPromptVariables(template);
-    if (variables.length === 0) {
-      submitQuestion(template);
-      return;
-    }
+  const naturalSuggestionPrompts = useMemo(
+    () => Array.from(new Set(visibleSuggestionPrompts.map((prompt) => materializeSuggestion(prompt, activeContext)))),
+    [activeContext, visibleSuggestionPrompts]
+  );
+  const filteredChatHistory = useMemo(
+    () => chatHistory.filter((turn) => matchesChatFilter(turn, chatFilterMode)),
+    [chatFilterMode, chatHistory]
+  );
+  const handleSuggestionClick = (prompt: string) => {
+    setMessage(prompt);
+  };
 
-    const defaults = Object.fromEntries(
-      variables.map((variable) => [
-        variable,
-        buildDefaultVariableValue(variable, activeContext)
-      ])
+  const toggleSqlPreview = (turnId: string) => {
+    setExpandedSqlPreviewIds((previous) =>
+      previous.includes(turnId)
+        ? previous.filter((item) => item !== turnId)
+        : [...previous, turnId]
     );
-
-    setActivePromptTemplate(template);
-    setActivePromptVariables(variables);
-    setPromptVariableValues(defaults);
-    setPromptDialogOpen(true);
   };
 
   const handleResetContext = () => {
     setChatHistory([createInitialAssistantTurn()]);
     setMessage('');
-    setPromptDialogOpen(false);
-    setActivePromptTemplate('');
-    setActivePromptVariables([]);
-    setPromptVariableValues({});
     setSelectedContext(null);
+    setExpandedSqlPreviewIds([]);
     toast({
       title: 'Konteks Direset',
       description: 'Percakapan AI dimulai ulang tanpa konteks pasien atau tanggal sebelumnya.'
@@ -580,131 +536,8 @@ const AIAssistant = () => {
     await submitQuestion();
   };
 
-  const handlePromptDialogSubmit = async (event: FormEvent<HTMLFormElement>) => {
-    event.preventDefault();
-
-    const emptyVariable = activePromptVariables.find(
-      (variable) => !String(promptVariableValues[variable] || '').trim()
-    );
-
-    if (emptyVariable) {
-      toast({
-        title: 'Variabel Belum Lengkap',
-        description: `${getVariableLabel(emptyVariable)} harus diisi terlebih dahulu.`,
-        variant: 'destructive'
-      });
-      return;
-    }
-
-    const finalPrompt = fillPromptTemplate(activePromptTemplate, promptVariableValues)
-      .replace(/\s+/g, ' ')
-      .trim();
-
-    setPromptDialogOpen(false);
-    setActivePromptTemplate('');
-    setActivePromptVariables([]);
-    setPromptVariableValues({});
-    await submitQuestion(finalPrompt);
-  };
-
-  const handlePromptDialogOpenChange = (open: boolean) => {
-    setPromptDialogOpen(open);
-
-    if (!open) {
-      setActivePromptTemplate('');
-      setActivePromptVariables([]);
-      setPromptVariableValues({});
-    }
-  };
-
   return (
-    <>
-      <Dialog open={promptDialogOpen} onOpenChange={handlePromptDialogOpenChange}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Isi Variabel Pertanyaan</DialogTitle>
-            <DialogDescription>
-              Lengkapi nilai variabel agar pertanyaan cepat bisa langsung dijalankan.
-            </DialogDescription>
-          </DialogHeader>
-          <form onSubmit={handlePromptDialogSubmit} className="space-y-4">
-            <div className="space-y-4">
-              {activePromptVariables.map((variable) => (
-                <div key={variable} className="space-y-2">
-                  <Label htmlFor={`prompt-variable-${variable}`}>{getVariableLabel(variable)}</Label>
-                  {getVariableInputType(variable) === 'date' && (
-                    <div className="flex flex-wrap gap-2">
-                      <Button
-                        type="button"
-                        variant="outline"
-                        size="sm"
-                        onClick={() =>
-                          setPromptVariableValues((previous) => ({
-                            ...previous,
-                            [variable]: getTodayWibString()
-                          }))
-                        }
-                      >
-                        Hari Ini
-                      </Button>
-                      <Button
-                        type="button"
-                        variant="outline"
-                        size="sm"
-                        onClick={() =>
-                          setPromptVariableValues((previous) => ({
-                            ...previous,
-                            [variable]: getRelativeDateWibString(-1)
-                          }))
-                        }
-                      >
-                        Kemarin
-                      </Button>
-                      <Button
-                        type="button"
-                        variant="outline"
-                        size="sm"
-                        onClick={() =>
-                          setPromptVariableValues((previous) => ({
-                            ...previous,
-                            [variable]: getRelativeDateWibString(-7)
-                          }))
-                        }
-                      >
-                        7 Hari Lalu
-                      </Button>
-                    </div>
-                  )}
-                  <Input
-                    id={`prompt-variable-${variable}`}
-                    type={getVariableInputType(variable)}
-                    value={promptVariableValues[variable] || ''}
-                    onChange={(event) =>
-                      setPromptVariableValues((previous) => ({
-                        ...previous,
-                        [variable]: event.target.value
-                      }))
-                    }
-                    placeholder={`Masukkan ${getVariableLabel(variable).toLowerCase()}`}
-                  />
-                </div>
-              ))}
-            </div>
-            <DialogFooter>
-              <Button
-                type="button"
-                variant="outline"
-                onClick={() => setPromptDialogOpen(false)}
-              >
-                Batal
-              </Button>
-              <Button type="submit">Gunakan Pertanyaan</Button>
-            </DialogFooter>
-          </form>
-        </DialogContent>
-      </Dialog>
-
-      <div className="p-2 md:p-6 space-y-6 md:space-y-8 w-full mx-auto animate-fade-in shadow-md bg-white rounded-md">
+    <div className="p-2 md:p-6 space-y-6 md:space-y-8 w-full mx-auto animate-fade-in shadow-md bg-white rounded-md">
         <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
           <div className="space-y-2">
             <div className="flex items-center gap-2">
@@ -712,7 +545,7 @@ const AIAssistant = () => {
               <h1 className="text-2xl font-bold">AI Asisten Dokter</h1>
             </div>
             <p className="text-sm text-muted-foreground">
-              Asisten ini untuk membantu dokter login mencari data pasien, kunjungan terakhir, diagnosis, resep, hasil lab, hasil radiologi, rawat inap, laporan operasi, dan jumlah pasien.
+              Asisten ini menerima pertanyaan natural seperti percakapan biasa. Sistem memprioritaskan intent klinis yang sudah dikenal, lalu memakai fallback query `SELECT` yang aman untuk pertanyaan yang lebih bebas.
             </p>
           </div>
           <Button type="button" variant="outline" onClick={handleResetContext} disabled={loading}>
@@ -726,22 +559,53 @@ const AIAssistant = () => {
             <CardHeader>
               <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
                 <CardTitle>Chat</CardTitle>
-                <div className="flex flex-wrap items-center justify-start gap-2 md:justify-end">
-                  <Badge variant="outline" className="max-w-full whitespace-normal">
-                    Pasien: {activeContext.patientName || '-'}
-                  </Badge>
-                  <Badge variant="outline" className="max-w-full whitespace-normal">
-                    No. Rawat: {activeContext.noRawat || '-'}
-                  </Badge>
-                  <Badge variant="outline" className="max-w-full whitespace-normal">
-                    No. RM: {activeContext.noRkmMedis || '-'}
-                  </Badge>
+                <div className="flex flex-col gap-2 md:items-end">
+                  <div className="flex flex-wrap items-center justify-start gap-2 md:justify-end">
+                    <Badge variant="outline" className="max-w-full whitespace-normal">
+                      Pasien: {activeContext.patientName || '-'}
+                    </Badge>
+                    <Badge variant="outline" className="max-w-full whitespace-normal">
+                      No. Rawat: {activeContext.noRawat || '-'}
+                    </Badge>
+                    <Badge variant="outline" className="max-w-full whitespace-normal">
+                      No. RM: {activeContext.noRkmMedis || '-'}
+                    </Badge>
+                  </div>
+                  <div className="flex flex-wrap gap-2">
+                    <Button
+                      type="button"
+                      variant={chatFilterMode === 'all' ? 'default' : 'outline'}
+                      size="sm"
+                      className="h-8"
+                      onClick={() => setChatFilterMode('all')}
+                    >
+                      Semua
+                    </Button>
+                    <Button
+                      type="button"
+                      variant={chatFilterMode === 'intent' ? 'default' : 'outline'}
+                      size="sm"
+                      className="h-8"
+                      onClick={() => setChatFilterMode('intent')}
+                    >
+                      Intent
+                    </Button>
+                    <Button
+                      type="button"
+                      variant={chatFilterMode === 'natural' ? 'default' : 'outline'}
+                      size="sm"
+                      className="h-8"
+                      onClick={() => setChatFilterMode('natural')}
+                    >
+                      Natural SQL
+                    </Button>
+                  </div>
                 </div>
               </div>
             </CardHeader>
             <CardContent className="space-y-4">
               <div className="max-h-[560px] space-y-4 overflow-y-auto rounded-md border bg-muted/20 p-4">
-                {chatHistory.map((turn) => (
+                {filteredChatHistory.map((turn) => (
                   <div
                     key={turn.id}
                     className={`flex ${turn.role === 'user' ? 'justify-end' : 'justify-start'}`}
@@ -753,11 +617,49 @@ const AIAssistant = () => {
                           : 'bg-white border'
                       }`}
                     >
+                      {turn.role === 'assistant' ? (() => {
+                        const modeMeta = getAssistantModeMeta(turn.payload?.intent);
+                        const isSqlPreviewExpanded = expandedSqlPreviewIds.includes(turn.id);
+
+                        return (
+                          <>
                       <div className="mb-2 flex items-center gap-2 text-xs font-medium opacity-80">
                         {turn.role === 'user' ? <User2 className="h-4 w-4" /> : <Bot className="h-4 w-4" />}
                         <span>{turn.role === 'user' ? 'Dokter' : 'AI Asisten'}</span>
-                      </div>
-                      <div className="whitespace-pre-wrap text-sm">{turn.message}</div>
+                            <span
+                              className={`rounded-full border px-2 py-0.5 text-[10px] font-semibold ${modeMeta.className}`}
+                            >
+                              {modeMeta.label}
+                            </span>
+                            {turn.payload?.sqlPreview ? (
+                              <Button
+                                type="button"
+                                variant="ghost"
+                                size="sm"
+                                className="h-6 px-2 text-[10px]"
+                                onClick={() => toggleSqlPreview(turn.id)}
+                              >
+                                {isSqlPreviewExpanded ? 'Sembunyikan SQL' : 'Lihat SQL'}
+                              </Button>
+                            ) : null}
+                          </div>
+                          <div className="whitespace-pre-wrap text-sm">{turn.message}</div>
+                          {turn.payload?.sqlPreview && isSqlPreviewExpanded ? (
+                            <div className="mt-2 rounded-md bg-muted/60 px-2.5 py-2 text-[11px] text-muted-foreground">
+                              <span className="font-semibold">SQL Preview:</span> {turn.payload.sqlPreview}
+                            </div>
+                          ) : null}
+                        </>
+                        );
+                      })() : (
+                        <>
+                          <div className="mb-2 flex items-center gap-2 text-xs font-medium opacity-80">
+                            <User2 className="h-4 w-4" />
+                            <span>Dokter</span>
+                          </div>
+                          <div className="whitespace-pre-wrap text-sm">{turn.message}</div>
+                        </>
+                      )}
 
                       {turn.role === 'assistant' && turn.payload?.rows?.length ? (
                         <div className="mt-4 space-y-3">
@@ -857,36 +759,41 @@ const AIAssistant = () => {
                     </div>
                   </div>
                 )}
+                {!loading && filteredChatHistory.length === 0 ? (
+                  <div className="rounded-md border border-dashed bg-white/80 px-4 py-6 text-center text-sm text-muted-foreground">
+                    Belum ada chat yang cocok untuk filter ini.
+                  </div>
+                ) : null}
               </div>
 
               <form onSubmit={handleSubmit} className="space-y-3">
                 <Textarea
                   value={message}
                   onChange={(event) => setMessage(event.target.value)}
-                  placeholder="Tulis pertanyaan Anda, misalnya: tampilkan diagnosis pasien [nama pasien]"
+                  placeholder="Tulis pertanyaan natural Anda, misalnya: tampilkan diagnosis pasien Siti Aminah yang berobat minggu ini"
                   rows={4}
                   disabled={loading}
                 />
                 <div className="space-y-2">
                   <div className="text-xs font-medium text-muted-foreground">
-                    Saran pertanyaan untuk input chat
+                    Contoh pertanyaan natural
                   </div>
                   <div className="flex flex-wrap gap-2">
-                    {visibleSuggestionPrompts.map((prompt) => (
+                    {naturalSuggestionPrompts.map((prompt) => (
                       <Button
                         key={prompt}
                         type="button"
                         variant="outline"
                         size="sm"
                         className="h-auto whitespace-normal text-left"
-                        onClick={() => handlePromptTemplateClick(prompt)}
+                        onClick={() => handleSuggestionClick(prompt)}
                         disabled={loading}
                       >
                         {prompt}
                       </Button>
                     ))}
                   </div>
-                  {message.trim() && visibleSuggestionPrompts.length === 0 ? (
+                  {message.trim() && naturalSuggestionPrompts.length === 0 ? (
                     <div className="text-xs text-muted-foreground">
                       Tidak ada saran yang cocok dengan teks input saat ini.
                     </div>
@@ -903,7 +810,6 @@ const AIAssistant = () => {
           </Card>
         </div>
       </div>
-    </>
   );
 };
 

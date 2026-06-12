@@ -59,7 +59,7 @@ const Sidebar: React.FC<SidebarProps> = ({ doctorName, doctorId, gender, onClose
   
   const menuItems = [
     { name: 'Dashboard', path: '/', icon: <BarChart2 className="h-5 w-5" /> },
-    { name: 'AI Asisten', path: '/ai-assistant', icon: <Bot className="h-5 w-5" /> },
+    { name: 'AI Asisten', path: '/ai-assistant', icon: <Bot className="h-5 w-5" />, badge: 'Beta' },
     { name: 'Presensi', path: '/presensi', icon: <FileCheck className="h-5 w-5" /> },
     { name: 'Booking Operasi', path: '/booking', icon: <CalendarClock className="h-5 w-5" /> },
     { name: 'Tarif INA-CBGs', path: '/tarif', icon: <DollarSign className="h-5 w-5" /> },
@@ -203,7 +203,14 @@ const Sidebar: React.FC<SidebarProps> = ({ doctorName, doctorId, gender, onClose
               <span className={`mr-3 ${isActive(item.path) ? 'text-primary' : 'text-gray-500'}`}>
                 {item.icon}
               </span>
-              {item.name}
+              <span className="flex min-w-0 items-center gap-2">
+                <span>{item.name}</span>
+                {item.badge ? (
+                  <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-amber-700">
+                    {item.badge}
+                  </span>
+                ) : null}
+              </span>
             </Link>
           ))}
 
