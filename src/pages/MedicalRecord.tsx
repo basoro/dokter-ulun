@@ -11,7 +11,7 @@ import {
   Activity, ClipboardList, BedDouble, UserCircle, Building, MapPin,
   Phone, Heart, CalendarDays, FileText, Plus, X, Trash2, Image as ImageIcon, Clock,
   Copy, ChevronDown, ChevronLeft, ChevronRight, ChevronUp, Brain, Check, ChevronsUpDown, Pause, Pencil, Play,
-  BadgeAlert, Maximize2
+  BadgeAlert, Download, Maximize2, RotateCcw, ZoomIn, ZoomOut
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -954,6 +954,7 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
   });
   const [isPacsPlaying, setIsPacsPlaying] = useState(false);
   const [pacsPlaybackSpeed, setPacsPlaybackSpeed] = useState(180);
+  const [pacsZoomLevel, setPacsZoomLevel] = useState(1);
   const [radiologyPacsByKey, setRadiologyPacsByKey] = useState<Record<string, any>>({});
   const [loadingRadiologyPacsKeys, setLoadingRadiologyPacsKeys] = useState<Record<string, boolean>>({});
   const [radiologyPacsErrorKeys, setRadiologyPacsErrorKeys] = useState<Record<string, string>>({});
@@ -3277,6 +3278,10 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
       image.src = previewUrl;
     });
   }, [isCtPacsPreview, pacsPreviewModal.currentIndex, pacsPreviewModal.images, pacsPreviewModal.open]);
+
+  useEffect(() => {
+    setPacsZoomLevel(1);
+  }, [pacsPreviewModal.currentIndex, pacsPreviewModal.open]);
 
   const loadMoreMedicalRecord = useCallback(() => {
     if (loading || loadingMoreVisits || activeTab !== 'visits') {
@@ -5863,6 +5868,18 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
 
     const width = options?.width || 500;
     return `${API_CONFIG.BASE_URL_WITHOUT_API}${basePath}/${encodedInstanceId}?width=${width}`;
+  };
+
+  const zoomOutPacsPreview = () => {
+    setPacsZoomLevel((previous) => Math.max(1, Number((previous - 0.25).toFixed(2))));
+  };
+
+  const zoomInPacsPreview = () => {
+    setPacsZoomLevel((previous) => Math.min(4, Number((previous + 0.25).toFixed(2))));
+  };
+
+  const resetPacsZoom = () => {
+    setPacsZoomLevel(1);
   };
 
   const renderRadiologyPacsImages = (rad: any) => {
@@ -9666,17 +9683,104 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
           <div className="space-y-4 p-6">
             {activePacsImage ? (
               <>
+                {!isCtPacsPreview ? (
+                  <div className="flex flex-col gap-3 rounded-lg border bg-muted/20 p-4">
+                    <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+                      <div>
+                        <p className="font-medium">Kontrol Gambar PACS</p>
+                        <p className="text-sm text-muted-foreground">
+                          Gunakan zoom untuk memperbesar atau memperkecil gambar, lalu unduh bila diperlukan.
+                        </p>
+                      </div>
+                      <div className="flex flex-wrap items-center gap-2">
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          onClick={zoomOutPacsPreview}
+                          disabled={pacsZoomLevel <= 1}
+                          className="h-9 w-9 p-0 sm:w-auto sm:px-3"
+                          aria-label="Zoom Out"
+                          title="Zoom Out"
+                        >
+                          <ZoomOut className="h-4 w-4 sm:mr-2" />
+                          <span className="sr-only sm:not-sr-only">Zoom Out</span>
+                        </Button>
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          onClick={resetPacsZoom}
+                          disabled={pacsZoomLevel === 1}
+                          className="h-9 w-9 p-0 sm:w-auto sm:px-3"
+                          aria-label="Reset"
+                          title="Reset"
+                        >
+                          <RotateCcw className="h-4 w-4 sm:mr-2" />
+                          <span className="sr-only sm:not-sr-only">Reset</span>
+                        </Button>
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          onClick={zoomInPacsPreview}
+                          disabled={pacsZoomLevel >= 4}
+                          className="h-9 w-9 p-0 sm:w-auto sm:px-3"
+                          aria-label="Zoom In"
+                          title="Zoom In"
+                        >
+                          <ZoomIn className="h-4 w-4 sm:mr-2" />
+                          <span className="sr-only sm:not-sr-only">Zoom In</span>
+                        </Button>
+                        <Button
+                          asChild
+                          size="sm"
+                          variant="outline"
+                          disabled={!activePacsImage?.instance_id}
+                          className="h-9 w-9 p-0 sm:w-auto sm:px-3"
+                        >
+                          <a
+                            href={activePacsImage?.instance_id
+                              ? getPacsImageUrl(activePacsImage.instance_id, {
+                                  modality: pacsPreviewModal.modality,
+                                  width: 1800
+                                })
+                              : '#'}
+                            target="_blank"
+                            rel="noreferrer"
+                            download={`pacs-${activePacsImage?.instance_id || pacsPreviewModal.currentIndex + 1}.jpg`}
+                            aria-label="Download"
+                            title="Download"
+                          >
+                            <Download className="h-4 w-4 sm:mr-2" />
+                            <span className="sr-only sm:not-sr-only">Download</span>
+                          </a>
+                        </Button>
+                      </div>
+                    </div>
+                    <div className="text-xs text-muted-foreground">
+                      Zoom: {Math.round(pacsZoomLevel * 100)}%
+                    </div>
+                  </div>
+                ) : null}
+
                 <div className="relative rounded-lg border bg-black/5 p-4">
                   <div onWheel={handleCtWheelNavigation}>
-                    <img
-                      src={getPacsImageUrl(activePacsImage.instance_id, {
-                        modality: pacsPreviewModal.modality,
-                        width: 1800,
-                        preferPreview: isCtPacsPreview
-                      })}
-                      alt={`Preview PACS ${pacsPreviewModal.currentIndex + 1}`}
-                      className="mx-auto max-h-[60vh] w-auto rounded-md object-contain"
-                    />
+                    <div className="flex max-h-[60vh] w-full items-center justify-center overflow-auto">
+                      <img
+                        src={getPacsImageUrl(activePacsImage.instance_id, {
+                          modality: pacsPreviewModal.modality,
+                          width: 1800,
+                          preferPreview: isCtPacsPreview
+                        })}
+                        alt={`Preview PACS ${pacsPreviewModal.currentIndex + 1}`}
+                        className="mx-auto max-h-[60vh] w-auto rounded-md object-contain transition-transform duration-200"
+                        style={!isCtPacsPreview ? {
+                          transform: `scale(${pacsZoomLevel})`,
+                          transformOrigin: 'center center'
+                        } : undefined}
+                      />
+                    </div>
                   </div>
 
                   {pacsPreviewModal.loading ? (
