@@ -18,6 +18,7 @@ import GetMedicalRecordService from './services/getMedicalRecordService.js';
 import DigitalFilesService from './services/digitalFilesService.js';
 import DeleteExaminationService from './services/deleteExaminationService.js';
 import DoctorAiAssistantService from './services/doctorAiAssistantService.js';
+import DoctorNotificationService from './services/doctorNotificationService.js';
 import IcdDataService from './services/icdDataService.js';
 import IgdDataService from './services/igdDataService.js';
 import InacbgSimulationService from './services/inacbgSimulationService.js';
@@ -1377,6 +1378,28 @@ app.get('/api/prescription-data', async (req, res) => {
     res.json(result);
   } catch (error) {
     console.error('Prescription data error:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message
+    });
+  }
+});
+
+app.get('/api/doctor-notifications', async (req, res) => {
+  try {
+    const { doctorId, limit = 8 } = req.query;
+
+    if (!doctorId) {
+      return res.status(400).json({
+        success: false,
+        error: 'doctorId is required'
+      });
+    }
+
+    const result = await DoctorNotificationService.getDoctorNotifications(doctorId, limit);
+    res.json(result);
+  } catch (error) {
+    console.error('Doctor notifications error:', error);
     res.status(500).json({
       success: false,
       error: error.message

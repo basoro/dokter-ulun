@@ -107,6 +107,7 @@ const AppContent = () => {
         onMenuClick={() => setSidebarOpen(true)}
         isMobile={isTabletOrMobile}
         username={user?.name}
+        doctorId={user?.username}
         onLogout={logout}
         onMedicalRecordSearchClick={() => setMedicalRecordSearchOpen(true)}
       />
