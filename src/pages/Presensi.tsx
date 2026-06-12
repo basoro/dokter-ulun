@@ -16,7 +16,7 @@ import { ClockIcon, Calendar as CalendarIcon, CheckCircle, UserCheck, AlarmCheck
 import { toast } from "@/hooks/use-toast";
 import { Separator } from "@/components/ui/separator";
 import { indonesianLocale, formatIndonesianDate } from "@/lib/date-utils";
-import { Badge } from "@/components/ui/badge";
+import { StatusPill } from "@/components/StatusPill";
 import { useIsMobile } from "@/hooks/use-mobile";
 
 import { useAuth } from "@/contexts/AuthContext";
@@ -469,9 +469,11 @@ const Presensi = () => {
                          </p>
                        )}
                     </div>
-                    <Badge variant={todayAttendance?.attendance ? "default" : "outline"} className="self-start sm:self-auto">
-                      {todayAttendance?.attendance ? 'Sudah Absen' : 'Belum Absen'}
-                    </Badge>
+                    <StatusPill
+                      tone={todayAttendance?.attendance ? 'green' : 'slate'}
+                      label={todayAttendance?.attendance ? 'Sudah Absen' : 'Belum Absen'}
+                      className="self-start sm:self-auto"
+                    />
                   </div>
                 </div>
 

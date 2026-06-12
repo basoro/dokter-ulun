@@ -3,6 +3,7 @@ import { useParams, useSearchParams } from 'react-router-dom';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { StatusPill } from '@/components/StatusPill';
 import { Separator } from '@/components/ui/separator';
 import { useToast } from '@/hooks/use-toast';
 import { API_URLS } from '@/config/api';
@@ -186,20 +187,20 @@ const formatGender = (value?: string) => {
   return value === 'L' ? 'Laki-laki' : value === 'P' ? 'Perempuan' : '-';
 };
 
-const getExecutionBadgeClass = (status?: string) => {
+const getExecutionStatusTone = (status?: string) => {
   const normalized = String(status || '').toLowerCase();
-  if (normalized === 'completed') return 'bg-emerald-100 text-emerald-800';
-  if (normalized === 'missed') return 'bg-red-100 text-red-800';
-  if (normalized === 'variance') return 'bg-amber-100 text-amber-800';
-  return 'bg-slate-100 text-slate-800';
+  if (normalized === 'completed') return 'green' as const;
+  if (normalized === 'missed') return 'red' as const;
+  if (normalized === 'variance') return 'amber' as const;
+  return 'slate' as const;
 };
 
-const getPatientStatusBadgeClass = (status?: string) => {
+const getPatientStatusTone = (status?: string) => {
   const normalized = String(status || '').toLowerCase();
-  if (normalized === 'selesai') return 'bg-emerald-100 text-emerald-800';
-  if (normalized === 'drop') return 'bg-red-100 text-red-800';
-  if (normalized === 'draft') return 'bg-amber-100 text-amber-800';
-  return 'bg-blue-100 text-blue-800';
+  if (normalized === 'selesai') return 'green' as const;
+  if (normalized === 'drop') return 'red' as const;
+  if (normalized === 'draft') return 'amber' as const;
+  return 'blue' as const;
 };
 
 const ClinicalPathway = () => {
@@ -503,9 +504,10 @@ const ClinicalPathway = () => {
                 <CardTitle className="text-2xl">
                   {workflowMode === 'monitoring' ? 'Monitoring Clinical Pathway' : 'Inisiasi Clinical Pathway'}
                 </CardTitle>
-                <Badge variant={workflowMode === 'monitoring' ? 'secondary' : 'default'}>
-                  {workflowMode === 'monitoring' ? 'Monitoring' : 'Inisiasi'}
-                </Badge>
+                <StatusPill
+                  tone={workflowMode === 'monitoring' ? 'amber' : 'blue'}
+                  label={workflowMode === 'monitoring' ? 'Monitoring' : 'Inisiasi'}
+                />
               </div>
               <p className="text-sm text-muted-foreground">
                 {workflowMode === 'monitoring'
@@ -584,9 +586,7 @@ const ClinicalPathway = () => {
                       Status {preview.existing.status_cp} • Kepatuhan {Number(preview.existing.compliance_percentage || 0).toFixed(2)}%
                     </div>
                   </div>
-                  <Badge variant="secondary" className="w-fit bg-emerald-100 text-emerald-800">
-                    {preview.existing.status_layanan}
-                  </Badge>
+                  <StatusPill tone="green" label={preview.existing.status_layanan} className="w-fit" />
                 </div>
               </CardContent>
             </Card>
@@ -887,9 +887,10 @@ const ClinicalPathway = () => {
                       <div className="rounded-lg border p-3">
                         <div className="text-xs text-muted-foreground">Status CP</div>
                         <div className="mt-1">
-                          <span className={`inline-flex rounded-full px-2 py-1 text-xs font-medium ${getPatientStatusBadgeClass(monitoring.patient.status_cp)}`}>
-                            {monitoring.patient.status_cp}
-                          </span>
+                          <StatusPill
+                            tone={getPatientStatusTone(monitoring.patient.status_cp)}
+                            label={monitoring.patient.status_cp}
+                          />
                         </div>
                         <div className="text-xs text-muted-foreground">Mulai {formatDateDisplay(monitoring.patient.tanggal_mulai)}</div>
                       </div>
@@ -918,9 +919,7 @@ const ClinicalPathway = () => {
                               <div className="flex flex-wrap items-center gap-2">
                                 <Badge variant="outline">Hari {item.hari_ke}</Badge>
                                 <Badge variant="secondary">{item.kategori}</Badge>
-                                <span className={`inline-flex rounded-full px-2 py-1 text-xs font-medium ${getExecutionBadgeClass(item.status)}`}>
-                                  {item.status}
-                                </span>
+                                <StatusPill tone={getExecutionStatusTone(item.status)} label={item.status} />
                               </div>
                               <div className="font-medium">{item.aktivitas}</div>
                               <div className="text-sm text-muted-foreground">{item.kegiatan} • {item.uraian_kegiatan || '-'}</div>

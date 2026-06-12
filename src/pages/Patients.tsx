@@ -4,7 +4,6 @@ import { useAuth } from '@/contexts/AuthContext';
 import { formatNoRawat } from '@/App';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { Separator } from '@/components/ui/separator';
@@ -61,6 +60,7 @@ import RawatJalanTabs from '@/components/RawatJalanTabs';
 import HemodialisaTabs from '@/components/HemodialisaTabs';
 import { API_URLS } from '@/config/api';
 import { DatePickerPopover } from '@/components/DatePickerPopover';
+import { StatusPill } from '@/components/StatusPill';
 import MedicalRecord from './MedicalRecord';
 import {
   CLOSE_ALL_MEDICAL_RECORD_TABS_EVENT,
@@ -1061,6 +1061,45 @@ const RawatInapTabs = () => {
   const [total, setTotal] = useState(0);
   const [itemsPerPage, setItemsPerPage] = useState(parsePositiveInt(searchParams.get('itemsPerPage'), 10));
   const [tabCounts, setTabCounts] = useState(emptyTabCounts);
+  const getResumeStatusBadge = (value: string) => {
+    switch (String(value || '').trim()) {
+      case 'sudah_resume':
+        return {
+          tone: 'green' as const,
+          label: 'Sudah Resume'
+        };
+      case 'belum_resume':
+      default:
+        return {
+          tone: 'blue' as const,
+          label: 'Belum Resume'
+        };
+    }
+  };
+  const getRawatBersamaResumeBadge = (value: string) => {
+    switch (String(value || '').trim()) {
+      case 'sudah_resume_saya':
+        return {
+          tone: 'green' as const,
+          label: 'Sudah Resume Saya'
+        };
+      case 'sudah_resume_dokter_lain':
+        return {
+          tone: 'amber' as const,
+          label: 'Sudah Resume Dokter Lain'
+        };
+      case 'belum_ada_resume':
+        return {
+          tone: 'slate' as const,
+          label: 'Belum Ada Resume'
+        };
+      default:
+        return {
+          tone: 'slate' as const,
+          label: '-'
+        };
+    }
+  };
   const rawatInapColumns = [
     { accessor: 'no_rkm_medis', header: 'No. RM' },
     { accessor: 'nm_pasien', header: 'Nama Pasien' },
@@ -1114,6 +1153,18 @@ const RawatInapTabs = () => {
         </Button>
       )
     }
+  ];
+  const rawatBersamaColumns = [
+    ...rawatInapColumns.slice(0, rawatInapColumns.length - 1),
+    {
+      accessor: 'rawat_bersama_resume_status',
+      header: 'Status Resume',
+      render: (row: any) => {
+        const badge = getRawatBersamaResumeBadge(row.rawat_bersama_resume_status);
+        return <StatusPill label={badge.label} tone={badge.tone} />;
+      }
+    },
+    rawatInapColumns[rawatInapColumns.length - 1]
   ];
 
   const buildRawatInapRequestBody = (
@@ -1434,20 +1485,17 @@ const RawatInapTabs = () => {
       accessor: 'status_resume', 
       header: 'Status Resume',
       render: (row: any) => {
+        const badge = getResumeStatusBadge(row.status_resume);
         if (row.status_resume === 'sudah_resume') {
-          return (
-            <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-green-100 text-green-800">
-              Sudah Resume
-            </span>
-          );
+          return <StatusPill label={badge.label} tone={badge.tone} />;
         } else {
           return (
-            <button 
+            <StatusPill
+              label={badge.label}
+              tone={badge.tone}
               onClick={() => handleCreateResume(row.no_rawat)}
-              className="inline-flex items-center px-3 py-1 rounded-md text-xs font-medium bg-blue-100 hover:bg-blue-200 text-blue-800 transition-colors"
-            >
-              Belum Resume
-            </button>
+              className="px-3"
+            />
           );
         }
       }
@@ -1600,7 +1648,7 @@ const RawatInapTabs = () => {
             <div className="space-y-4">
               <PatientTable 
                 patients={rawatInapData} 
-                columns={rawatInapColumns}
+                columns={rawatBersamaColumns}
                 loading={loading}
                 pagination={{
                   currentPage,
@@ -1916,22 +1964,22 @@ const IGDTabs = () => {
     setCurrentPage(1);
   };
 
-  const getIgdTriaseBadgeClass = (value: string) => {
+  const getIgdTriaseBadgeTone = (value: string) => {
     switch ((value || '').toLowerCase()) {
       case 'merah':
-        return 'bg-red-100 text-red-800 hover:bg-red-100';
+        return 'red' as const;
       case 'merah muda':
-        return 'bg-pink-100 text-pink-800 hover:bg-pink-100';
+        return 'pink' as const;
       case 'kuning':
-        return 'bg-yellow-100 text-yellow-800 hover:bg-yellow-100';
+        return 'amber' as const;
       case 'hijau muda':
-        return 'bg-lime-100 text-lime-800 hover:bg-lime-100';
+        return 'lime' as const;
       case 'hijau':
-        return 'bg-green-100 text-green-800 hover:bg-green-100';
+        return 'green' as const;
       case 'hitam':
-        return 'bg-slate-800 text-white hover:bg-slate-800';
+        return 'dark' as const;
       default:
-        return 'bg-slate-100 text-slate-700 hover:bg-slate-100';
+        return 'slate' as const;
     }
   };
 
@@ -1946,11 +1994,7 @@ const IGDTabs = () => {
       header: 'Level Triase',
       render: (row: any) => {
         const triaseLevelLabel = String(row.triase_level || 'Belum Triase').trim() || 'Belum Triase';
-        return (
-          <Badge className={cn('font-medium', getIgdTriaseBadgeClass(triaseLevelLabel))}>
-            {triaseLevelLabel}
-          </Badge>
-        );
+        return <StatusPill label={triaseLevelLabel} tone={getIgdTriaseBadgeTone(triaseLevelLabel)} />;
       }
     },
     {

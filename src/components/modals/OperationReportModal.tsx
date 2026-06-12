@@ -5,12 +5,12 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
 import { Plus, Edit, Trash2, Scissors, Calendar, Loader2 } from 'lucide-react';
 import { useToast } from "@/hooks/use-toast";
 import { API_URLS } from '@/config/api';
 import { useAuth } from '@/contexts/AuthContext';
 import { DatePickerPopover } from "@/components/DatePickerPopover";
+import { StatusPill } from "@/components/StatusPill";
 import { format } from "date-fns";
 import { id as indonesianLocale } from "date-fns/locale";
 
@@ -262,7 +262,10 @@ export const OperationReportModal: React.FC<OperationReportModalProps> = ({ isOp
   };
 
   const getPaBadge = (permintaanPa: string) => (
-    <Badge variant={permintaanPa === 'Ya' ? 'default' : 'outline'}>{permintaanPa === 'Ya' ? 'PA: Ya' : 'PA: Tidak'}</Badge>
+    <StatusPill
+      tone={permintaanPa === 'Ya' ? 'green' : 'slate'}
+      label={permintaanPa === 'Ya' ? 'PA: Ya' : 'PA: Tidak'}
+    />
   );
 
   return (

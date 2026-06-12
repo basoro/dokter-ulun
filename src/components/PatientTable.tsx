@@ -4,8 +4,8 @@ import { useLocation, useNavigate } from 'react-router-dom';
 import { formatNoRawat } from '@/App';
 import { User, CircleCheck, Clock } from 'lucide-react';
 import { Table, TableHeader, TableBody, TableHead, TableRow, TableCell } from '@/components/ui/table';
-import { Badge } from '@/components/ui/badge';
 import { PaginationControls } from '@/components/PaginationControls';
+import { StatusPill } from '@/components/StatusPill';
 import { useIsMobile } from '@/hooks/use-mobile';
 import { cn } from '@/lib/utils';
 import { dispatchOpenMedicalRecordTab } from '@/lib/medical-record-tabs';
@@ -104,26 +104,35 @@ const PatientTable: React.FC<PatientTableProps> = ({
     return pages;
   };
   
-  // Badge variant helper functions
-  const getStatusBadgeVariant = (status: string) => {
-    switch (status) {
-      case 'Belum': return 'destructive';
-      case 'Sudah': return 'default';
-      case 'Batal': return 'secondary';
-      case 'Berkas Diterima': return 'outline';
-      case 'Dirujuk': return 'secondary';
-      case 'Meninggal': return 'destructive';
-      case 'Dirawat': return 'default';
-      case 'Pulang Paksa': return 'outline';
-      default: return 'outline';
+  const getStatusPillTone = (status: string) => {
+    switch (String(status || '').trim()) {
+      case 'Sudah':
+      case 'Diterima':
+      case 'Dirawat':
+        return 'green' as const;
+      case 'Belum':
+      case 'Menunggu':
+        return 'amber' as const;
+      case 'Ditolak':
+      case 'Meninggal':
+        return 'red' as const;
+      case 'Batal':
+      case 'Dirujuk':
+      case 'Pulang Paksa':
+        return 'slate' as const;
+      default:
+        return 'blue' as const;
     }
   };
-  
-  const getPaymentBadgeVariant = (status: string) => {
-    switch (status) {
-      case 'Sudah Bayar': return 'default';
-      case 'Belum Bayar': return 'destructive';
-      default: return 'outline';
+
+  const getPaymentStatusPillTone = (status: string) => {
+    switch (String(status || '').trim()) {
+      case 'Sudah Bayar':
+        return 'green' as const;
+      case 'Belum Bayar':
+        return 'red' as const;
+      default:
+        return 'slate' as const;
     }
   };
   
@@ -173,14 +182,15 @@ const PatientTable: React.FC<PatientTableProps> = ({
                     </TableCell>
                   ) : (
                     <TableCell className="py-2 px-2 sm:py-3 sm:px-4 text-right sm:text-left">
-                      <span className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${
-                        patient.status === 'Menunggu' 
-                          ? 'bg-yellow-100 text-yellow-800' 
-                          : 'bg-blue-100 text-blue-800'
-                      }`}>
-                        {patient.status === 'Menunggu' ? <Clock size={12} className="mr-1" /> : <CircleCheck size={12} className="mr-1" />}
-                        {patient.status}
-                      </span>
+                      <StatusPill
+                        tone={getStatusPillTone(patient.status || '')}
+                        label={
+                          <>
+                            {patient.status === 'Menunggu' ? <Clock size={12} className="mr-1" /> : <CircleCheck size={12} className="mr-1" />}
+                            {patient.status}
+                          </>
+                        }
+                      />
                     </TableCell>
                   )}
                 </TableRow>
@@ -245,13 +255,15 @@ const PatientTable: React.FC<PatientTableProps> = ({
                           </div>
                         </div>
                       ) : column.accessor === 'status' ? (
-                        <Badge variant={
-                          patient[column.accessor] === 'Diterima' ? 'default' :
-                          patient[column.accessor] === 'Ditolak' ? 'destructive' :
-                          'secondary'
-                        }>
-                          {patient[column.accessor]}
-                        </Badge>
+                        <StatusPill
+                          tone={getStatusPillTone(String(patient[column.accessor] || ''))}
+                          label={patient[column.accessor]}
+                        />
+                      ) : column.accessor === 'paymentStatus' ? (
+                        <StatusPill
+                          tone={getPaymentStatusPillTone(String(patient[column.accessor] || ''))}
+                          label={patient[column.accessor]}
+                        />
                       ) : column.accessor === 'tanggal' || column.accessor === 'tanggal_booking' ? (
                         new Date(patient[column.accessor]).toLocaleDateString('id-ID')
                       ) : (

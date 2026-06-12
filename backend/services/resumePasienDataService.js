@@ -219,14 +219,12 @@ class ResumePasienDataService {
         params.push(startDate, endDate);
       }
 
+      // "Sudah Resume" / "Belum Resume" should reflect actual resume existence,
+      // not text matches in resume fields such as ket_keadaan.
       if (normalizedResumeStatus === 'sudah_resume') {
         whereConditions.push('rpr.no_rawat IS NOT NULL');
-        whereConditions.push('rpr.ket_keluar IS NULL');
-        whereConditions.push('rpr.ket_keadaan LIKE ?');
-        params.push(`%${normalizedUsername}%`);
       } else if (normalizedResumeStatus === 'belum_resume') {
-        whereConditions.push('rpr.ket_keadaan NOT LIKE ?');
-        params.push(`%${normalizedUsername}%`);
+        whereConditions.push('rpr.no_rawat IS NULL');
       }
 
       const whereClause = whereConditions.length > 0 ? `WHERE ${whereConditions.join(' AND ')}` : '';

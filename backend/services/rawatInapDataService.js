@@ -32,23 +32,31 @@ class RawatInapDataService {
     return 'NOT EXISTS (SELECT 1 FROM resume_pasien_ranap rpr WHERE rpr.no_rawat = ki.no_rawat)';
   }
 
-  static getRawatBersamaResumeFilter(rawatBersamaResumeStatus = 'belum_ada_resume', normalizedUsername = '') {
+  static getRawatBersamaResumeFilter(rawatBersamaResumeStatus = 'belum_ada_resume', accessibleDoctorCodes = []) {
     const normalizedStatus = String(rawatBersamaResumeStatus || 'belum_ada_resume').trim();
-    const usernameLike = `%${String(normalizedUsername || '').trim()}%`;
 
     if (normalizedStatus === 'all') {
       return { condition: '', params: [] };
     }
 
     if (normalizedStatus === 'belum_resume_dokter') {
+      if (!accessibleDoctorCodes.length) {
+        return { condition: '1 = 0', params: [] };
+      }
+
+      const doctorPlaceholders = this.buildInClausePlaceholders(accessibleDoctorCodes);
       return {
         condition: `EXISTS (
           SELECT 1
           FROM resume_pasien_ranap rpr
           WHERE rpr.no_rawat = ki.no_rawat
-            AND rpr.ket_keadaan NOT LIKE ?
+        ) AND NOT EXISTS (
+          SELECT 1
+          FROM resume_pasien_ranap rpr_dokter
+          WHERE rpr_dokter.no_rawat = ki.no_rawat
+            AND rpr_dokter.kd_dokter IN (${doctorPlaceholders})
         )`,
-        params: [usernameLike]
+        params: accessibleDoctorCodes
       };
     }
 
@@ -58,7 +66,6 @@ class RawatInapDataService {
           SELECT 1
           FROM resume_pasien_ranap rpr
           WHERE rpr.no_rawat = ki.no_rawat
-            AND rpr.ket_keluar IS NULL
         )`,
         params: []
       };
@@ -172,7 +179,7 @@ class RawatInapDataService {
       const extraParams = [];
 
       if (String(statusPulang || '').trim() === 'sudah-pulang') {
-        const resumeFilter = this.getRawatBersamaResumeFilter(rawatBersamaResumeStatus, normalizedUsername);
+        const resumeFilter = this.getRawatBersamaResumeFilter(rawatBersamaResumeStatus, accessibleDoctorCodes);
 
         if (resumeFilter.condition) {
           extraConditions.push(resumeFilter.condition);
@@ -374,6 +381,37 @@ class RawatInapDataService {
     `;
   }
 
+  static getRawatBersamaResumeSelect(normalizedTab = 'rawat-inap', accessibleDoctorCodes = []) {
+    if (normalizedTab !== 'rawat-bersama' || !accessibleDoctorCodes.length) {
+      return {
+        selectClause: `NULL AS rawat_bersama_resume_status`,
+        params: []
+      };
+    }
+
+    const doctorPlaceholders = this.buildInClausePlaceholders(accessibleDoctorCodes);
+
+    return {
+      selectClause: `
+        CASE
+          WHEN NOT EXISTS (
+            SELECT 1
+            FROM resume_pasien_ranap rpr_any
+            WHERE rpr_any.no_rawat = ki.no_rawat
+          ) THEN 'belum_ada_resume'
+          WHEN EXISTS (
+            SELECT 1
+            FROM resume_pasien_ranap rpr_self
+            WHERE rpr_self.no_rawat = ki.no_rawat
+              AND rpr_self.kd_dokter IN (${doctorPlaceholders})
+          ) THEN 'sudah_resume_saya'
+          ELSE 'sudah_resume_dokter_lain'
+        END AS rawat_bersama_resume_status
+      `,
+      params: accessibleDoctorCodes
+    };
+  }
+
   static async getTabCounts(
     baseWhereConditions,
     baseParams,
@@ -483,6 +521,7 @@ class RawatInapDataService {
       const fromClause = normalizedTab === 'rawat-gabung'
         ? this.getRawatGabungFromClause()
         : this.getFromClause();
+      const rawatBersamaResumeSelect = this.getRawatBersamaResumeSelect(normalizedTab, accessibleDoctorCodes);
       const keepMovementRows = this.shouldKeepMovementRows(statusPulang);
       const orderDirection = normalizedTab === 'rawat-inap' || normalizedTab === 'rawat-bersama' ? 'ASC' : 'DESC';
       console.log('WHERE clause:', whereClause);
@@ -509,6 +548,7 @@ class RawatInapDataService {
               rp.tgl_registrasi,
               rp.jam_reg,
               rp.status_lanjut,
+              ${rawatBersamaResumeSelect.selectClause},
               CASE
                 WHEN COALESCE(ki.stts_pulang, '') IN ('', '-', 'Pindah Kamar')
                   THEN DATEDIFF(CURDATE(), DATE(ki.tgl_masuk)) + 1
@@ -569,6 +609,7 @@ class RawatInapDataService {
               rp.tgl_registrasi,
               rp.jam_reg,
               rp.status_lanjut,
+              ${rawatBersamaResumeSelect.selectClause},
               CASE
                 WHEN SUBSTRING_INDEX(
                   GROUP_CONCAT(COALESCE(ki.stts_pulang, '') ORDER BY ki.tgl_masuk DESC SEPARATOR '||'),
@@ -614,7 +655,7 @@ class RawatInapDataService {
           : this.getGroupedCountQuery(fromClause, whereClause, keepMovementRows);
 
         console.log('Executing main query:', query);
-        const queryParams = params;
+        const queryParams = [...rawatBersamaResumeSelect.params, ...params];
         console.log('Query parameters:', queryParams);
 
         const [countResult] = await db.execute(countQuery, params);
