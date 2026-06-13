@@ -1523,6 +1523,24 @@ export const MedicalResumeModal: React.FC<MedicalResumeModalProps> = ({
                     </>
                   ) : null}
                 </div>
+                
+                {!isRalan ? (
+                <div className="space-y-4">
+                  <h3 className="font-semibold">Tindakan Ventilator</h3>
+                  <div className="grid grid-cols-1 gap-4">
+                    <>
+                      <div>
+                        <Input
+                          id="tindakan_venti"
+                          value={formData.tindakan_venti || ''}
+                          readOnly
+                          className="bg-muted"
+                        />
+                      </div>
+                    </>
+                  </div>
+                </div>
+                ) : null}
 
                 <div className="space-y-4">
                   <h3 className="font-semibold">Diagnosa</h3>
@@ -1633,23 +1651,6 @@ export const MedicalResumeModal: React.FC<MedicalResumeModalProps> = ({
                     ) : null}
                   </div>
                 </div>
-                {!isRalan ? (
-                <div className="space-y-4">
-                  <h3 className="font-semibold">Tindakan Ventilator</h3>
-                  <div className="grid grid-cols-1 gap-4">
-                    <>
-                      <div>
-                        <Input
-                          id="tindakan_venti"
-                          value={formData.tindakan_venti || ''}
-                          readOnly
-                          className="bg-muted"
-                        />
-                      </div>
-                    </>
-                  </div>
-                </div>
-                ) : null}
 
                 <div className="space-y-4">
                   <h3 className="font-semibold">{isRalan ? 'Terapi Pulang' : 'Rencana Pulang'}</h3>
