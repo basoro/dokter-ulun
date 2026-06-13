@@ -1784,6 +1784,29 @@ app.post('/api/resume-pasien-data/:no_rawat', async (req, res) => {
   }
 });
 
+app.post('/api/resume-pasien-data/:no_rawat/verification', async (req, res) => {
+  try {
+    const { no_rawat } = req.params;
+    const { kd_dokter = '', verified = true } = req.body || {};
+
+    if (!no_rawat) {
+      return res.status(400).json({
+        success: false,
+        error: 'no_rawat is required'
+      });
+    }
+
+    const result = await ResumePasienDataService.setResumeVerification(no_rawat, kd_dokter, Boolean(verified));
+    res.json(result);
+  } catch (error) {
+    console.error('Resume verification error:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message
+    });
+  }
+});
+
 app.delete('/api/resume-pasien-data/:no_rawat', async (req, res) => {
   try {
     const { no_rawat } = req.params;
