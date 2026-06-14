@@ -4937,6 +4937,49 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
     }
   }, []);
 
+  const warnIfAllergicMedicationCodes = useCallback(async (codes: string[] = []) => {
+    const normalizedNoRm = String(no_rkm_medis || '').trim();
+    const normalizedCodes = Array.from(
+      new Set(
+        codes
+          .map((code) => String(code || '').trim())
+          .filter(Boolean)
+      )
+    );
+
+    if (!normalizedNoRm || normalizedCodes.length === 0) {
+      return true;
+    }
+
+    try {
+      const params = new URLSearchParams({
+        action: 'list',
+        no_rkm_medis: normalizedNoRm
+      });
+
+      const response = await fetch(`${API_URLS.ALLERGY_DATA}?${params.toString()}`);
+      const responseJson = await response.json().catch(() => null);
+
+      if (!response.ok || !responseJson?.success) {
+        return true;
+      }
+
+      const allergyItems = Array.isArray(responseJson?.data) ? responseJson.data : [];
+      const matchedItems = allergyItems.filter((item: any) => (
+        String(item?.kategori || '').trim() === 'Obat' &&
+        normalizedCodes.includes(String(item?.kode_brng || '').trim())
+      ));
+
+      if (matchedItems.length > 0) {
+        return window.confirm('Peringatan Pasien Alergi dengan Obat ini. Lanjutkan simpan resep?');
+      }
+    } catch (error) {
+      console.error('Error checking allergic medication codes:', error);
+    }
+
+    return true;
+  }, [no_rkm_medis]);
+
   const handleSaveAllergy = useCallback(async () => {
     if (!no_rkm_medis) {
       toast({
@@ -7212,6 +7255,13 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
           throw new Error('Lengkapi minimal satu racikan yang valid');
         }
 
+        const shouldContinueCompoundSave = await warnIfAllergicMedicationCodes(
+          validCompounds.flatMap((compound) => compound.details.map((item) => item.kode_brng))
+        );
+        if (!shouldContinueCompoundSave) {
+          return;
+        }
+
         const referenceDate = validCompounds[0].tanggal;
         const hasDifferentDate = validCompounds.some((compound) => compound.tanggal !== referenceDate);
         if (hasDifferentDate) {
@@ -7280,6 +7330,13 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
 
         if (!validPrescriptions.length) {
           throw new Error('Pilih minimal satu resep dengan obat yang valid');
+        }
+
+        const shouldContinuePrescriptionSave = await warnIfAllergicMedicationCodes(
+          validPrescriptions.flatMap((prescription) => prescription.medicines.map((obat) => obat.kode_brng))
+        );
+        if (!shouldContinuePrescriptionSave) {
+          return;
         }
 
         if (editingPrescriptionNo && validPrescriptions.length !== 1) {
