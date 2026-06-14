@@ -808,9 +808,15 @@ class GetMedicalRecordService {
   static async fetchMedications(noRawat, status) {
     // Step 1: Get list of unique prescriptions
     const prescQuery = `
-      SELECT DISTINCT no_resep, tgl_perawatan, jam
-      FROM resep_obat 
-      WHERE no_rawat = ? AND status = ?
+      SELECT DISTINCT
+        ro.no_resep,
+        ro.tgl_perawatan,
+        ro.jam,
+        ro.kd_dokter,
+        COALESCE(d.nm_dokter, '') AS nm_dokter
+      FROM resep_obat ro
+      LEFT JOIN dokter d ON d.kd_dokter = ro.kd_dokter
+      WHERE ro.no_rawat = ? AND ro.status = ?
       ORDER BY tgl_perawatan, jam
     `;
     const [prescRows] = await db.execute(prescQuery, [noRawat, status]);
@@ -828,13 +834,15 @@ class GetMedicalRecordService {
         FROM detail_pemberian_obat dro
         LEFT JOIN databarang ob ON dro.kode_brng = ob.kode_brng
         LEFT JOIN aturan_pakai ap ON dro.no_rawat = ap.no_rawat AND dro.kode_brng = ap.kode_brng AND ap.tgl_perawatan = ? AND ap.jam = ? 
-        WHERE dro.tgl_perawatan = ?
+        WHERE dro.no_rawat = ?
+        AND dro.tgl_perawatan = ?
         AND dro.jam = ?
         ORDER BY ob.nama_brng
       `;
       const [detailRows] = await db.execute(detailQuery, [
         prescRow.tgl_perawatan,
-        prescRow.jam, 
+        prescRow.jam,
+        noRawat,
         prescRow.tgl_perawatan,
         prescRow.jam
       ]);
@@ -850,6 +858,9 @@ class GetMedicalRecordService {
         medications.push({
           tanggal: this.formatDateOnly(prescRow.tgl_perawatan) + ' ' + prescRow.jam,
           no_resep: prescRow.no_resep,
+          no_rawat: String(noRawat || '').trim(),
+          kd_dokter: prescRow.kd_dokter || '',
+          nm_dokter: prescRow.nm_dokter || '',
           obat: obatList
         });
       }

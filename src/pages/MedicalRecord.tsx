@@ -10217,7 +10217,7 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
               ) : null}
 
               {/* Data Existing */}
-              <Tabs defaultValue="current" className="space-y-4">
+              <Tabs defaultValue="history" className="space-y-4">
                 <TabsList>
                   <TabsTrigger value="current">Data Resep Obat</TabsTrigger>
                   <TabsTrigger value="history">Riwayat Pemberian Obat</TabsTrigger>
