@@ -1460,8 +1460,142 @@ class GetMedicalRecordService {
 
     return Object.entries(labsByDate).map(([tanggal, pemeriksaan]) => ({
       tanggal,
-      pemeriksaan
+      pemeriksaan,
+      lab_type: 'pk'
     }));
+  }
+
+  static async fetchLaboratoryMicro(noRawat, status = null) {
+    const labQuery = `
+      SELECT pl.*, jp.nm_perawatan, dpl.nilai, dpl.nilai_rujukan, dpl.keterangan, tl.Pemeriksaan AS pemeriksaan
+      FROM periksa_lab pl
+      LEFT JOIN jns_perawatan_lab jp ON pl.kd_jenis_prw = jp.kd_jenis_prw
+      LEFT JOIN detail_periksa_lab dpl
+        ON pl.no_rawat = dpl.no_rawat
+        AND pl.kd_jenis_prw = dpl.kd_jenis_prw
+        AND pl.tgl_periksa = dpl.tgl_periksa
+        AND pl.jam = dpl.jam
+      LEFT JOIN template_laboratorium tl ON dpl.id_template = tl.id_template
+      WHERE pl.no_rawat = ?
+        AND (? IS NULL OR LOWER(pl.status) = LOWER(?))
+        AND LOWER(COALESCE(jp.kategori, '')) = 'pk'
+        AND LOWER(COALESCE(jp.nm_perawatan, '')) LIKE '%mikrobiologi%'
+      ORDER BY pl.tgl_periksa DESC, pl.jam ASC, tl.Pemeriksaan ASC
+    `;
+    const [rows] = await db.execute(labQuery, [noRawat, status, status]);
+
+    const labsByDate = {};
+    rows.forEach(row => {
+      const dateKey = this.formatDateOnly(row.tgl_periksa) + ' ' + row.jam;
+      if (!labsByDate[dateKey]) {
+        labsByDate[dateKey] = [];
+      }
+      if (row.nm_perawatan) {
+        labsByDate[dateKey].push({
+          nama: row.nm_perawatan,
+          pemeriksaan: row.pemeriksaan || '',
+          hasil: row.nilai || '',
+          rujukan: row.nilai_rujukan || '',
+          keterangan: row.keterangan || ''
+        });
+      }
+    });
+
+    return Object.entries(labsByDate).map(([tanggal, pemeriksaan]) => ({
+      tanggal,
+      pemeriksaan,
+      lab_type: 'mikro'
+    }));
+  }
+
+  static async fetchLaboratoryPa(noRawat) {
+    const labPaQuery = `
+      SELECT
+        pa.no_rawat,
+        pa.tgl_periksa,
+        pa.jam,
+        pa.makroskopik,
+        pa.mikroskopik,
+        pa.kesimpulan,
+        skl.saran
+      FROM detail_periksa_lab_pa pa
+      LEFT JOIN saran_kesan_lab skl
+        ON skl.no_rawat = pa.no_rawat
+        AND skl.tgl_periksa = pa.tgl_periksa
+        AND skl.jam = pa.jam
+      WHERE pa.no_rawat = ?
+      ORDER BY pa.tgl_periksa DESC, pa.jam DESC
+    `;
+    const [rows] = await db.execute(labPaQuery, [noRawat]);
+
+    const grouped = {};
+    rows.forEach((row) => {
+      const dateKey = this.formatDateOnly(row.tgl_periksa) + ' ' + row.jam;
+      if (!grouped[dateKey]) {
+        grouped[dateKey] = [];
+      }
+
+      const nilaiMakro = String(row.makroskopik || '').trim();
+      const nilaiMikro = String(row.mikroskopik || '').trim();
+      const nilaiKesimpulan = String(row.kesimpulan || '').trim();
+      const nilaiSaran = String(row.saran || '').trim();
+
+      if (nilaiMakro) {
+        grouped[dateKey].push({
+          nama: 'Lab PA',
+          pemeriksaan: 'Makroskopik',
+          hasil: nilaiMakro,
+          rujukan: '',
+          keterangan: ''
+        });
+      }
+
+      if (nilaiMikro) {
+        grouped[dateKey].push({
+          nama: 'Lab PA',
+          pemeriksaan: 'Mikroskopik',
+          hasil: nilaiMikro,
+          rujukan: '',
+          keterangan: ''
+        });
+      }
+
+      if (nilaiKesimpulan) {
+        grouped[dateKey].push({
+          nama: 'Lab PA',
+          pemeriksaan: 'Kesimpulan',
+          hasil: nilaiKesimpulan,
+          rujukan: '',
+          keterangan: ''
+        });
+      }
+
+      if (nilaiSaran) {
+        grouped[dateKey].push({
+          nama: 'Lab PA',
+          pemeriksaan: 'Saran',
+          hasil: nilaiSaran,
+          rujukan: '',
+          keterangan: ''
+        });
+      }
+    });
+
+    return Object.entries(grouped).map(([tanggal, pemeriksaan]) => ({
+      tanggal,
+      pemeriksaan,
+      lab_type: 'pa'
+    }));
+  }
+
+  static async fetchLaboratoryAll(noRawat, status = null) {
+    const [pk, mikro, pa] = await Promise.all([
+      this.fetchLaboratory(noRawat, status),
+      this.fetchLaboratoryMicro(noRawat, status),
+      this.fetchLaboratoryPa(noRawat)
+    ]);
+
+    return [...(pk || []), ...(mikro || []), ...(pa || [])];
   }
 
   // Helper function to fetch radiology results
@@ -1762,7 +1896,7 @@ class GetMedicalRecordService {
       this.fetchProcedures(visit.no_rawat, 'ralan'),
       this.fetchMedications(visit.no_rawat, 'ralan'),
       this.fetchMedicationsRequest(visit.no_rawat, 'ralan'),
-      this.fetchLaboratory(visit.no_rawat),
+      this.fetchLaboratoryAll(visit.no_rawat),
       this.fetchLaboratoryRequest(visit.no_rawat, 'ralan'),
       this.fetchRadiology(visit.no_rawat),
       this.fetchRadiologyRequest(visit.no_rawat, 'ralan'),
@@ -1818,7 +1952,7 @@ class GetMedicalRecordService {
       this.fetchMedicationsRequest(visit.no_rawat, 'ranap'),
       this.fetchMedicationsRequest(visit.no_rawat, 'pulang'),
       this.fetchMedicationsRequest(visit.no_rawat, 'ibs'),
-      this.fetchLaboratory(visit.no_rawat),
+      this.fetchLaboratoryAll(visit.no_rawat),
       this.fetchLaboratoryRequest(visit.no_rawat, 'ranap'),
       this.fetchRadiology(visit.no_rawat),
       this.fetchRadiologyRequest(visit.no_rawat, 'ranap'),
@@ -2004,6 +2138,7 @@ class GetMedicalRecordService {
         patientPrbRows,
         patientPrbProgramRows,
         latestVisitRows,
+        readmisiRows,
         outpatientPageResult,
         inpatientPageResult,
         focusedRalanExaminations,
@@ -2091,6 +2226,20 @@ class GetMedicalRecordService {
           `,
           [no_rm]
         ),
+        focusNoRawat
+          ? db.execute(
+              `
+                SELECT no_rawat
+                FROM bridging_sep
+                WHERE tglsep BETWEEN CURDATE() - INTERVAL 30 DAY AND CURDATE()
+                  AND nomr = ?
+                  AND no_rawat <> ?
+                  AND jnspelayanan = '1'
+                ORDER BY tglsep DESC
+              `,
+              [no_rm, focusNoRawat]
+            )
+          : Promise.resolve([[]]),
         includeOutpatient
           ? this.fetchVisitsPage(no_rm, 'Ralan', outpatientPage, limit, focusNoRawat)
           : Promise.resolve(null),
@@ -2110,8 +2259,8 @@ class GetMedicalRecordService {
         focusNoRawat && includeFocusedMedications ? this.fetchMedications(focusNoRawat, 'ranap') : Promise.resolve([]),
         focusNoRawat && includeFocusedLaboratory ? this.fetchLaboratoryRequest(focusNoRawat, 'ralan') : Promise.resolve([]),
         focusNoRawat && includeFocusedLaboratory ? this.fetchLaboratoryRequest(focusNoRawat, 'ranap') : Promise.resolve([]),
-        focusNoRawat && includeFocusedLaboratory ? this.fetchLaboratory(focusNoRawat, 'Ralan') : Promise.resolve([]),
-        focusNoRawat && includeFocusedLaboratory ? this.fetchLaboratory(focusNoRawat, 'Ranap') : Promise.resolve([]),
+        focusNoRawat && includeFocusedLaboratory ? this.fetchLaboratoryAll(focusNoRawat, 'Ralan') : Promise.resolve([]),
+        focusNoRawat && includeFocusedLaboratory ? this.fetchLaboratoryAll(focusNoRawat, 'Ranap') : Promise.resolve([]),
         focusNoRawat && includeFocusedRadiology ? this.fetchRadiologyRequest(focusNoRawat, 'ralan') : Promise.resolve([]),
         focusNoRawat && includeFocusedRadiology ? this.fetchRadiologyRequest(focusNoRawat, 'ranap') : Promise.resolve([]),
         focusNoRawat && includeFocusedRadiology ? this.fetchRadiology(focusNoRawat, 'Ralan') : Promise.resolve([]),
@@ -2124,6 +2273,10 @@ class GetMedicalRecordService {
       const patientPrb = patientPrbRows[0];
       const patientPrbProgram = patientPrbProgramRows[0];
       const latestVisits = latestVisitRows[0];
+      const readmisiList = Array.isArray(readmisiRows?.[0]) ? readmisiRows[0] : [];
+      const readmisiNoRawats = readmisiList
+        .map((row) => String(row?.no_rawat || '').trim())
+        .filter(Boolean);
 
       if (patientList.length === 0) {
         throw new Error('Patient not found');
@@ -2211,6 +2364,8 @@ class GetMedicalRecordService {
           prb_program: prbProgram,
           status_lanjut: latestVisits[0]?.status_lanjut || 'Ralan'
         },
+        readmisi: readmisiNoRawats.length > 0,
+        readmisi_no_rawats: readmisiNoRawats,
         outpatient_visits: finalOutpatientVisits,
         inpatient_visits: finalInpatientVisits,
         ...(includeFocusedExaminations ? {

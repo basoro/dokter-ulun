@@ -121,6 +121,7 @@ interface LabTemplateOption {
 interface LabData {
   tanggal: string;
   pemeriksaan: LabTest[];
+  lab_type?: 'pk' | 'pa' | 'mikro';
 }
 
 interface BalanceCairanEntry {
@@ -234,6 +235,8 @@ interface MedicalRecordData {
     prb_program?: string;
     status_lanjut?: string;
   };
+  readmisi?: boolean;
+  readmisi_no_rawats?: string[];
   outpatient_visits: any[];
   inpatient_visits: any[];
   focused_examinations?: {
@@ -972,13 +975,17 @@ const buildFocusedLabItems = (
     .map((record, index) => {
       const normalizedTanggal = String(record?.tanggal || '').trim();
       const [datePart = '', timePart = '00:00'] = normalizedTanggal.split(' ');
+      const parsedTimestamp = datePart
+        ? new Date(`${datePart}T${timePart.length === 5 ? `${timePart}:00` : timePart}`).getTime()
+        : 0;
 
       return {
         ...record,
-        no_rawat: noRawat,
+        no_rawat: (record as any)?.no_rawat || noRawat,
         source,
         __datePart: datePart,
         __timePart: timePart,
+        __timestamp: Number.isNaN(parsedTimestamp) ? 0 : parsedTimestamp,
         __index: index
       };
     })
@@ -1198,6 +1205,7 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
   const [savingIgdTriage, setSavingIgdTriage] = useState(false);
 
   const [fullscreenLabHistory, setFullscreenLabHistory] = useState<any | null>(null);
+  const [laboratoryHistoryFilter, setLaboratoryHistoryFilter] = useState<'pk' | 'pa' | 'mikro'>('pk');
   const [draggingLab, setDraggingLab] = useState<LabData | null>(null);
   const [canvasItems, setCanvasItems] = useState<Array<{ type: string; content: any; position: { x: number; y: number } }>>([]);
   const [draggingRad, setDraggingRad] = useState<any | null>(null);
@@ -1817,6 +1825,22 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
   }, [inpatientLaboratoryHistory, outpatientLaboratoryHistory]);
   const laboratoryHistoryInpatientView =
     defaultExaminationStatusRawat === 'Ranap' ? inpatientLaboratoryHistoryAll : inpatientLaboratoryHistory;
+
+  const matchesLaboratoryHistoryFilter = useCallback((item: any) => {
+    const rawType = String(item?.lab_type || '').trim().toLowerCase();
+    const normalizedType = rawType || 'pk';
+    return normalizedType === laboratoryHistoryFilter;
+  }, [laboratoryHistoryFilter]);
+
+  const outpatientLaboratoryHistoryFiltered = useMemo(
+    () => outpatientLaboratoryHistory.filter(matchesLaboratoryHistoryFilter),
+    [matchesLaboratoryHistoryFilter, outpatientLaboratoryHistory]
+  );
+
+  const laboratoryHistoryInpatientViewFiltered = useMemo(
+    () => laboratoryHistoryInpatientView.filter(matchesLaboratoryHistoryFilter),
+    [laboratoryHistoryInpatientView, matchesLaboratoryHistoryFilter]
+  );
   const outpatientRadiologyRequests = React.useMemo(() => {
     if (formattedNoRawat) {
       return buildFocusedItems(medicalData?.focused_radiology_request?.ralan || [], formattedNoRawat, 'Rawat Jalan');
@@ -3642,6 +3666,14 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
           return {
             ...previousData,
             patient: responseData.patient || previousData.patient,
+            readmisi:
+              responseData.readmisi !== undefined
+                ? responseData.readmisi
+                : previousData.readmisi,
+            readmisi_no_rawats:
+              responseData.readmisi_no_rawats !== undefined
+                ? responseData.readmisi_no_rawats
+                : previousData.readmisi_no_rawats,
             outpatient_visits: mergeVisitsByNoRawat(
               previousData.outpatient_visits,
               responseData.outpatient_visits || []
@@ -7611,8 +7643,20 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
                 <User className="h-5 w-5 text-muted-foreground shrink-0 mt-0.5" />
                 <div>
                   <p className="text-sm text-muted-foreground">Nama</p>
-                  <div className="flex items-center gap-2">
+                  <div className="flex flex-wrap items-center gap-2">
                     <p className="font-medium">{currentPatient.nama}</p>
+                    {medicalData?.readmisi ? (
+                      <span
+                        className="inline-flex items-center rounded-sm border border-red-200 bg-red-50/80 px-2 py-0.5 text-xs font-medium text-red-700"
+                        title={
+                          Array.isArray(medicalData?.readmisi_no_rawats) && medicalData.readmisi_no_rawats.length > 0
+                            ? `Readmisi: ${medicalData.readmisi_no_rawats.join(', ')}`
+                            : 'Readmisi'
+                        }
+                      >
+                        Readmisi
+                      </span>
+                    ) : null}
                     {defaultExaminationStatusRawat === 'Ralan' && prbInfoText ? (
                       <p
                         className="text-xs text-amber-700"
@@ -10765,12 +10809,54 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
                       </TabsList>
                       <TabsContent value="outpatient">
                         {isFocusedLaboratoryLoaded ? (
-                          <div className="space-y-4">{renderLaboratoryHistoryCards(outpatientLaboratoryHistory)}</div>
+                          <div className="space-y-4">
+                            <div className="inline-flex h-auto min-h-10 flex-wrap items-center justify-start rounded-md bg-muted p-1 text-muted-foreground">
+                              {[
+                                { value: 'pk' as const, label: 'Lab PK' },
+                                { value: 'pa' as const, label: 'Lab PA' },
+                                { value: 'mikro' as const, label: 'Lab Mikrobiologi' }
+                              ].map((item) => (
+                                <button
+                                  key={item.value}
+                                  type="button"
+                                  className={cn(
+                                    "inline-flex items-center justify-center whitespace-nowrap rounded-sm px-3 py-1.5 text-sm font-medium ring-offset-background transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50",
+                                    laboratoryHistoryFilter === item.value && "bg-background text-foreground shadow-sm"
+                                  )}
+                                  onClick={() => setLaboratoryHistoryFilter(item.value)}
+                                >
+                                  {item.label}
+                                </button>
+                              ))}
+                            </div>
+                            {renderLaboratoryHistoryCards(outpatientLaboratoryHistoryFiltered)}
+                          </div>
                         ) : renderDeferredTabState('hasil laboratorium')}
                       </TabsContent>
                       <TabsContent value="inpatient">
                         {isFocusedLaboratoryLoaded ? (
-                          <div className="space-y-4">{renderLaboratoryHistoryCards(laboratoryHistoryInpatientView)}</div>
+                          <div className="space-y-4">
+                            <div className="inline-flex h-auto min-h-10 flex-wrap items-center justify-start rounded-md bg-muted p-1 text-muted-foreground">
+                              {[
+                                { value: 'pk' as const, label: 'Lab PK' },
+                                { value: 'pa' as const, label: 'Lab PA' },
+                                { value: 'mikro' as const, label: 'Lab Mikrobiologi' }
+                              ].map((item) => (
+                                <button
+                                  key={item.value}
+                                  type="button"
+                                  className={cn(
+                                    "inline-flex items-center justify-center whitespace-nowrap rounded-sm px-3 py-1.5 text-sm font-medium ring-offset-background transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50",
+                                    laboratoryHistoryFilter === item.value && "bg-background text-foreground shadow-sm"
+                                  )}
+                                  onClick={() => setLaboratoryHistoryFilter(item.value)}
+                                >
+                                  {item.label}
+                                </button>
+                              ))}
+                            </div>
+                            {renderLaboratoryHistoryCards(laboratoryHistoryInpatientViewFiltered)}
+                          </div>
                         ) : renderDeferredTabState('hasil laboratorium')}
                       </TabsContent>
                     </Tabs>
