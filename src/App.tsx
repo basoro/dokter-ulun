@@ -21,6 +21,7 @@ import StatisticsCare from "./pages/StatisticsCare";
 import AIAssistant from "./pages/AIAssistant";
 import Settings from "./pages/Settings";
 import AuditHistory from "./pages/AuditHistory";
+import Panduan from "./pages/Panduan";
 import Sidebar from "./components/Sidebar";
 
 // Helper function to format no_rawat
@@ -176,6 +177,7 @@ const AppContent = () => {
             <Route path="/icd9" element={<MasterICD />} />
             <Route path="/igd" element={<Index />} />
             <Route path="/ai-assistant" element={<AIAssistant />} />
+            <Route path="/panduan" element={<Panduan />} />
             <Route path="/riwayat-audit" element={<AuditHistory />} />
             <Route path="/pengaturan" element={<Settings />} />
             <Route path="/rekam-medik" element={<MedicalRecord />} />

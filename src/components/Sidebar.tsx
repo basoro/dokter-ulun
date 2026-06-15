@@ -61,6 +61,7 @@ const Sidebar: React.FC<SidebarProps> = ({ doctorName, doctorId, gender, canView
   const menuItems = [
     { name: 'Dashboard', path: '/', icon: <BarChart2 className="h-5 w-5" /> },
     { name: 'AI Asisten', path: '/ai-assistant', icon: <Bot className="h-5 w-5" />, badge: 'Beta' },
+    { name: 'Panduan', path: '/panduan', icon: <HelpCircle className="h-5 w-5" /> },
     ...(canViewAuditHistory ? [{ name: 'Riwayat Audit', path: '/riwayat-audit', icon: <Book className="h-5 w-5" /> }] : []),
     { name: 'Presensi', path: '/presensi', icon: <FileCheck className="h-5 w-5" /> },
     { name: 'Booking Operasi', path: '/booking', icon: <CalendarClock className="h-5 w-5" /> },
