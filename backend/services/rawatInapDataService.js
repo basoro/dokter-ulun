@@ -117,7 +117,7 @@ class RawatInapDataService {
     const accessibleDoctorCodes = this.getAccessibleDoctorCodes(normalizedUsername);
     const normalizedTab = String(tab || 'rawat-inap').trim();
 
-    if (accessibleDoctorCodes.length > 0) {
+    if (accessibleDoctorCodes.length > 0 && normalizedTab !== 'rawat-gabung') {
       const doctorPlaceholders = this.buildInClausePlaceholders(accessibleDoctorCodes);
       whereConditions.push(`EXISTS (
         SELECT 1
@@ -413,14 +413,17 @@ class RawatInapDataService {
   }
 
   static async getTabCounts(
-    baseWhereConditions,
-    baseParams,
-    normalizedUsername,
-    accessibleDoctorCodes,
-    statusPulang = 'all',
-    rawatBersamaResumeStatus = 'belum_ada_resume'
+    {
+      search = '',
+      statusPulang = 'all',
+      username = '',
+      startDate,
+      endDate,
+      rawatBersamaResumeStatus = 'belum_ada_resume'
+    } = {}
   ) {
-    const fromClause = this.getFromClause();
+    const normalizedUsername = String(username || '').trim();
+    const accessibleDoctorCodes = this.getAccessibleDoctorCodes(normalizedUsername);
     const keepMovementRows = this.shouldKeepMovementRows(statusPulang);
     const countTabs = [
       { key: 'rawat_inap', tab: 'rawat-inap' },
@@ -430,13 +433,24 @@ class RawatInapDataService {
 
     const countEntries = await Promise.all(
       countTabs.map(async ({ key, tab }) => {
-      const tabFilter = this.getTabFilter(tab, normalizedUsername, accessibleDoctorCodes, statusPulang, rawatBersamaResumeStatus);
-      const whereConditions = [...baseWhereConditions, tabFilter.condition];
-      const params = [...baseParams, ...tabFilter.params];
-      const whereClause = `WHERE ${whereConditions.join(' AND ')}`;
-      const countQuery = tab === 'rawat-gabung'
-        ? this.getRawatGabungCountQuery(whereClause)
-        : this.getGroupedCountQuery(fromClause, whereClause, keepMovementRows);
+        const {
+          whereConditions: baseWhereConditions,
+          params: baseParams
+        } = this.getBaseFilters({
+          search,
+          statusPulang,
+          username: normalizedUsername,
+          tab,
+          startDate,
+          endDate
+        });
+        const tabFilter = this.getTabFilter(tab, normalizedUsername, accessibleDoctorCodes, statusPulang, rawatBersamaResumeStatus);
+        const whereConditions = [...baseWhereConditions, tabFilter.condition];
+        const params = [...baseParams, ...tabFilter.params];
+        const whereClause = `WHERE ${whereConditions.join(' AND ')}`;
+        const countQuery = tab === 'rawat-gabung'
+          ? this.getRawatGabungCountQuery(whereClause)
+          : this.getGroupedCountQuery(this.getFromClause(), whereClause, keepMovementRows);
         const [countResult] = await db.execute(countQuery, params);
 
         return [key, countResult[0]?.total || 0];
@@ -671,14 +685,14 @@ class RawatInapDataService {
       }
 
       if (shouldIncludeTabCounts || shouldReturnCountsOnly) {
-        tabCounts = await this.getTabCounts(
-          baseWhereConditions,
-          baseParams,
-          normalizedUsername,
-          accessibleDoctorCodes,
+        tabCounts = await this.getTabCounts({
+          search,
           statusPulang,
+          username: normalizedUsername,
+          startDate,
+          endDate,
           rawatBersamaResumeStatus
-        );
+        });
         console.log('Tab counts:', tabCounts);
       }
 
