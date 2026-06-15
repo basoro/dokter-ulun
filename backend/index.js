@@ -1,4 +1,5 @@
 import express from 'express';
+import multer from 'multer';
 import cors from 'cors';
 import dotenv from 'dotenv';
 import fs from 'fs';
@@ -80,6 +81,54 @@ const reportSaveExaminationDebug = (hypothesisId, location, msg, data = {}, runI
 
 const app = express();
 const PORT = process.env.PORT || 3000;
+const DIGITAL_FILES_MAX_UPLOAD_SIZE = 5 * 1024 * 1024;
+const DIGITAL_FILES_ALLOWED_MIME_TYPES = new Set(['image/jpeg', 'image/png', 'application/pdf']);
+const digitalFilesUpload = multer({
+  storage: multer.memoryStorage(),
+  limits: {
+    fileSize: DIGITAL_FILES_MAX_UPLOAD_SIZE,
+    files: 10
+  },
+  fileFilter: (_req, file, cb) => {
+    if (!DIGITAL_FILES_ALLOWED_MIME_TYPES.has(String(file.mimetype || '').toLowerCase())) {
+      cb(new Error('Tipe file tidak didukung. Hanya JPG, JPEG, PNG, dan PDF.'));
+      return;
+    }
+
+    cb(null, true);
+  }
+});
+
+const handleDigitalFilesUpload = (req, res, next) => {
+  digitalFilesUpload.fields([
+    { name: 'file', maxCount: 1 },
+    { name: 'files', maxCount: 10 }
+  ])(req, res, (error) => {
+    if (!error) {
+      next();
+      return;
+    }
+
+    if (error instanceof multer.MulterError && error.code === 'LIMIT_FILE_SIZE') {
+      return res.status(400).json({
+        success: false,
+        error: 'Ukuran file maksimal 5 MB.'
+      });
+    }
+
+    if (error instanceof multer.MulterError && error.code === 'LIMIT_FILE_COUNT') {
+      return res.status(400).json({
+        success: false,
+        error: 'Jumlah file yang diunggah melebihi batas.'
+      });
+    }
+
+    return res.status(400).json({
+      success: false,
+      error: error.message || 'Upload berkas digital gagal'
+    });
+  });
+};
 
 // Middleware
 app.use(cors({
@@ -1874,9 +1923,47 @@ app.delete('/api/radiology-data', async (req, res) => {
   }
 });
 
+app.get('/api/digital-files/options', async (_req, res) => {
+  try {
+    const result = await DigitalFilesService.getFileOptions();
+    res.json(result);
+  } catch (error) {
+    console.error('Error in digital-files options endpoint:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message
+    });
+  }
+});
+
+app.post('/api/digital-files/upload', handleDigitalFilesUpload, async (req, res) => {
+  try {
+    const uploadedFiles = [
+      ...((req.files && Array.isArray(req.files.file)) ? req.files.file : []),
+      ...((req.files && Array.isArray(req.files.files)) ? req.files.files : [])
+    ];
+    const { no_rawat, kode } = req.body || {};
+
+    const result = await DigitalFilesService.uploadFiles({
+      noRawat: no_rawat,
+      kode,
+      files: uploadedFiles
+    });
+
+    res.status(result.success ? 200 : 207).json(result);
+  } catch (error) {
+    console.error('Error in digital-files upload endpoint:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message
+    });
+  }
+});
+
 app.get('/api/digital-files/:no_rawat', async (req, res) => {
   try {
     const { no_rawat } = req.params;
+    const kdDokter = String(req.query.username || req.query.kd_dokter || '').trim();
     const debugMode = String(req.query.debug || '') === '1';
 
     if (!no_rawat) {
@@ -1886,7 +1973,7 @@ app.get('/api/digital-files/:no_rawat', async (req, res) => {
       });
     }
 
-    const result = await DigitalFilesService.getFiles(no_rawat);
+    const result = await DigitalFilesService.getFiles(no_rawat, kdDokter);
     if (debugMode) {
       return res.json({
         ...result,
@@ -1904,6 +1991,41 @@ app.get('/api/digital-files/:no_rawat', async (req, res) => {
   } catch (error) {
     console.error('Error in digital-files GET endpoint:', error);
     res.status(500).json({
+      success: false,
+      error: error.message
+    });
+  }
+});
+
+app.delete('/api/digital-files', async (req, res) => {
+  try {
+    const {
+      no_rawat,
+      kode,
+      lokasi_file,
+      username,
+      kd_dokter
+    } = req.body || {};
+
+    const result = await DigitalFilesService.deleteFile({
+      noRawat: no_rawat,
+      kode,
+      lokasiFile: lokasi_file,
+      kdDokter: username || kd_dokter
+    });
+
+    await auditCrudSuccess(req, 'digital_file', 'delete', result, {
+      reference_id: `${no_rawat || ''}:${kode || ''}:${lokasi_file || ''}`
+    });
+
+    res.json(result);
+  } catch (error) {
+    await auditCrudFailure(req, 'digital_file', 'delete', error, {
+      reference_id: `${req.body?.no_rawat || ''}:${req.body?.kode || ''}:${req.body?.lokasi_file || ''}`
+    });
+    const statusCode = Number(error?.statusCode) || 500;
+    console.error('Error in digital-files DELETE endpoint:', error);
+    res.status(statusCode).json({
       success: false,
       error: error.message
     });
