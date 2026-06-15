@@ -1,5 +1,6 @@
 import mysql from 'mysql2/promise';
 import dotenv from 'dotenv';
+import DigitalFilesService from './digitalFilesService.js';
 
 dotenv.config();
 
@@ -135,6 +136,289 @@ class LaboratoryDataService {
       
       const [rows] = await connection.execute(query, [kd_jenis_prw]);
       return rows;
+    } finally {
+      await connection.end();
+    }
+  }
+
+  normalizePagination(page = 1, itemsPerPage = 10) {
+    const normalizedPage = Math.max(parseInt(page, 10) || 1, 1);
+    const normalizedItemsPerPage = parseInt(itemsPerPage, 10) || 10;
+    const limit = normalizedItemsPerPage === -1
+      ? 10000
+      : Math.min(Math.max(normalizedItemsPerPage, 1), 100);
+    const offset = limit === 10000 ? 0 : (normalizedPage - 1) * limit;
+
+    return {
+      page: normalizedPage,
+      limit,
+      offset
+    };
+  }
+
+  buildListFilters({ search = '', date = '', startDate = '', endDate = '' } = {}) {
+    const conditions = [];
+    const params = [];
+
+    if (search && search.trim()) {
+      const searchTerm = `%${search.trim()}%`;
+      conditions.push(`(
+        p.nm_pasien LIKE ? OR
+        rp.no_rkm_medis LIKE ? OR
+        rp.no_rawat LIKE ? OR
+        d.nm_dokter LIKE ? OR
+        layanan.nm_perawatan LIKE ?
+      )`);
+      params.push(searchTerm, searchTerm, searchTerm, searchTerm, searchTerm);
+    }
+
+    if (startDate && endDate) {
+      conditions.push('rp.tgl_registrasi BETWEEN ? AND ?');
+      params.push(startDate, endDate);
+    } else if (startDate) {
+      conditions.push('rp.tgl_registrasi >= ?');
+      params.push(startDate);
+    } else if (endDate) {
+      conditions.push('rp.tgl_registrasi <= ?');
+      params.push(endDate);
+    } else {
+      const effectiveDate = String(date || '').trim() || new Date().toISOString().slice(0, 10);
+      conditions.push('rp.tgl_registrasi = ?');
+      params.push(effectiveDate);
+    }
+
+    return {
+      whereClause: conditions.length ? `WHERE ${conditions.join(' AND ')}` : '',
+      params
+    };
+  }
+
+  async getDailyLabPatients({
+    page = 1,
+    itemsPerPage = 10,
+    search = '',
+    date = '',
+    startDate = '',
+    endDate = ''
+  } = {}) {
+    const connection = await this.getConnection();
+    try {
+      const { page: normalizedPage, limit, offset } = this.normalizePagination(page, itemsPerPage);
+      const { whereClause, params } = this.buildListFilters({ search, date, startDate, endDate });
+
+      const countQuery = `
+        SELECT COUNT(DISTINCT rp.no_rawat) AS total
+        FROM reg_periksa rp
+        INNER JOIN pasien p ON rp.no_rkm_medis = p.no_rkm_medis
+        LEFT JOIN dokter d ON rp.kd_dokter = d.kd_dokter
+        INNER JOIN periksa_lab pl ON rp.no_rawat = pl.no_rawat
+        INNER JOIN jns_perawatan_lab layanan ON pl.kd_jenis_prw = layanan.kd_jenis_prw
+        ${whereClause}
+      `;
+
+      const listQuery = `
+        SELECT
+          rp.no_rawat,
+          rp.no_rkm_medis,
+          rp.tgl_registrasi,
+          rp.jam_reg,
+          rp.status_lanjut,
+          p.nm_pasien,
+          p.umur,
+          COALESCE(d.nm_dokter, '') AS nm_dokter,
+          GROUP_CONCAT(DISTINCT layanan.nm_perawatan ORDER BY layanan.nm_perawatan SEPARATOR ' | ') AS pemeriksaan
+        FROM reg_periksa rp
+        INNER JOIN pasien p ON rp.no_rkm_medis = p.no_rkm_medis
+        LEFT JOIN dokter d ON rp.kd_dokter = d.kd_dokter
+        INNER JOIN periksa_lab pl ON rp.no_rawat = pl.no_rawat
+        INNER JOIN jns_perawatan_lab layanan ON pl.kd_jenis_prw = layanan.kd_jenis_prw
+        ${whereClause}
+        GROUP BY
+          rp.no_rawat,
+          rp.no_rkm_medis,
+          rp.tgl_registrasi,
+          rp.jam_reg,
+          rp.status_lanjut,
+          p.nm_pasien,
+          p.umur,
+          d.nm_dokter
+        ORDER BY rp.tgl_registrasi DESC, rp.jam_reg DESC
+        ${limit === 10000 ? '' : 'LIMIT ? OFFSET ?'}
+      `;
+
+      const [[countRows], [rows]] = await Promise.all([
+        connection.execute(countQuery, params),
+        connection.execute(listQuery, limit === 10000 ? params : [...params, limit, offset])
+      ]);
+
+      const total = Number(countRows?.[0]?.total || 0);
+      const totalPages = limit === 10000 ? 1 : Math.max(Math.ceil(total / limit), 1);
+
+      return {
+        success: true,
+        data: rows.map((row) => ({
+          no_rawat: row.no_rawat,
+          no_rkm_medis: row.no_rkm_medis,
+          tgl_registrasi: row.tgl_registrasi,
+          jam_reg: row.jam_reg,
+          status_lanjut: row.status_lanjut,
+          nm_pasien: row.nm_pasien,
+          umur: row.umur,
+          nm_dokter: row.nm_dokter,
+          pemeriksaan: row.pemeriksaan || ''
+        })),
+        total,
+        page: normalizedPage,
+        limit,
+        totalPages
+      };
+    } finally {
+      await connection.end();
+    }
+  }
+
+  async getLabPatientDetail(no_rawat) {
+    const connection = await this.getConnection();
+    try {
+      const patientQuery = `
+        SELECT
+          rp.no_rkm_medis,
+          rp.no_rawat,
+          rp.status_lanjut,
+          rp.kd_pj,
+          p.nm_pasien,
+          p.umur,
+          COALESCE(d.nm_dokter, '') AS nm_dokter,
+          GROUP_CONCAT(DISTINCT layanan.nm_perawatan ORDER BY layanan.nm_perawatan SEPARATOR ' | ') AS nm_perawatan
+        FROM reg_periksa rp
+        INNER JOIN pasien p ON rp.no_rkm_medis = p.no_rkm_medis
+        LEFT JOIN dokter d ON rp.kd_dokter = d.kd_dokter
+        INNER JOIN periksa_lab pl ON rp.no_rawat = pl.no_rawat
+        INNER JOIN jns_perawatan_lab layanan ON pl.kd_jenis_prw = layanan.kd_jenis_prw
+        WHERE rp.no_rawat = ?
+        GROUP BY
+          rp.no_rkm_medis,
+          rp.no_rawat,
+          rp.status_lanjut,
+          rp.kd_pj,
+          p.nm_pasien,
+          p.umur,
+          d.nm_dokter
+        LIMIT 1
+      `;
+
+      const resultsQuery = `
+        SELECT
+          COALESCE(layanan.nm_perawatan, 'Template Lainnya') AS template_name,
+          tl.Pemeriksaan AS pemeriksaan,
+          dpl.nilai,
+          tl.satuan,
+          dpl.nilai_rujukan,
+          dpl.keterangan
+        FROM detail_periksa_lab dpl
+        INNER JOIN template_laboratorium tl ON dpl.id_template = tl.id_template
+        LEFT JOIN jns_perawatan_lab layanan ON tl.kd_jenis_prw = layanan.kd_jenis_prw
+        WHERE dpl.no_rawat = ?
+        ORDER BY dpl.tgl_periksa DESC, dpl.jam DESC, layanan.nm_perawatan ASC, tl.Pemeriksaan ASC
+      `;
+
+      const impressionQuery = `
+        SELECT
+          no_rawat,
+          tgl_periksa,
+          jam,
+          saran,
+          kesan
+        FROM saran_kesan_lab
+        WHERE no_rawat = ?
+        ORDER BY tgl_periksa DESC, jam DESC
+        LIMIT 1
+      `;
+
+      const attachmentsQuery = `
+        SELECT lokasi_file
+        FROM berkas_digital_perawatan
+        WHERE kode = '005' AND no_rawat = ?
+        ORDER BY lokasi_file ASC
+      `;
+
+      const [[patientRows], [resultRows], [impressionRows], [attachmentRows]] = await Promise.all([
+        connection.execute(patientQuery, [no_rawat]),
+        connection.execute(resultsQuery, [no_rawat]),
+        connection.execute(impressionQuery, [no_rawat]),
+        connection.execute(attachmentsQuery, [no_rawat])
+      ]);
+
+      const patient = patientRows?.[0];
+      if (!patient) {
+        throw new Error('Data pasien laboratorium tidak ditemukan');
+      }
+
+      return {
+        success: true,
+        data: {
+          no_rkm_medis: patient.no_rkm_medis,
+          no_rawat: patient.no_rawat,
+          nm_pasien: patient.nm_pasien,
+          umur: patient.umur,
+          status_lanjut: patient.status_lanjut,
+          kd_pj: patient.kd_pj,
+          nm_dokter: patient.nm_dokter,
+          nm_perawatan: patient.nm_perawatan || '',
+          attachments: attachmentRows.map((row) => {
+            const lokasiFile = String(row.lokasi_file || '').trim();
+            return {
+              lokasi_file: lokasiFile,
+              nama_file: DigitalFilesService.extractFileName(lokasiFile),
+              url: DigitalFilesService.buildFileUrl(lokasiFile)
+            };
+          }),
+          results: resultRows.map((row) => ({
+            template_name: row.template_name || 'Template Lainnya',
+            pemeriksaan: row.pemeriksaan || '',
+            nilai: row.nilai || '',
+            satuan: row.satuan || '',
+            nilai_rujukan: row.nilai_rujukan || '',
+            keterangan: row.keterangan || ''
+          })),
+          review: impressionRows?.[0] || {
+            kesan: '',
+            saran: ''
+          }
+        }
+      };
+    } finally {
+      await connection.end();
+    }
+  }
+
+  async saveLabReview(no_rawat, kesan = '', saran = '') {
+    const connection = await this.getConnection();
+    try {
+      const normalizedNoRawat = String(no_rawat || '').trim();
+      const normalizedKesan = String(kesan || '').trim();
+      const normalizedSaran = String(saran || '').trim();
+
+      if (!normalizedNoRawat) {
+        throw new Error('no_rawat wajib diisi');
+      }
+
+      if (!normalizedKesan && !normalizedSaran) {
+        throw new Error('Kesan atau saran wajib diisi');
+      }
+
+      await connection.execute(
+        `
+          INSERT INTO saran_kesan_lab (no_rawat, tgl_periksa, jam, saran, kesan)
+          VALUES (?, CURDATE(), CURTIME(), ?, ?)
+        `,
+        [normalizedNoRawat, normalizedSaran, normalizedKesan]
+      );
+
+      return {
+        success: true,
+        no_rawat: normalizedNoRawat
+      };
     } finally {
       await connection.end();
     }

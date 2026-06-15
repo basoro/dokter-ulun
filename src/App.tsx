@@ -22,6 +22,8 @@ import AIAssistant from "./pages/AIAssistant";
 import Settings from "./pages/Settings";
 import AuditHistory from "./pages/AuditHistory";
 import Panduan from "./pages/Panduan";
+import Laboratorium from "./pages/Laboratorium";
+import Radiologi from "./pages/Radiologi";
 import Sidebar from "./components/Sidebar";
 
 // Helper function to format no_rawat
@@ -72,6 +74,8 @@ const AppContent = () => {
   const [sidebarOpen, setSidebarOpen] = React.useState(false);
   const [medicalRecordSearchOpen, setMedicalRecordSearchOpen] = React.useState(false);
   const [canViewAuditHistory, setCanViewAuditHistory] = React.useState(false);
+  const [canAccessLaboratorium, setCanAccessLaboratorium] = React.useState<boolean | null>(null);
+  const [canAccessRadiologi, setCanAccessRadiologi] = React.useState<boolean | null>(null);
   const { user, isAuthenticated, logout } = useAuth();
   const location = useLocation();
   const navigate = useNavigate();
@@ -90,24 +94,35 @@ const AppContent = () => {
     const username = String(user?.username || '').trim();
     if (!username || !isAuthenticated) {
       setCanViewAuditHistory(false);
+      setCanAccessLaboratorium(false);
+      setCanAccessRadiologi(false);
       return;
     }
 
-    const checkAuditAccess = async () => {
+    const checkFeatureAccess = async () => {
       try {
-        const response = await fetch(`${API_URLS.AUDIT_HISTORY_ACCESS}/${encodeURIComponent(username)}`);
-        const result = await response.json();
-        if (!response.ok) {
-          throw new Error(result?.error || 'Gagal memeriksa akses riwayat audit');
-        }
+        const [auditResponse, labResponse, radResponse] = await Promise.all([
+          fetch(`${API_URLS.AUDIT_HISTORY_ACCESS}/${encodeURIComponent(username)}`),
+          fetch(`${API_URLS.LABORATORY_DATA_ACCESS}/${encodeURIComponent(username)}`),
+          fetch(`${API_URLS.RADIOLOGY_DATA_ACCESS}/${encodeURIComponent(username)}`)
+        ]);
+        const [auditResult, labResult, radResult] = await Promise.all([
+          auditResponse.json(),
+          labResponse.json(),
+          radResponse.json()
+        ]);
 
-        setCanViewAuditHistory(Boolean(result?.can_access));
+        setCanViewAuditHistory(auditResponse.ok && Boolean(auditResult?.can_access));
+        setCanAccessLaboratorium(labResponse.ok && Boolean(labResult?.can_access));
+        setCanAccessRadiologi(radResponse.ok && Boolean(radResult?.can_access));
       } catch {
         setCanViewAuditHistory(false);
+        setCanAccessLaboratorium(false);
+        setCanAccessRadiologi(false);
       }
     };
 
-    void checkAuditAccess();
+    void checkFeatureAccess();
   }, [isAuthenticated, user?.username]);
 
   if (loading) {
@@ -149,6 +164,8 @@ const AppContent = () => {
               doctorId={user?.username || ""}
               gender={user?.jk || "L"}
               canViewAuditHistory={canViewAuditHistory}
+              canAccessLaboratorium={Boolean(canAccessLaboratorium)}
+              canAccessRadiologi={Boolean(canAccessRadiologi)}
               onLogout={logout}
             />
           </div>
@@ -177,6 +194,8 @@ const AppContent = () => {
             <Route path="/icd9" element={<MasterICD />} />
             <Route path="/igd" element={<Index />} />
             <Route path="/ai-assistant" element={<AIAssistant />} />
+            <Route path="/laboratorium" element={canAccessLaboratorium === false ? <Navigate to="/" replace /> : <Laboratorium />} />
+            <Route path="/radiologi" element={canAccessRadiologi === false ? <Navigate to="/" replace /> : <Radiologi />} />
             <Route path="/panduan" element={<Panduan />} />
             <Route path="/riwayat-audit" element={<AuditHistory />} />
             <Route path="/pengaturan" element={<Settings />} />
@@ -197,6 +216,8 @@ const AppContent = () => {
                 doctorId={user?.username || ""} 
                 gender={user?.jk || "L"}
                 canViewAuditHistory={canViewAuditHistory}
+                canAccessLaboratorium={Boolean(canAccessLaboratorium)}
+                canAccessRadiologi={Boolean(canAccessRadiologi)}
                 onClose={() => setSidebarOpen(false)}
                 onLogout={logout}
               />

@@ -14,6 +14,8 @@ import {
   Activity,
   Bot,
   AlarmClock,
+  FlaskConical,
+  ScanLine,
   LogOut,
   ChevronDown,
   ChevronUp
@@ -28,6 +30,8 @@ interface SidebarProps {
   doctorId: string;
   gender: 'L' | 'P'; 
   canViewAuditHistory?: boolean;
+  canAccessLaboratorium?: boolean;
+  canAccessRadiologi?: boolean;
   onClose?: () => void;
   onLogout?: () => void;
 }
@@ -38,7 +42,16 @@ interface SubmenuItem {
   exact?: boolean;
 }
 
-const Sidebar: React.FC<SidebarProps> = ({ doctorName, doctorId, gender, canViewAuditHistory = false, onClose, onLogout }) => {
+const Sidebar: React.FC<SidebarProps> = ({
+  doctorName,
+  doctorId,
+  gender,
+  canViewAuditHistory = false,
+  canAccessLaboratorium = false,
+  canAccessRadiologi = false,
+  onClose,
+  onLogout
+}) => {
   const location = useLocation();
   const [pasienOpen, setPasienOpen] = useState(true);
   const [statistikOpen, setStatistikOpen] = useState(true);
@@ -60,6 +73,8 @@ const Sidebar: React.FC<SidebarProps> = ({ doctorName, doctorId, gender, canView
   
   const menuItems = [
     { name: 'Dashboard', path: '/', icon: <BarChart2 className="h-5 w-5" /> },
+    ...(canAccessLaboratorium ? [{ name: 'Laboratorium', path: '/laboratorium', icon: <FlaskConical className="h-5 w-5" /> }] : []),
+    ...(canAccessRadiologi ? [{ name: 'Radiologi', path: '/radiologi', icon: <ScanLine className="h-5 w-5" /> }] : []),
     { name: 'AI Asisten', path: '/ai-assistant', icon: <Bot className="h-5 w-5" />, badge: 'Beta' },
     ...(canViewAuditHistory ? [{ name: 'Riwayat Audit', path: '/riwayat-audit', icon: <Book className="h-5 w-5" /> }] : []),
     { name: 'Presensi', path: '/presensi', icon: <FileCheck className="h-5 w-5" /> },

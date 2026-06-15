@@ -22,6 +22,7 @@ const quickLinks = [
   { id: 'navigasi', label: 'Navigasi Utama' },
   { id: 'pasien', label: 'Pasien & Rekam Medik' },
   { id: 'klinis', label: 'Fitur Klinis' },
+  { id: 'diagnostik', label: 'Menu Lab & Rad' },
   { id: 'pendukung', label: 'Fitur Pendukung' },
   { id: 'kendala', label: 'Kendala Umum' }
 ];
@@ -80,6 +81,22 @@ const guideSections = [
     ]
   },
   {
+    id: 'diagnostik',
+    title: 'Menu Laboratorium dan Radiologi',
+    description: 'Panduan memakai menu baru Laboratorium dan Radiologi dari sidebar untuk meninjau hasil pemeriksaan penunjang.',
+    icon: FlaskConical,
+    items: [
+      'Menu Laboratorium dan Radiologi hanya tampil jika username login Anda diberi akses oleh administrator melalui konfigurasi sistem.',
+      'Buka menu Laboratorium atau Radiologi dari sidebar untuk melihat daftar pasien berdasarkan rentang tanggal dan kata kunci pencarian.',
+      'Klik seluruh baris pasien pada tabel untuk membuka detail pasien melalui panel dari sisi kanan layar.',
+      'Pada Laboratorium, hasil pemeriksaan ditampilkan dalam kelompok template layanan agar lebih mudah dibaca per panel pemeriksaan.',
+      'Baris hasil laboratorium dengan keterangan H atau L diberi warna penanda agar nilai tinggi dan rendah cepat dikenali.',
+      'Pada Laboratorium, dokter dapat meninjau lampiran hasil lalu mengisi Kesan dan Saran pada form yang tersedia.',
+      'Pada Radiologi, dokter dapat meninjau hasil, kesan, saran, serta melihat thumbnail gambar atau PACS dari panel detail pasien.',
+      'Klik thumbnail gambar untuk membuka modal viewer sederhana dengan preview besar, zoom, pindah gambar, dan download.'
+    ]
+  },
+  {
     id: 'pendukung',
     title: 'Fitur Pendukung',
     description: 'Fitur tambahan yang membantu efisiensi kerja dokter di aplikasi.',
@@ -97,7 +114,7 @@ const guideSections = [
 const featureHighlights = [
   {
     title: 'Resep, Lab, dan Radiologi',
-    description: 'Dokter dapat membuat permintaan, memantau progres, dan meninjau hasil lebih cepat dari rekam medik pasien.',
+    description: 'Dokter dapat membuat permintaan, memantau progres, meninjau hasil dari rekam medik, serta membuka menu Lab dan Rad khusus bila memiliki akses.',
     icon: FlaskConical
   },
   {
@@ -265,6 +282,7 @@ const Panduan: React.FC = () => {
                 'Buka Dashboard untuk melihat ringkasan pelayanan.',
                 'Masuk ke menu Pasien dan pilih unit layanan yang sedang ditangani.',
                 'Buka rekam medik pasien untuk meninjau riwayat dan mengisi data klinis.',
+                'Jika memiliki hak akses, gunakan menu Laboratorium atau Radiologi untuk melihat daftar pasien penunjang secara khusus.',
                 'Pantau notifikasi resep, lab, dan radiologi untuk tindak lanjut cepat.',
                 'Gunakan Pengaturan untuk keamanan akun dan preferensi penggunaan.'
               ].map((item, index) => (

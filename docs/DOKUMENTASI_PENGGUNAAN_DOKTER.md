@@ -195,6 +195,11 @@ Dokter dapat membuat permintaan laboratorium dan meninjau hasil pemeriksaannya.
 ### Catatan
 
 - Pada riwayat laboratorium, sub-tab hasil menjadi fokus utama agar hasil bisa dilihat lebih cepat.
+- Menu `Laboratorium` di sidebar hanya tampil untuk username yang diberi akses oleh administrator melalui `DOCTOR_ACCESS_LAB`.
+- Klik seluruh baris pasien pada daftar laboratorium untuk membuka panel detail dari sisi kanan.
+- Hasil laboratorium pada menu ini dikelompokkan sesuai template atau panel pemeriksaan.
+- Baris hasil dengan keterangan `H` atau `L` diberi warna penanda agar cepat dikenali.
+- Lampiran gambar laboratorium dapat dibuka melalui modal viewer sederhana.
 
 ## 11. Radiologi
 
@@ -212,6 +217,10 @@ Dokter dapat membuat permintaan radiologi dan melihat hasil radiologi pasien.
 
 - Pada riwayat radiologi, sub-tab hasil ditampilkan sebagai tampilan utama.
 - Untuk penampil gambar PACS non-CT tersedia kontrol zoom dan download.
+- Menu `Radiologi` di sidebar hanya tampil untuk username yang diberi akses oleh administrator melalui `DOCTOR_ACCESS_RAD`.
+- Klik seluruh baris pasien pada daftar radiologi untuk membuka panel detail dari sisi kanan.
+- Thumbnail gambar radiologi atau PACS dapat dibuka ke modal viewer sederhana tanpa membuka tab baru.
+- Modal viewer gambar menyediakan preview besar, zoom, pindah gambar, dan download.
 
 ## 12. Berkas Digital dan PACS
 

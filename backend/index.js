@@ -18,6 +18,7 @@ import GetMedicalRecordService from './services/getMedicalRecordService.js';
 import DigitalFilesService from './services/digitalFilesService.js';
 import EkstrapiramidalService from './services/ekstrapiramidalService.js';
 import DeleteExaminationService from './services/deleteExaminationService.js';
+import DiagnosticAccessService from './services/diagnosticAccessService.js';
 import DoctorAiAssistantService from './services/doctorAiAssistantService.js';
 import DoctorNotificationService from './services/doctorNotificationService.js';
 import IcdDataService from './services/icdDataService.js';
@@ -158,6 +159,32 @@ app.get('/api/audit-history', async (req, res) => {
     res.status(statusCode).json({
       success: false,
       error: error.message || 'Gagal mengambil riwayat audit'
+    });
+  }
+});
+
+app.get('/api/laboratory-data/access/:username', async (req, res) => {
+  try {
+    const result = await DiagnosticAccessService.getAccessInfo('laboratorium', req.params.username);
+    res.json(result);
+  } catch (error) {
+    console.error('Laboratory access error:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message || 'Gagal memeriksa akses laboratorium'
+    });
+  }
+});
+
+app.get('/api/radiology-data/access/:username', async (req, res) => {
+  try {
+    const result = await DiagnosticAccessService.getAccessInfo('radiologi', req.params.username);
+    res.json(result);
+  } catch (error) {
+    console.error('Radiology access error:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message || 'Gagal memeriksa akses radiologi'
     });
   }
 });
@@ -1337,7 +1364,8 @@ app.get('/api/igd-data', async (req, res) => {
 // Laboratory Data endpoints
 app.get('/api/laboratory-data', async (req, res) => {
   try {
-    const { action, no_rawat, noorder, kd_jenis_prw } = req.query;
+    const { action, no_rawat, noorder, kd_jenis_prw, username = '' } = req.query;
+    DiagnosticAccessService.ensureAccess('laboratorium', username);
     
     let result;
     
@@ -1366,6 +1394,24 @@ app.get('/api/laboratory-data', async (req, res) => {
         }
         result = await LaboratoryDataService.getLabTemplates(kd_jenis_prw);
         break;
+
+      case 'get_daily_patients':
+        result = await LaboratoryDataService.getDailyLabPatients({
+          page: req.query.page,
+          itemsPerPage: req.query.itemsPerPage,
+          search: req.query.search,
+          date: req.query.date,
+          startDate: req.query.startDate,
+          endDate: req.query.endDate
+        });
+        break;
+
+      case 'get_patient_detail':
+        if (!no_rawat) {
+          return res.status(400).json({ error: 'no_rawat is required' });
+        }
+        result = await LaboratoryDataService.getLabPatientDetail(no_rawat);
+        break;
         
       default:
         return res.status(400).json({ error: 'Invalid action' });
@@ -1373,8 +1419,9 @@ app.get('/api/laboratory-data', async (req, res) => {
     
     res.json(result);
   } catch (error) {
+    const statusCode = Number(error?.statusCode) || 500;
     console.error('Laboratory data error:', error);
-    res.status(500).json({
+    res.status(statusCode).json({
       success: false,
       error: error.message
     });
@@ -1385,6 +1432,7 @@ app.post('/api/laboratory-data', async (req, res) => {
   try {
     const { action } = req.query;
     const { no_rawat, dokter_perujuk, examinations, details, noorder, status_rawat, username, klinis } = req.body;
+    DiagnosticAccessService.ensureAccess('laboratorium', username);
     
     let result;
     
@@ -1402,17 +1450,34 @@ app.post('/api/laboratory-data', async (req, res) => {
         }
         result = await LaboratoryDataService.updateLabRequest(noorder, examinations, details, status_rawat, username, klinis);
         break;
+
+      case 'save_lab_review':
+        if (!no_rawat) {
+          return res.status(400).json({ error: 'no_rawat is required' });
+        }
+        result = await LaboratoryDataService.saveLabReview(no_rawat, req.body?.kesan, req.body?.saran);
+        break;
         
       default:
         return res.status(400).json({ error: 'Invalid action' });
     }
-    await auditCrudSuccess(req, 'laboratory_request', action === 'update_lab_request' ? 'update' : 'create', result);
+    if (action === 'save_lab_review') {
+      await auditCrudSuccess(req, 'laboratory_review', 'create', result, { reference_id: no_rawat });
+    } else {
+      await auditCrudSuccess(req, 'laboratory_request', action === 'update_lab_request' ? 'update' : 'create', result);
+    }
     res.json(result);
   } catch (error) {
-    const auditAction = String(req.query?.action || '').trim() === 'update_lab_request' ? 'update' : 'create';
-    await auditCrudFailure(req, 'laboratory_request', auditAction, error);
+    const action = String(req.query?.action || '').trim();
+    if (action === 'save_lab_review') {
+      await auditCrudFailure(req, 'laboratory_review', 'create', error, { reference_id: req.body?.no_rawat });
+    } else {
+      const auditAction = action === 'update_lab_request' ? 'update' : 'create';
+      await auditCrudFailure(req, 'laboratory_request', auditAction, error);
+    }
+    const statusCode = Number(error?.statusCode) || 500;
     console.error('Laboratory data error:', error);
-    res.status(500).json({
+    res.status(statusCode).json({
       success: false,
       error: error.message
     });
@@ -1422,6 +1487,7 @@ app.post('/api/laboratory-data', async (req, res) => {
 app.delete('/api/laboratory-data', async (req, res) => {
   try {
     const { action, noorder, username } = req.query;
+    DiagnosticAccessService.ensureAccess('laboratorium', username);
     
     if (action === 'delete_lab_request') {
       if (!noorder) {
@@ -1436,8 +1502,9 @@ app.delete('/api/laboratory-data', async (req, res) => {
     }
   } catch (error) {
     await auditCrudFailure(req, 'laboratory_request', 'delete', error, { reference_id: req.query?.noorder });
+    const statusCode = Number(error?.statusCode) || 500;
     console.error('Laboratory data error:', error);
-    res.status(500).json({
+    res.status(statusCode).json({
       success: false,
       error: error.message
     });
@@ -1654,7 +1721,8 @@ app.post('/api/allergy-data', async (req, res) => {
 
 app.get('/api/radiology-data', async (req, res) => {
   try {
-    const { action, no_rawat, noorder } = req.query;
+    const { action, no_rawat, noorder, username = '' } = req.query;
+    DiagnosticAccessService.ensureAccess('radiologi', username);
 
     let result;
 
@@ -1677,14 +1745,33 @@ app.get('/api/radiology-data', async (req, res) => {
         result = await RadiologyDataService.getRadiologyServices();
         break;
 
+      case 'get_daily_patients':
+        result = await RadiologyDataService.getDailyRadiologyPatients({
+          page: req.query.page,
+          itemsPerPage: req.query.itemsPerPage,
+          search: req.query.search,
+          date: req.query.date,
+          startDate: req.query.startDate,
+          endDate: req.query.endDate
+        });
+        break;
+
+      case 'get_patient_detail':
+        if (!no_rawat) {
+          return res.status(400).json({ error: 'no_rawat is required' });
+        }
+        result = await RadiologyDataService.getRadiologyPatientDetail(no_rawat);
+        break;
+
       default:
         return res.status(400).json({ error: 'Invalid action' });
     }
 
     res.json(result);
   } catch (error) {
+    const statusCode = Number(error?.statusCode) || 500;
     console.error('Radiology data error:', error);
-    res.status(500).json({
+    res.status(statusCode).json({
       success: false,
       error: error.message
     });
@@ -1695,6 +1782,7 @@ app.post('/api/radiology-data', async (req, res) => {
   try {
     const { action } = req.query;
     const { no_rawat, dokter_perujuk, examinations, noorder, status_rawat, username, klinis } = req.body;
+    DiagnosticAccessService.ensureAccess('radiologi', username);
 
     let result;
 
@@ -1713,16 +1801,39 @@ app.post('/api/radiology-data', async (req, res) => {
         result = await RadiologyDataService.updateRadiologyRequest(noorder, examinations, status_rawat, username, klinis);
         break;
 
+      case 'save_radiology_report':
+        if (!no_rawat) {
+          return res.status(400).json({ error: 'no_rawat is required' });
+        }
+        result = await RadiologyDataService.saveRadiologyReport(
+          no_rawat,
+          req.body?.judul,
+          req.body?.hasil,
+          req.body?.kesan,
+          req.body?.saran
+        );
+        break;
+
       default:
         return res.status(400).json({ error: 'Invalid action' });
     }
-    await auditCrudSuccess(req, 'radiology_request', action === 'update_radiology_request' ? 'update' : 'create', result);
+    if (action === 'save_radiology_report') {
+      await auditCrudSuccess(req, 'radiology_report', 'create', result, { reference_id: no_rawat });
+    } else {
+      await auditCrudSuccess(req, 'radiology_request', action === 'update_radiology_request' ? 'update' : 'create', result);
+    }
     res.json(result);
   } catch (error) {
-    const auditAction = String(req.query?.action || '').trim() === 'update_radiology_request' ? 'update' : 'create';
-    await auditCrudFailure(req, 'radiology_request', auditAction, error);
+    const action = String(req.query?.action || '').trim();
+    if (action === 'save_radiology_report') {
+      await auditCrudFailure(req, 'radiology_report', 'create', error, { reference_id: req.body?.no_rawat });
+    } else {
+      const auditAction = action === 'update_radiology_request' ? 'update' : 'create';
+      await auditCrudFailure(req, 'radiology_request', auditAction, error);
+    }
+    const statusCode = Number(error?.statusCode) || 500;
     console.error('Radiology data error:', error);
-    res.status(500).json({
+    res.status(statusCode).json({
       success: false,
       error: error.message
     });
@@ -1732,6 +1843,7 @@ app.post('/api/radiology-data', async (req, res) => {
 app.delete('/api/radiology-data', async (req, res) => {
   try {
     const { action, noorder, username } = req.query;
+    DiagnosticAccessService.ensureAccess('radiologi', username);
 
     if (action === 'delete_radiology_request') {
       if (!noorder) {
@@ -1746,8 +1858,9 @@ app.delete('/api/radiology-data', async (req, res) => {
     }
   } catch (error) {
     await auditCrudFailure(req, 'radiology_request', 'delete', error, { reference_id: req.query?.noorder });
+    const statusCode = Number(error?.statusCode) || 500;
     console.error('Radiology data error:', error);
-    res.status(500).json({
+    res.status(statusCode).json({
       success: false,
       error: error.message
     });
