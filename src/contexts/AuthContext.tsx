@@ -26,7 +26,7 @@ interface User {
 interface AuthContextType {
   user: User | null;
   token: string | null;
-  login: (username: string, password: string) => Promise<{success: boolean, requiresOTP?: boolean, phoneNumber?: string}>;
+  login: (username: string, password: string) => Promise<{success: boolean, requiresOTP?: boolean, phoneNumber?: string, otpRequiredByServer?: boolean}>;
   sendOTP: (phoneNumber: string, username: string) => Promise<boolean>;
   verifyOTP: (phoneNumber: string, username: string, otp: string) => Promise<boolean>;
   completeLogin: (username: string, password: string) => Promise<boolean>;
@@ -42,7 +42,7 @@ const AuthContext = createContext<AuthContextType | undefined>(undefined);
 const API_BASE_URL = API_CONFIG.BASE_URL_WITHOUT_API;
 
 // Real API call using backend Express server
-const loginApi = async (username: string, password: string): Promise<{token: string, user: User} | null> => {
+const loginApi = async (username: string, password: string): Promise<{token: string, user: User, otpRequiredByServer: boolean} | null> => {
   try {
     const response = await fetch(`${API_BASE_URL}/api/auth/login`, {
       method: 'POST',
@@ -79,7 +79,8 @@ const loginApi = async (username: string, password: string): Promise<{token: str
           jadwal_poli: data.user.jadwal_poli || [],
           jk: data.user.jk || 'L', // Default to 'L' if not provided
           no_telp: data.user.no_telp
-        }
+        },
+        otpRequiredByServer: Boolean(data.otp_required_by_server)
       };
     }
     
@@ -124,7 +125,7 @@ export const AuthProvider: React.FC<{children: React.ReactNode}> = ({ children }
   }, []);
   
   // Initial login function - returns whether 2FA is required
-  const login = async (username: string, password: string): Promise<{success: boolean, requiresOTP?: boolean, phoneNumber?: string}> => {
+  const login = async (username: string, password: string): Promise<{success: boolean, requiresOTP?: boolean, phoneNumber?: string, otpRequiredByServer?: boolean}> => {
     // Clear session lama lebih dulu agar request setelah login tidak memakai user sebelumnya.
     setToken(null);
     setUser(null);
@@ -135,7 +136,8 @@ export const AuthProvider: React.FC<{children: React.ReactNode}> = ({ children }
       
       if (response && response.token && response.user) {
         const preferences = loadNotificationPreferences();
-        const requiresOTP = preferences.otpLogin !== false;
+        const otpRequiredByServer = Boolean(response.otpRequiredByServer);
+        const requiresOTP = otpRequiredByServer || preferences.otpLogin !== false;
 
         if (!requiresOTP) {
           setToken(response.token);
@@ -146,7 +148,8 @@ export const AuthProvider: React.FC<{children: React.ReactNode}> = ({ children }
 
           return {
             success: true,
-            requiresOTP: false
+            requiresOTP: false,
+            otpRequiredByServer
           };
         }
 
@@ -158,7 +161,8 @@ export const AuthProvider: React.FC<{children: React.ReactNode}> = ({ children }
         return {
           success: true,
           requiresOTP: true,
-          phoneNumber: phoneNumber
+          phoneNumber: phoneNumber,
+          otpRequiredByServer
         };
       }
       

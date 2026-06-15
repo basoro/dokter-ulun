@@ -4,7 +4,7 @@ import dotenv from 'dotenv';
 dotenv.config();
 
 class WhatsappOtpService {
-  static isOtpSendEnabled() {
+  static isOtpLoginRequired() {
     return !['false', '0', 'no', 'off'].includes(
       (process.env.WA_OTP_SEND_ENABLED || 'true').toLowerCase()
     );
@@ -22,13 +22,7 @@ class WhatsappOtpService {
         throw new Error('Phone number is required');
       }
 
-      const isOtpSendEnabled = this.isOtpSendEnabled();
-      const bypassOtp = process.env.WA_OTP_BYPASS_CODE || '123456';
-
-      // Generate OTP or use bypass OTP from environment
-      const otp = isOtpSendEnabled
-        ? Math.floor(100000 + Math.random() * 900000).toString()
-        : bypassOtp;
+      const otp = Math.floor(100000 + Math.random() * 900000).toString();
       
       // Clean phone number (remove leading 0 and add 62)
       let cleanNumber = phoneNumber.replace(/^0/, '62');
@@ -56,45 +50,39 @@ class WhatsappOtpService {
       // Use phone number as key
       global.otpStore.set(cleanNumber, otpData);
 
-      if (isOtpSendEnabled) {
-        // Send WhatsApp message using WA Gateway only when OTP delivery is enabled.
-        const waGatewayUrl = process.env.WA_GATEWAY_URL;
-        const apiKey = process.env.WA_GATEWAY_API_KEY;
-        const senderNumber = process.env.WA_SENDER_NUMBER;
+      const waGatewayUrl = process.env.WA_GATEWAY_URL;
+      const apiKey = process.env.WA_GATEWAY_API_KEY;
+      const senderNumber = process.env.WA_SENDER_NUMBER;
 
-        if (!waGatewayUrl || !apiKey || !senderNumber) {
-          throw new Error('WA Gateway configuration is missing in environment variables');
-        }
+      if (!waGatewayUrl || !apiKey || !senderNumber) {
+        throw new Error('WA Gateway configuration is missing in environment variables');
+      }
 
-        const formData = new URLSearchParams();
-        formData.append('api_key', apiKey);
-        formData.append('sender', senderNumber);
-        formData.append('number', cleanNumber);
-        formData.append('message', message);
-        formData.append('type', 'text');
+      const formData = new URLSearchParams();
+      formData.append('api_key', apiKey);
+      formData.append('sender', senderNumber);
+      formData.append('number', cleanNumber);
+      formData.append('message', message);
+      formData.append('type', 'text');
 
-        console.log('Sending WhatsApp OTP to:', cleanNumber);
+      console.log('Sending WhatsApp OTP to:', cleanNumber);
 
-        const waResponse = await axios.post(waGatewayUrl, formData.toString(), {
-          headers: {
-            'Content-Type': 'application/x-www-form-urlencoded',
-          },
-        });
+      const waResponse = await axios.post(waGatewayUrl, formData.toString(), {
+        headers: {
+          'Content-Type': 'application/x-www-form-urlencoded',
+        },
+      });
 
-        if (waResponse.status !== 200) {
-          throw new Error(`WhatsApp gateway error: ${waResponse.data}`);
-        }
-      } else {
-        console.log('WhatsApp OTP sending is disabled, using bypass OTP for:', cleanNumber);
+      if (waResponse.status !== 200) {
+        throw new Error(`WhatsApp gateway error: ${waResponse.data}`);
       }
       
       console.log('OTP generated:', { username, phoneNumber: cleanNumber, expiresAt: otpData.expiresAt });
 
       return {
         success: true,
-        message: isOtpSendEnabled ? 'OTP sent successfully' : 'OTP bypass is enabled',
-        // Remove this in production - only for testing
-        debug: process.env.NODE_ENV === 'development' || !isOtpSendEnabled ? { otp, expiresAt: otpData.expiresAt } : undefined
+        message: 'OTP sent successfully',
+        debug: process.env.NODE_ENV === 'development' ? { otp, expiresAt: otpData.expiresAt } : undefined
       };
 
     } catch (error) {

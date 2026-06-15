@@ -23,6 +23,7 @@ const Login = () => {
   const [otp, setOtp] = useState('');
   const [otpSent, setOtpSent] = useState(false);
   const [resendLoading, setResendLoading] = useState(false);
+  const [otpRequiredByServer, setOtpRequiredByServer] = useState(false);
   const { login, sendOTP, verifyOTP, completeLogin } = useAuth();
   const navigate = useNavigate();
   const { toast } = useToast();
@@ -46,6 +47,7 @@ const Login = () => {
       const result = await login(username, password);
       
       if (result.success) {
+        setOtpRequiredByServer(Boolean(result.otpRequiredByServer));
         if (result.requiresOTP && result.phoneNumber) {
           // Show OTP input and send OTP
           setPhoneNumber(result.phoneNumber);
@@ -188,6 +190,7 @@ const Login = () => {
     setOtpSent(false);
     setOtp('');
     setPhoneNumber('');
+    setOtpRequiredByServer(false);
   };
 
   return (
@@ -300,6 +303,11 @@ const Login = () => {
                   Masukkan kode OTP 6 digit yang telah dikirim ke WhatsApp
                 </p>
                 <p className="font-medium text-primary">{phoneNumber}</p>
+                <p className="text-xs text-muted-foreground">
+                  {otpRequiredByServer
+                    ? 'OTP diwajibkan oleh pengaturan server.'
+                    : 'OTP diaktifkan dari pengaturan perangkat/login Anda.'}
+                </p>
               </div>
 
               <div className="space-y-4">

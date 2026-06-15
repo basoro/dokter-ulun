@@ -353,7 +353,8 @@ app.post('/api/auth/login', async (req, res) => {
       success: true,
       message: 'Login successful',
       user: user,
-      token: token
+      token: token,
+      otp_required_by_server: WhatsappOtpService.isOtpLoginRequired()
     });
     
   } catch (error) {

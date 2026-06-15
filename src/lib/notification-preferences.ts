@@ -17,7 +17,7 @@ export const DEFAULT_NOTIFICATION_PREFERENCES: NotificationPreferences = {
   laboratory: true,
   radiology: true,
   sound: true,
-  otpLogin: true
+  otpLogin: false
 };
 
 export const loadNotificationPreferences = (): NotificationPreferences => {
