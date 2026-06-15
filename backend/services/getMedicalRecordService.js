@@ -1468,10 +1468,23 @@ class GetMedicalRecordService {
   static async fetchRadiology(noRawat, status = null, options = {}) {
     const includePacs = options.includePacs === true;
     const radQuery = `
-      SELECT pr.*, jp.nm_perawatan, hpr.hasil
+      SELECT
+        pr.*,
+        jp.nm_perawatan,
+        hpr.hasil,
+        skr.judul,
+        skr.saran,
+        skr.kesan
       FROM periksa_radiologi pr 
       LEFT JOIN jns_perawatan_radiologi jp ON pr.kd_jenis_prw = jp.kd_jenis_prw 
-      LEFT JOIN hasil_radiologi hpr ON pr.no_rawat = hpr.no_rawat AND pr.tgl_periksa = hpr.tgl_periksa 
+      LEFT JOIN hasil_radiologi hpr
+        ON pr.no_rawat = hpr.no_rawat
+        AND pr.tgl_periksa = hpr.tgl_periksa
+        AND pr.jam = hpr.jam
+      LEFT JOIN saran_kesan_rad skr
+        ON pr.no_rawat = skr.no_rawat
+        AND pr.tgl_periksa = skr.tgl_periksa
+        AND pr.jam = skr.jam
       WHERE pr.no_rawat = ?
         AND (? IS NULL OR LOWER(pr.status) = LOWER(?))
       ORDER BY pr.tgl_periksa, pr.jam
@@ -1495,9 +1508,11 @@ class GetMedicalRecordService {
         no_rawat: row.no_rawat || '',
         tanggal: this.formatDateOnly(row.tgl_periksa) + ' ' + row.jam,
         tgl_periksa: this.formatDateOnly(row.tgl_periksa),
-        pemeriksaan: row.nm_perawatan || '',
+        pemeriksaan: row.nm_perawatan || row.judul || '',
+        judul: row.judul || '',
         hasil: row.hasil || '',
-        kesan: row.hasil || '',
+        saran: row.saran || '',
+        kesan: row.kesan || '',
         ...(includePacs ? pacsPayload : {})
       };
     });
