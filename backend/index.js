@@ -1763,6 +1763,13 @@ app.get('/api/radiology-data', async (req, res) => {
         result = await RadiologyDataService.getRadiologyPatientDetail(no_rawat);
         break;
 
+      case 'get_patient_pacs_detail':
+        if (!no_rawat) {
+          return res.status(400).json({ error: 'no_rawat is required' });
+        }
+        result = await RadiologyDataService.getRadiologyPatientPacsDetail(no_rawat);
+        break;
+
       default:
         return res.status(400).json({ error: 'Invalid action' });
     }

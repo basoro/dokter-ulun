@@ -314,20 +314,7 @@ class RadiologyDataService {
         throw new Error('Data pasien radiologi tidak ditemukan');
       }
 
-      const radiologyResults = await GetMedicalRecordService.fetchRadiology(no_rawat, null, { includePacs: true });
-      const localImages = localImageRows
-        .map((row) => {
-          const pathValue = Object.values(row).find((value) => (
-            typeof value === 'string' &&
-            /\.(png|jpe?g|gif|webp|bmp)$/i.test(String(value))
-          ));
-
-          return pathValue ? String(pathValue).trim() : '';
-        })
-        .filter(Boolean)
-        .map((filePath) => ({
-          path: filePath
-        }));
+      const localImages = this.extractLocalImages(localImageRows);
 
       return {
         success: true,
@@ -341,7 +328,7 @@ class RadiologyDataService {
           nm_dokter: patient.nm_dokter,
           nm_perawatan: patient.nm_perawatan || '',
           local_images: localImages,
-          pacs_results: radiologyResults,
+          pacs_results: [],
           review: impressionRows?.[0] || {
             judul: '',
             hasil: '',
@@ -353,6 +340,34 @@ class RadiologyDataService {
     } finally {
       await connection.end();
     }
+  }
+
+  extractLocalImages(rows = []) {
+    return rows
+      .map((row) => {
+        const pathValue = Object.values(row).find((value) => (
+          typeof value === 'string' &&
+          /\.(png|jpe?g|gif|webp|bmp)$/i.test(String(value))
+        ));
+
+        return pathValue ? String(pathValue).trim() : '';
+      })
+      .filter(Boolean)
+      .map((filePath) => ({
+        path: filePath
+      }));
+  }
+
+  async getRadiologyPatientPacsDetail(no_rawat) {
+    const radiologyResults = await GetMedicalRecordService.fetchRadiology(no_rawat, null, { includePacs: true });
+
+    return {
+      success: true,
+      data: {
+        no_rawat: String(no_rawat || '').trim(),
+        pacs_results: Array.isArray(radiologyResults) ? radiologyResults : []
+      }
+    };
   }
 
   async saveRadiologyReport(no_rawat, judul = '', hasil = '', kesan = '', saran = '') {
