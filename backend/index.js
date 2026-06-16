@@ -1413,7 +1413,7 @@ app.get('/api/igd-data', async (req, res) => {
 // Laboratory Data endpoints
 app.get('/api/laboratory-data', async (req, res) => {
   try {
-    const { action, no_rawat, noorder, kd_jenis_prw, username = '' } = req.query;
+    const { action, no_rawat, noorder, kd_jenis_prw, username = '', search = '' } = req.query;
     const restrictedLabActions = new Set(['get_daily_patients', 'get_patient_detail']);
     if (restrictedLabActions.has(String(action || '').trim())) {
       DiagnosticAccessService.ensureAccess('laboratorium', username);
@@ -1437,7 +1437,7 @@ app.get('/api/laboratory-data', async (req, res) => {
         break;
         
       case 'get_lab_services':
-        result = await LaboratoryDataService.getLabServices();
+        result = await LaboratoryDataService.getLabServices(search);
         break;
         
       case 'get_lab_templates':

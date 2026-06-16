@@ -5922,7 +5922,7 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
     }
   }, [formattedNoRawat, procedureStatusRawat]);
 
-  const fetchLabServiceOptions = useCallback(async () => {
+  const fetchLabServiceOptions = useCallback(async (searchTerm = '') => {
     if (!currentUsername) {
       setLabServiceOptions([]);
       return;
@@ -5935,6 +5935,10 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
         action: 'get_lab_services',
         username: currentUsername
       });
+      const normalizedSearchTerm = String(searchTerm || '').trim();
+      if (normalizedSearchTerm) {
+        params.set('search', normalizedSearchTerm);
+      }
       const response = await fetch(`${API_URLS.LABORATORY_DATA}?${params.toString()}`);
       const responseJson = await response.json().catch(() => null);
 
@@ -5952,6 +5956,25 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
       setLabServiceSearchLoading(false);
     }
   }, [currentUsername]);
+
+  useEffect(() => {
+    const openIndexEntry = Object.entries(labServiceSearchOpen).find(([, open]) => open);
+    if (!openIndexEntry) {
+      return;
+    }
+
+    const [openIndexKey] = openIndexEntry;
+    const activeIndex = Number(openIndexKey);
+    const searchTerm = labServiceSearchQuery[activeIndex] ?? '';
+
+    const timeoutId = window.setTimeout(() => {
+      void fetchLabServiceOptions(searchTerm);
+    }, 250);
+
+    return () => {
+      window.clearTimeout(timeoutId);
+    };
+  }, [fetchLabServiceOptions, labServiceSearchOpen, labServiceSearchQuery]);
 
   const fetchLabTemplates = useCallback(async (index: number, kdJenisPrw: string) => {
     const normalizedKode = String(kdJenisPrw || '').trim();
@@ -10697,7 +10720,7 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
                             onOpenChange={(open) => {
                               setLabServiceSearchOpen((previous) => ({ ...previous, [index]: open }));
                               if (open && labServiceOptions.length === 0) {
-                                void fetchLabServiceOptions();
+                                void fetchLabServiceOptions(labServiceSearchQuery[index] ?? test.pemeriksaan ?? '');
                               }
                             }}
                           >

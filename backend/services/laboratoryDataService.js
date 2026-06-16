@@ -106,18 +106,28 @@ class LaboratoryDataService {
     }
   }
 
-  async getLabServices() {
+  async getLabServices(search = '') {
     const connection = await this.getConnection();
     try {
+      const normalizedSearch = String(search || '').trim();
+      const params = [];
+      const conditions = ["status = '1'"];
+
+      if (normalizedSearch) {
+        const searchTerm = `%${normalizedSearch}%`;
+        conditions.push('(kd_jenis_prw LIKE ? OR nm_perawatan LIKE ?)');
+        params.push(searchTerm, searchTerm);
+      }
+
       const query = `
         SELECT kd_jenis_prw, nm_perawatan, total_byr
         FROM jns_perawatan_lab
-        WHERE status = '1'
+        WHERE ${conditions.join(' AND ')}
         ORDER BY nm_perawatan
         LIMIT 100
       `;
       
-      const [rows] = await connection.execute(query);
+      const [rows] = await connection.execute(query, params);
       return rows;
     } finally {
       await connection.end();
