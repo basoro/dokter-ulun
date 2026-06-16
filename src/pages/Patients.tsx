@@ -1007,6 +1007,7 @@ const RawatInapTabs = () => {
   const [statusPulangRawatInap, setStatusPulangRawatInap] = useState(searchParams.get('statusPulangRawatInap') || "masih-dirawat");
   const [statusPulangResume, setStatusPulangResume] = useState(searchParams.get('statusPulangResume') || "sudah-pulang");
   const [resumeStatus, setResumeStatus] = useState(searchParams.get('resumeStatus') || "belum_resume");
+  const [resumeJenisDpjp, setResumeJenisDpjp] = useState(searchParams.get('resumeJenisDpjp') || "all");
   const [rawatBersamaResumeStatus, setRawatBersamaResumeStatus] = useState(
     searchParams.get('rawatBersamaResumeStatus') || "belum_ada_resume"
   );
@@ -1018,6 +1019,7 @@ const RawatInapTabs = () => {
   const [pendingStatusPulangRawatInap, setPendingStatusPulangRawatInap] = useState(searchParams.get('statusPulangRawatInap') || "masih-dirawat");
   const [pendingStatusPulangResume, setPendingStatusPulangResume] = useState(searchParams.get('statusPulangResume') || "sudah-pulang");
   const [pendingResumeStatus, setPendingResumeStatus] = useState(searchParams.get('resumeStatus') || "belum_resume");
+  const [pendingResumeJenisDpjp, setPendingResumeJenisDpjp] = useState(searchParams.get('resumeJenisDpjp') || "all");
   const [pendingRawatBersamaResumeStatus, setPendingRawatBersamaResumeStatus] = useState(
     searchParams.get('rawatBersamaResumeStatus') || "belum_ada_resume"
   );
@@ -1154,6 +1156,7 @@ const RawatInapTabs = () => {
     statusPulang: overrides.statusPulang ?? statusPulangResume,
     username: user?.username || '',
     resumeStatus: overrides.resumeStatus ?? resumeStatus,
+    jenisDpjp: overrides.jenisDpjp ?? resumeJenisDpjp,
     startDate: overrides.startDate ?? (dateRange?.from ? format(dateRange.from, 'yyyy-MM-dd') : ''),
     endDate: overrides.endDate ?? (dateRange?.to ? format(dateRange.to, 'yyyy-MM-dd') : ''),
     ...overrides
@@ -1194,6 +1197,7 @@ const RawatInapTabs = () => {
     params.set('statusPulangRawatInap', statusPulangRawatInap);
     params.set('statusPulangResume', statusPulangResume);
     params.set('resumeStatus', resumeStatus);
+    params.set('resumeJenisDpjp', resumeJenisDpjp);
     params.set('rawatBersamaResumeStatus', rawatBersamaResumeStatus);
     params.delete('statusPulang');
 
@@ -1225,6 +1229,7 @@ const RawatInapTabs = () => {
     statusPulangRawatInap,
     statusPulangResume,
     resumeStatus,
+    resumeJenisDpjp,
     rawatBersamaResumeStatus,
     searchQuery,
     dateRange?.from,
@@ -1234,12 +1239,12 @@ const RawatInapTabs = () => {
   ]);
 
   const applyTabCounts = (counts: any) => {
-    setTabCounts({
+    setTabCounts((prev) => ({
       rawat_inap: Number(counts?.rawat_inap || 0),
       rawat_bersama: Number(counts?.rawat_bersama || 0),
       rawat_gabung: Number(counts?.rawat_gabung || 0),
-      resume_pasien: Number(counts?.resume_pasien || 0)
-    });
+      resume_pasien: prev.resume_pasien
+    }));
   };
 
   const applyResumeCount = (resumeCount: number) => {
@@ -1278,7 +1283,10 @@ const RawatInapTabs = () => {
       applyTabCounts(data?.tabCounts);
     } catch (error) {
       console.error('Error fetching Rawat Inap tab counts:', error);
-      setTabCounts(emptyTabCounts);
+      setTabCounts((prev) => ({
+        ...emptyTabCounts,
+        resume_pasien: prev.resume_pasien
+      }));
     }
   };
 
@@ -1361,7 +1369,10 @@ const RawatInapTabs = () => {
       console.error('Error fetching Rawat Inap data:', error);
       setRawatInapData([]);
       setTotal(0);
-      setTabCounts(emptyTabCounts);
+      setTabCounts((prev) => ({
+        ...emptyTabCounts,
+        resume_pasien: prev.resume_pasien
+      }));
     } finally {
       setLoading(false);
     }
@@ -1414,11 +1425,13 @@ const RawatInapTabs = () => {
     const nextStatusPulangRawatInap = pendingStatusPulangRawatInap || "masih-dirawat";
     const nextStatusPulangResume = pendingStatusPulangResume || "sudah-pulang";
     const nextResumeStatus = pendingResumeStatus || "belum_resume";
+    const nextResumeJenisDpjp = pendingResumeJenisDpjp || "all";
     const nextRawatBersamaResumeStatus = pendingRawatBersamaResumeStatus || "belum_ada_resume";
 
     setStatusPulangRawatInap(nextStatusPulangRawatInap);
     setStatusPulangResume(nextStatusPulangResume);
     setResumeStatus(nextResumeStatus);
+    setResumeJenisDpjp(nextResumeJenisDpjp);
     setRawatBersamaResumeStatus(nextRawatBersamaResumeStatus);
     setIsFilterModalOpen(false);
 
@@ -1430,7 +1443,8 @@ const RawatInapTabs = () => {
     if (tab === 'resume-pasien') {
       fetchResumeData({
         statusPulang: nextStatusPulangResume,
-        resumeStatus: nextResumeStatus
+        resumeStatus: nextResumeStatus,
+        jenisDpjp: nextResumeJenisDpjp
       });
     } else {
       fetchRawatInapData(tab as 'rawat-inap' | 'rawat-bersama' | 'rawat-gabung', {
@@ -1444,10 +1458,12 @@ const RawatInapTabs = () => {
     setSearchQuery("");
     setStatusPulangByTab(tab, tab === 'resume-pasien' ? "sudah-pulang" : "masih-dirawat");
     setResumeStatus("belum_resume");
+    setResumeJenisDpjp("all");
     setRawatBersamaResumeStatus("belum_ada_resume");
     setPendingStatusPulangRawatInap("masih-dirawat");
     setPendingStatusPulangResume("sudah-pulang");
     setPendingResumeStatus("belum_resume");
+    setPendingResumeJenisDpjp("all");
     setPendingRawatBersamaResumeStatus("belum_ada_resume");
     setIsFilterModalOpen(false);
     setDateRange({
@@ -1473,19 +1489,41 @@ const RawatInapTabs = () => {
     setPendingStatusPulangRawatInap(statusPulangRawatInap);
     setPendingStatusPulangResume(statusPulangResume);
     setPendingResumeStatus(resumeStatus);
+    setPendingResumeJenisDpjp(resumeJenisDpjp);
     setPendingRawatBersamaResumeStatus(rawatBersamaResumeStatus);
   }, [
     isFilterModalOpen,
     statusPulangRawatInap,
     statusPulangResume,
     resumeStatus,
+    resumeJenisDpjp,
     rawatBersamaResumeStatus
   ]);
 
   // Use the global rawatInapColumns definition
 
   const resumeColumns = [
-    { accessor: 'no_rkm_medis', header: 'No. RM' },
+    {
+      accessor: 'no_rkm_medis',
+      header: 'No. RM',
+      render: (row: any) => {
+        const isResumeFinished = String(row?.ket_dilanjutkan || '').trim().toLowerCase() === 'selesai';
+
+        return (
+          <div className="inline-flex items-center gap-2">
+            <span>{row.no_rkm_medis || '-'}</span>
+            {isResumeFinished ? (
+              <span
+                className="inline-flex h-5 w-5 items-center justify-center rounded-full bg-sky-500 text-white"
+                title="Resume selesai"
+              >
+                <Check size={12} strokeWidth={3} />
+              </span>
+            ) : null}
+          </div>
+        );
+      }
+    },
     { accessor: 'nm_pasien', header: 'Nama Pasien' },
     { accessor: 'jenis_kelamin', header: 'JK' },
     { accessor: 'tgl_masuk', header: 'Tgl Masuk' },
@@ -1537,6 +1575,7 @@ const RawatInapTabs = () => {
         return 'Data Pasien Rawat Inap';
     }
   };
+  const resumeTabDisplayCount = tabCounts.resume_pasien;
 
   const renderFilterSection = (tab: string) => (
     <>
@@ -1613,6 +1652,22 @@ const RawatInapTabs = () => {
 
             {tab === 'resume-pasien' ? (
               <div className="grid gap-2">
+                <div className="text-sm font-medium">Jenis DPJP</div>
+                <Select value={pendingResumeJenisDpjp} onValueChange={setPendingResumeJenisDpjp}>
+                  <SelectTrigger className="w-full">
+                    <SelectValue placeholder="Jenis DPJP" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">Semua</SelectItem>
+                    <SelectItem value="utama">Utama</SelectItem>
+                    <SelectItem value="raber">Raber</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            ) : null}
+
+            {tab === 'resume-pasien' ? (
+              <div className="grid gap-2">
                 <div className="text-sm font-medium">Status Resume</div>
                 <Select value={pendingResumeStatus} onValueChange={setPendingResumeStatus}>
                   <SelectTrigger className="w-full">
@@ -1677,7 +1732,7 @@ const RawatInapTabs = () => {
         </TabsTrigger>
         <TabsTrigger value="resume-pasien">
           <File className="mr-2 h-4 w-4" />
-          <span>Resume Pasien ({tabCounts.resume_pasien})</span>
+          <span>Resume Pasien ({resumeTabDisplayCount})</span>
         </TabsTrigger>
       </TabsList>
       

@@ -48,6 +48,20 @@ class ResumePasienDataService {
     params.push(normalizedStatus);
   }
 
+  getJenisDpjpFilterValues(jenisDpjp) {
+    const normalizedJenisDpjp = String(jenisDpjp || 'all').trim().toLowerCase();
+
+    switch (normalizedJenisDpjp) {
+      case 'utama':
+        return ['Utama', 'PPDS', 'Internship'];
+      case 'raber':
+        return ['Raber', 'Konsul'];
+      case 'all':
+      default:
+        return ['Utama', 'PPDS', 'Internship', 'Raber', 'Konsul'];
+    }
+  }
+
   // Format date to YYYY-MM-DD format
   formatDateOnly(dateStr) {
     if (!dateStr) return '';
@@ -96,6 +110,20 @@ class ResumePasienDataService {
   normalizeStatusRawat(statusRawat) {
     const normalized = String(statusRawat || 'Ranap').trim().toLowerCase();
     return normalized === 'ralan' ? 'Ralan' : 'Ranap';
+  }
+
+  resolveResumeStatusByDoctorTrace(ketKeadaan = '', userDoctorCode = '', hasResume = false) {
+    if (!hasResume) {
+      return 'belum_resume';
+    }
+
+    const normalizedDoctorCode = String(userDoctorCode || '').trim().toLowerCase();
+    const normalizedKetKeadaan = String(ketKeadaan || '').trim().toLowerCase();
+    if (!normalizedDoctorCode) {
+      return 'sudah_resume';
+    }
+
+    return normalizedKetKeadaan.includes(normalizedDoctorCode) ? 'sudah_resume' : 'belum_resume';
   }
 
   parseDoctorCodeTrace(value = '') {
@@ -625,6 +653,7 @@ class ResumePasienDataService {
     statusPulang = "all",
     username = "",
     resumeStatus = "all",
+    jenisDpjp = "all",
     startDate,
     endDate
   }) {
@@ -638,19 +667,22 @@ class ResumePasienDataService {
       let whereConditions = ['ki.no_rawat IS NOT NULL'];
       let params = [];
       const normalizedUsername = String(username || '').trim();
+      const userDoctorCode = normalizedUsername;
       const accessibleDoctorCodes = getAccessibleDoctorCodesByPhpNative(normalizedUsername);
       const normalizedResumeStatus = String(resumeStatus || 'all').trim();
+      const jenisDpjpValues = this.getJenisDpjpFilterValues(jenisDpjp);
 
       if (accessibleDoctorCodes.length > 0) {
         const doctorPlaceholders = this.buildInClausePlaceholders(accessibleDoctorCodes);
+        const jenisDpjpPlaceholders = this.buildInClausePlaceholders(jenisDpjpValues);
         whereConditions.push(`EXISTS (
           SELECT 1
           FROM dpjp_ranap dr_user
           WHERE dr_user.no_rawat = ki.no_rawat
             AND dr_user.kd_dokter IN (${doctorPlaceholders})
-            AND COALESCE(dr_user.jenis_dpjp, 'Utama') IN ('Utama', 'PPDS', 'Internship')
+            AND COALESCE(dr_user.jenis_dpjp, 'Utama') IN (${jenisDpjpPlaceholders})
         )`);
-        params.push(...accessibleDoctorCodes);
+        params.push(...accessibleDoctorCodes, ...jenisDpjpValues);
       }
 
       // Search filter
@@ -680,12 +712,17 @@ class ResumePasienDataService {
         params.push(startDate, endDate);
       }
 
-      // "Sudah Resume" / "Belum Resume" should reflect actual resume existence,
-      // not text matches in resume fields such as ket_keadaan.
-      if (normalizedResumeStatus === 'sudah_resume') {
-        whereConditions.push('rpr.no_rawat IS NOT NULL');
-      } else if (normalizedResumeStatus === 'belum_resume') {
-        whereConditions.push('rpr.no_rawat IS NULL');
+      if (normalizedResumeStatus === 'sudah_resume' || normalizedResumeStatus === 'belum_resume') {
+        const ketKeadaanLikeClause = `LOWER(COALESCE(rpr.ket_keadaan, '')) LIKE ?`;
+        const ketKeadaanLikeParam = `%${String(userDoctorCode || '').trim().toLowerCase()}%`;
+
+        if (normalizedResumeStatus === 'sudah_resume') {
+          whereConditions.push(`(rpr.no_rawat IS NOT NULL AND ${ketKeadaanLikeClause})`);
+          params.push(ketKeadaanLikeParam);
+        } else {
+          whereConditions.push(`(rpr.no_rawat IS NULL OR (rpr.no_rawat IS NOT NULL AND NOT (${ketKeadaanLikeClause})))`);
+          params.push(ketKeadaanLikeParam);
+        }
       }
 
       const whereClause = whereConditions.length > 0 ? `WHERE ${whereConditions.join(' AND ')}` : '';
@@ -757,6 +794,7 @@ class ResumePasienDataService {
           rpr.prosedur_sekunder,
           rpr.keadaan,
           rpr.ket_keadaan,
+          rpr.ket_dilanjutkan,
           CASE 
             WHEN rpr.no_rawat IS NOT NULL THEN 'sudah_resume'
             ELSE 'belum_resume'
@@ -771,7 +809,7 @@ class ResumePasienDataService {
         LEFT JOIN bangsal b ON k.kd_bangsal = b.kd_bangsal
         LEFT JOIN penjab pj ON rp.kd_pj = pj.kd_pj
         ${whereClause}
-        GROUP BY ki.no_rawat, p.no_rkm_medis, p.nm_pasien, p.jk, p.tgl_lahir, rpr.diagnosa_awal, rpr.kd_diagnosa_utama, rpr.diagnosa_utama, rpr.kd_diagnosa_sekunder, rpr.diagnosa_sekunder, rpr.prosedur_utama, rpr.prosedur_sekunder, rpr.keadaan, rpr.ket_keadaan
+        GROUP BY ki.no_rawat, p.no_rkm_medis, p.nm_pasien, p.jk, p.tgl_lahir, rpr.diagnosa_awal, rpr.kd_diagnosa_utama, rpr.diagnosa_utama, rpr.kd_diagnosa_sekunder, rpr.diagnosa_sekunder, rpr.prosedur_utama, rpr.prosedur_sekunder, rpr.keadaan, rpr.ket_keadaan, rpr.ket_dilanjutkan
         ORDER BY MIN(ki.tgl_masuk) DESC
         LIMIT ? OFFSET ?
       `;
@@ -806,7 +844,12 @@ class ResumePasienDataService {
         tgl_lahir: this.formatDateOnly(row.tgl_lahir),
         tgl_masuk: this.formatDateOnly(row.tgl_masuk),
         tgl_keluar: this.formatDateOnly(row.tgl_keluar),
-        tgl_registrasi: this.formatDateOnly(row.tgl_registrasi)
+        tgl_registrasi: this.formatDateOnly(row.tgl_registrasi),
+        status_resume: this.resolveResumeStatusByDoctorTrace(
+          row.ket_keadaan,
+          userDoctorCode,
+          String(row.status_resume || '').trim() === 'sudah_resume'
+        )
       }));
 
       return {
