@@ -701,6 +701,7 @@ class ResumePasienDataService {
           p.jk as jenis_kelamin,
           p.tgl_lahir,
           MIN(ki.tgl_masuk) as tgl_masuk,
+          MAX(COALESCE(pj.png_jawab, '')) as cara_bayar,
           NULLIF(
             SUBSTRING_INDEX(
               GROUP_CONCAT(COALESCE(DATE_FORMAT(ki.tgl_keluar, '%Y-%m-%d'), '') ORDER BY ki.tgl_masuk DESC SEPARATOR '||'),
@@ -768,6 +769,7 @@ class ResumePasienDataService {
         LEFT JOIN dokter d ON dr.kd_dokter = d.kd_dokter
         LEFT JOIN kamar k ON ki.kd_kamar = k.kd_kamar
         LEFT JOIN bangsal b ON k.kd_bangsal = b.kd_bangsal
+        LEFT JOIN penjab pj ON rp.kd_pj = pj.kd_pj
         ${whereClause}
         GROUP BY ki.no_rawat, p.no_rkm_medis, p.nm_pasien, p.jk, p.tgl_lahir, rpr.diagnosa_awal, rpr.kd_diagnosa_utama, rpr.diagnosa_utama, rpr.kd_diagnosa_sekunder, rpr.diagnosa_sekunder, rpr.prosedur_utama, rpr.prosedur_sekunder, rpr.keadaan, rpr.ket_keadaan
         ORDER BY MIN(ki.tgl_masuk) DESC
@@ -785,6 +787,7 @@ class ResumePasienDataService {
         LEFT JOIN dokter d ON dr.kd_dokter = d.kd_dokter
         LEFT JOIN kamar k ON ki.kd_kamar = k.kd_kamar
         LEFT JOIN bangsal b ON k.kd_bangsal = b.kd_bangsal
+        LEFT JOIN penjab pj ON rp.kd_pj = pj.kd_pj
         ${whereClause}
       `;
 

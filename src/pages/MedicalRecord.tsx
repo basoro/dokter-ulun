@@ -9,7 +9,7 @@ import { CartesianGrid, Legend, Line, LineChart, ResponsiveContainer, Tooltip, X
 import {
   User, Calendar, Stethoscope, Syringe, Pill, FlaskConical, Radio,
   Activity, ClipboardList, BedDouble, UserCircle, Building, MapPin,
-  Phone, Heart, CalendarDays, FileText, Plus, X, Trash2, Image as ImageIcon, Clock,
+  Phone, Heart, CalendarDays, FileText, Plus, X, Trash2, Image as ImageIcon, Clock, CreditCard,
   Copy, ChevronDown, ChevronLeft, ChevronRight, ChevronUp, Brain, Check, ChevronsUpDown, Pause, Pencil, Play,
   BadgeAlert, Download, Maximize2, RotateCcw, ZoomIn, ZoomOut
 } from 'lucide-react';
@@ -237,6 +237,10 @@ interface MedicalRecordData {
   };
   readmisi?: boolean;
   readmisi_no_rawats?: string[];
+  visit_meta?: {
+    cara_bayar?: string;
+    dokter_dpjp?: string;
+  };
   outpatient_visits: any[];
   inpatient_visits: any[];
   focused_examinations?: {
@@ -1067,6 +1071,7 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
   const [searchResults, setSearchResults] = useState([]);
   const [isLoading, setIsLoading] = useState(false);
   const [statusRawat, setStatusRawat] = useState<string>('Ralan');
+  const [isDpjpExpanded, setIsDpjpExpanded] = useState(false);
   const [editingExamination, setEditingExamination] = useState<any>(null);
   const [aiScribeModal, setAiScribeModal] = useState(false);
   const [aiScribeData, setAiScribeData] = useState<any>(null);
@@ -1104,6 +1109,45 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
     () => (defaultExaminationStatusRawat === 'Ranap' ? 'inpatient' : 'outpatient'),
     [defaultExaminationStatusRawat]
   );
+  const visitCaraBayar = useMemo(
+    () => String(medicalData?.visit_meta?.cara_bayar || '').trim(),
+    [medicalData?.visit_meta?.cara_bayar]
+  );
+  const dpjpMeta = useMemo(() => {
+    const dokterDpjp = String(medicalData?.visit_meta?.dokter_dpjp || '').trim();
+    if (!dokterDpjp) {
+      return { dokterUtama: null as null | { nama: string; jenis: string }, dokterLainnya: [] as Array<{ nama: string; jenis: string }> };
+    }
+
+    const dokterMatches = dokterDpjp.match(/drg?\.[^()]+\([^)]+\)/g) || [];
+    const dokterList = dokterMatches.map((item) => {
+      const match = item.match(/^(drg?\..+?)\s*\((.+?)\)$/);
+      if (match) {
+        return {
+          nama: match[1].trim(),
+          jenis: match[2].trim()
+        };
+      }
+      return {
+        nama: item.trim(),
+        jenis: 'Tidak Diketahui'
+      };
+    });
+
+    const normalizedList = dokterList.length
+      ? dokterList
+      : [{
+          nama: dokterDpjp,
+          jenis: 'Tidak Diketahui'
+        }];
+
+    const dokterUtama = normalizedList.find((dokter) => dokter.jenis.toLowerCase() === 'utama') || normalizedList[0] || null;
+    const dokterLainnya = normalizedList
+      .filter((dokter) => dokter !== dokterUtama)
+      .sort((a, b) => a.jenis.localeCompare(b.jenis));
+
+    return { dokterUtama, dokterLainnya };
+  }, [medicalData?.visit_meta?.dokter_dpjp]);
 
   // Form states
   const [medications, setMedications] = useState<Medication[]>(() => getDefaultMedicationForm('Ralan'));
@@ -3615,6 +3659,7 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
       focused: 0
     };
     examinationHistoryRequestRef.current = 0;
+    setIsDpjpExpanded(false);
   }, [formattedNoRawat, no_rkm_medis]);
   
   useEffect(() => {
@@ -3728,6 +3773,10 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
               responseData.readmisi_no_rawats !== undefined
                 ? responseData.readmisi_no_rawats
                 : previousData.readmisi_no_rawats,
+            visit_meta:
+              responseData.visit_meta !== undefined
+                ? responseData.visit_meta
+                : previousData.visit_meta,
             outpatient_visits: mergeVisitsByNoRawat(
               previousData.outpatient_visits,
               responseData.outpatient_visits || []
@@ -7761,6 +7810,58 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
                   </div>
                 </div>
               </div>
+              {defaultExaminationStatusRawat === 'Ranap' ? (
+                <div className="flex items-start space-x-4">
+                  <Stethoscope className="h-5 w-5 text-muted-foreground shrink-0 mt-0.5" />
+                  <div className="min-w-0">
+                    <p className="text-sm text-muted-foreground">DPJP</p>
+                    {dpjpMeta.dokterUtama ? (
+                      <div className="mt-0.5 text-sm">
+                        <div className="flex flex-wrap items-center gap-2 min-w-0">
+                          <span className="font-medium truncate max-w-[260px] md:max-w-[340px]">
+                            {dpjpMeta.dokterUtama.nama}
+                          </span>
+                          <span className="inline-flex items-center rounded-sm border border-slate-200 bg-slate-50 px-2 py-0.5 text-xs font-medium text-slate-700">
+                            {dpjpMeta.dokterUtama.jenis || 'Tidak Diketahui'}
+                          </span>
+                        </div>
+
+                        {dpjpMeta.dokterLainnya.length > 0 ? (
+                          <div className="mt-1">
+                            <button
+                              type="button"
+                              onClick={() => setIsDpjpExpanded((value) => !value)}
+                              className="inline-flex items-center text-xs text-blue-600 hover:text-blue-800 transition-colors"
+                            >
+                              <ChevronDown
+                                size={12}
+                                className={`mr-1 transition-transform ${isDpjpExpanded ? 'rotate-180' : ''}`}
+                              />
+                              {dpjpMeta.dokterLainnya.length} dokter lainnya
+                            </button>
+                            {isDpjpExpanded ? (
+                              <div className="mt-2 space-y-1 rounded-md border bg-white p-2">
+                                {dpjpMeta.dokterLainnya.map((dokter, index) => (
+                                  <div key={`${dokter.nama}-${dokter.jenis}-${index}`} className="flex flex-wrap items-center gap-2 text-xs">
+                                    <span className="font-medium">{dokter.nama}</span>
+                                    <span className="inline-flex items-center rounded-sm border border-slate-200 bg-slate-50 px-2 py-0.5 text-[11px] font-medium text-slate-700">
+                                      {dokter.jenis || 'Tidak Diketahui'}
+                                    </span>
+                                  </div>
+                                ))}
+                              </div>
+                            ) : null}
+                          </div>
+                        ) : null}
+                      </div>
+                    ) : (
+                      <div className="mt-0.5 text-sm">
+                        <div className="font-medium text-gray-400">-</div>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              ) : null}
               <div className="flex items-start space-x-4">
                 <Building className="h-5 w-5 text-muted-foreground shrink-0 mt-0.5" />
                 <div>
@@ -7784,6 +7885,13 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
               </div>
             </div>
             <div className="space-y-4">
+              <div className="flex items-start space-x-4">
+                <CreditCard className="h-5 w-5 text-muted-foreground shrink-0 mt-0.5" />
+                <div>
+                  <p className="text-sm text-muted-foreground">Cara Bayar</p>
+                  <p className="font-medium">{visitCaraBayar || '-'}</p>
+                </div>
+              </div>
               <div className="flex items-start space-x-4">
                 <MapPin className="h-5 w-5 text-muted-foreground shrink-0 mt-0.5" />
                 <div>

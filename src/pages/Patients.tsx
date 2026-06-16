@@ -880,7 +880,7 @@ const hemodialisaTerjadwalColumns = [
 ];
 
 // Komponen untuk menampilkan dokter DPJP dengan dropdown
-const DokterDPJPCell = ({ dokterDpjp }: { dokterDpjp: string }) => {
+const DokterDPJPCell = ({ dokterDpjp, caraBayar }: { dokterDpjp: string; caraBayar?: string }) => {
   const [isExpanded, setIsExpanded] = useState(false);
   
   if (!dokterDpjp) return <span className="text-gray-400">-</span>;
@@ -914,6 +914,10 @@ const DokterDPJPCell = ({ dokterDpjp }: { dokterDpjp: string }) => {
       <div className="text-sm">
         <div className="font-medium">{dokterList[0].nama}</div>
         <div className="text-xs text-gray-500">({dokterList[0].jenis})</div>
+        <div className="mt-1 text-xs text-gray-500">
+          <span>Cara Bayar: </span>
+          <span className="font-medium text-gray-700">{caraBayar || '-'}</span>
+        </div>
       </div>
     );
   }
@@ -926,6 +930,11 @@ const DokterDPJPCell = ({ dokterDpjp }: { dokterDpjp: string }) => {
           <span className="text-xs text-gray-500 ml-1">(Utama)</span>
         </div>
       )}
+
+      <div className="mt-1 text-xs text-gray-500">
+        <span>Cara Bayar: </span>
+        <span className="font-medium text-gray-700">{caraBayar || '-'}</span>
+      </div>
       
       {dokterLainnya.length > 0 && (
         <div className="mt-1">
@@ -1066,7 +1075,7 @@ const RawatInapTabs = () => {
     {
       accessor: 'dokter_dpjp',
       header: 'DPJP',
-      render: (row: any) => <DokterDPJPCell dokterDpjp={row.dokter_dpjp} />
+      render: (row: any) => <DokterDPJPCell dokterDpjp={row.dokter_dpjp} caraBayar={row.cara_bayar} />
     },
     { accessor: 'stts_pulang', header: 'Status Pulang' },
     {
@@ -1486,7 +1495,7 @@ const RawatInapTabs = () => {
     { 
       accessor: 'dokter_dpjp', 
       header: 'DPJP',
-      render: (row: any) => <DokterDPJPCell dokterDpjp={row.dokter_dpjp} />
+      render: (row: any) => <DokterDPJPCell dokterDpjp={row.dokter_dpjp} caraBayar={row.cara_bayar} />
     },
     { accessor: 'diagnosa_utama', header: 'Diagnosa Utama' },
     { accessor: 'stts_pulang', header: 'Status Pulang' },

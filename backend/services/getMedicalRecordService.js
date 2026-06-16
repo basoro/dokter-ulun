@@ -2139,6 +2139,8 @@ class GetMedicalRecordService {
         patientPrbProgramRows,
         latestVisitRows,
         readmisiRows,
+        focusedVisitPaymentRows,
+        focusedVisitDpjpRows,
         outpatientPageResult,
         inpatientPageResult,
         focusedRalanExaminations,
@@ -2240,6 +2242,32 @@ class GetMedicalRecordService {
               [no_rm, focusNoRawat]
             )
           : Promise.resolve([[]]),
+        focusNoRawat
+          ? db.execute(
+              `
+                SELECT COALESCE(pj.png_jawab, '') AS cara_bayar
+                FROM reg_periksa rp
+                LEFT JOIN penjab pj ON pj.kd_pj = rp.kd_pj
+                WHERE rp.no_rawat = ?
+                LIMIT 1
+              `,
+              [focusNoRawat]
+            )
+          : Promise.resolve([[]]),
+        focusNoRawat
+          ? db.execute(
+              `
+                SELECT GROUP_CONCAT(
+                  DISTINCT CONCAT(COALESCE(d.nm_dokter, ''), ' (', COALESCE(dr.jenis_dpjp, 'Tidak Diketahui'), ')')
+                  SEPARATOR ', '
+                ) AS dokter_dpjp
+                FROM dpjp_ranap dr
+                LEFT JOIN dokter d ON d.kd_dokter = dr.kd_dokter
+                WHERE dr.no_rawat = ?
+              `,
+              [focusNoRawat]
+            )
+          : Promise.resolve([[]]),
         includeOutpatient
           ? this.fetchVisitsPage(no_rm, 'Ralan', outpatientPage, limit, focusNoRawat)
           : Promise.resolve(null),
@@ -2277,6 +2305,8 @@ class GetMedicalRecordService {
       const readmisiNoRawats = readmisiList
         .map((row) => String(row?.no_rawat || '').trim())
         .filter(Boolean);
+      const focusedVisitCaraBayar = String(focusedVisitPaymentRows?.[0]?.[0]?.cara_bayar || '').trim();
+      const focusedVisitDokterDpjp = String(focusedVisitDpjpRows?.[0]?.[0]?.dokter_dpjp || '').trim();
 
       if (patientList.length === 0) {
         throw new Error('Patient not found');
@@ -2366,6 +2396,10 @@ class GetMedicalRecordService {
         },
         readmisi: readmisiNoRawats.length > 0,
         readmisi_no_rawats: readmisiNoRawats,
+        visit_meta: {
+          cara_bayar: focusedVisitCaraBayar,
+          dokter_dpjp: focusedVisitDokterDpjp
+        },
         outpatient_visits: finalOutpatientVisits,
         inpatient_visits: finalInpatientVisits,
         ...(includeFocusedExaminations ? {
