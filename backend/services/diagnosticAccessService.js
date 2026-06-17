@@ -40,6 +40,13 @@ class DiagnosticAccessService {
       };
     }
 
+    if (feature === 'echocardiography') {
+      return {
+        envKey: 'ECHOCARDIO_ACCESS',
+        label: 'echocardiography'
+      };
+    }
+
     throw new Error(`Fitur akses diagnostik tidak dikenali: ${feature}`);
   }
 

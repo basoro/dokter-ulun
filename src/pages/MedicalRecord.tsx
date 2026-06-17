@@ -143,6 +143,15 @@ interface BalanceCairanEntry {
   is_intake_reference?: boolean;
 }
 
+interface EchoCardiographyEntry {
+  no_rawat: string;
+  tgl_periksa: string;
+  jam: string;
+  hasil: string;
+  kesan: string;
+  saran: string;
+}
+
 interface RehabMedikAssessment {
   no_rawat: string;
   tanggal: string;
@@ -219,7 +228,7 @@ type ProcedureStatusRawat = 'Ralan' | 'Ranap';
 type LabStatusRawat = 'Ralan' | 'Ranap' | 'IGD';
 type RadiologyStatusRawat = 'Ralan' | 'Ranap' | 'IGD';
 type OutpatientExaminationSectionTabValue = 'examinations' | 'rehab-medik';
-type InpatientExaminationSectionTabValue = 'examinations' | 'balance-cairan' | 'ekstrapiramidal' | 'rehab-medik';
+type InpatientExaminationSectionTabValue = 'examinations' | 'balance-cairan' | 'ekstrapiramidal' | 'echo-echocardiography' | 'rehab-medik';
 
 interface MedicalRecordData {
   patient: {
@@ -563,6 +572,13 @@ const getDefaultEkstrapiramidalForm = () => ({
   piramidal10: '1',
   piramidal11: '1',
   piramidal12: '1'
+});
+
+const getDefaultEchoCardiographyForm = () => ({
+  hasil: '',
+  kesan: '',
+  saran: '',
+  addBilling: false
 });
 
 const getDefaultProcedureForm = (): ProcedureFormItem[] => ([{
@@ -1194,6 +1210,8 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
   const [examinationRoleFilter, setExaminationRoleFilter] = useState<ExaminationRoleFilterValue>('all');
   const [rehabMedikAccess, setRehabMedikAccess] = useState(false);
   const [rehabMedikAccessLoading, setRehabMedikAccessLoading] = useState(false);
+  const [echoCardiographyAccess, setEchoCardiographyAccess] = useState(false);
+  const [echoCardiographyAccessLoading, setEchoCardiographyAccessLoading] = useState(false);
   const [rehabMedikCurrentEntries, setRehabMedikCurrentEntries] = useState<RehabMedikAssessment[]>([]);
   const [rehabMedikHistoryEntries, setRehabMedikHistoryEntries] = useState<RehabMedikAssessment[]>([]);
   const [rehabMedikLoading, setRehabMedikLoading] = useState(false);
@@ -1211,6 +1229,11 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
   const [savingBalanceCairan, setSavingBalanceCairan] = useState(false);
   const [ekstrapiramidalForm, setEkstrapiramidalForm] = useState(getDefaultEkstrapiramidalForm);
   const [savingEkstrapiramidal, setSavingEkstrapiramidal] = useState(false);
+  const [echoCardiographyEntries, setEchoCardiographyEntries] = useState<EchoCardiographyEntry[]>([]);
+  const [echoCardiographyLoading, setEchoCardiographyLoading] = useState(false);
+  const [savingEchoCardiography, setSavingEchoCardiography] = useState(false);
+  const [selectedEchoCardiographyKey, setSelectedEchoCardiographyKey] = useState<string | null>(null);
+  const [echoCardiographyForm, setEchoCardiographyForm] = useState(getDefaultEchoCardiographyForm);
 
   const [labTests, setLabTests] = useState<LabTest[]>(getDefaultLabRequestForm);
   const [labServiceOptions, setLabServiceOptions] = useState<LabServiceOption[]>([]);
@@ -2007,6 +2030,12 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
     () => balanceCairanEntries.find((entry) => Number(entry.id) === Number(selectedBalanceCairanId)) || null,
     [balanceCairanEntries, selectedBalanceCairanId]
   );
+  const selectedEchoCardiographyEntry = useMemo(
+    () => echoCardiographyEntries.find(
+      (entry) => `${entry.tgl_periksa}|${entry.jam}` === selectedEchoCardiographyKey
+    ) || null,
+    [echoCardiographyEntries, selectedEchoCardiographyKey]
+  );
   const activeVitalSeries = vitalChartSeries.filter((series) => visibleVitalSeries[series.key]);
   const isFocusedExaminationsLoaded =
     !formattedNoRawat ||
@@ -2740,6 +2769,229 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
             ))}
           </div>
         )}
+      </div>
+    );
+  };
+  const renderEchoCardiographySection = () => {
+    if (echoCardiographyAccessLoading) {
+      return (
+        <div className="border border-dashed rounded-lg p-6 text-sm text-muted-foreground bg-muted/20">
+          Memuat akses Echocardiography...
+        </div>
+      );
+    }
+
+    if (!echoCardiographyAccess) {
+      return (
+        <div className="border border-dashed rounded-lg p-6 text-sm text-muted-foreground bg-muted/20">
+          Anda tidak memiliki akses ke Echocardiography.
+        </div>
+      );
+    }
+
+    if (!formattedNoRawat) {
+      return (
+        <div className="border border-dashed rounded-lg p-6 text-sm text-muted-foreground bg-muted/20">
+          Pilih kunjungan rawat inap terlebih dahulu untuk melihat data Echocardiography.
+        </div>
+      );
+    }
+
+    return (
+      <div className="space-y-4">
+        <div className="border rounded-lg p-4 bg-muted/30 space-y-4">
+          <div className="flex items-center justify-between gap-3">
+            <div>
+              <h4 className="font-medium">Form Echocardiography</h4>
+              <p className="text-sm text-muted-foreground">
+                Input hasil, kesan, dan saran pemeriksaan Echocardiography.
+              </p>
+            </div>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() => void fetchEchoCardiography()}
+              disabled={echoCardiographyLoading}
+            >
+              {echoCardiographyLoading ? 'Memuat...' : 'Refresh'}
+            </Button>
+          </div>
+
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
+            <div>
+              <Label htmlFor="echo-no-rawat">No. Rawat</Label>
+              <Input id="echo-no-rawat" value={formattedNoRawat} readOnly className="bg-muted" />
+            </div>
+            <div>
+              <Label htmlFor="echo-mode">Status Form</Label>
+              <Input
+                id="echo-mode"
+                value={selectedEchoCardiographyEntry ? 'Edit data tersimpan' : 'Input data baru'}
+                readOnly
+                className="bg-muted"
+              />
+            </div>
+            <div>
+              <Label htmlFor="echo-last-update">Data Tersimpan</Label>
+              <Input
+                id="echo-last-update"
+                value={
+                  selectedEchoCardiographyEntry
+                    ? formatDateSafe(`${selectedEchoCardiographyEntry.tgl_periksa} ${selectedEchoCardiographyEntry.jam}`)
+                    : '-'
+                }
+                readOnly
+                className="bg-muted"
+              />
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
+            <div>
+              <Label htmlFor="echo-hasil">Hasil</Label>
+              <Textarea
+                id="echo-hasil"
+                rows={6}
+                value={echoCardiographyForm.hasil}
+                onChange={(event) => setEchoCardiographyForm((previous) => ({
+                  ...previous,
+                  hasil: event.target.value
+                }))}
+                placeholder="Masukkan hasil echo"
+              />
+            </div>
+            <div>
+              <Label htmlFor="echo-kesan">Kesan</Label>
+              <Textarea
+                id="echo-kesan"
+                rows={4}
+                value={echoCardiographyForm.kesan}
+                onChange={(event) => setEchoCardiographyForm((previous) => ({
+                  ...previous,
+                  kesan: event.target.value
+                }))}
+                placeholder="Masukkan kesan"
+              />
+            </div>
+            <div className="space-y-4">
+              <div>
+                <Label htmlFor="echo-saran">Saran</Label>
+                <Textarea
+                  id="echo-saran"
+                  rows={4}
+                  value={echoCardiographyForm.saran}
+                  onChange={(event) => setEchoCardiographyForm((previous) => ({
+                    ...previous,
+                    saran: event.target.value
+                  }))}
+                  placeholder="Masukkan saran"
+                />
+              </div>
+              <label className="flex items-center gap-2 rounded-md border bg-background px-3 py-2 text-sm">
+                <input
+                  type="checkbox"
+                  className="h-4 w-4"
+                  checked={echoCardiographyForm.addBilling}
+                  onChange={(event) => setEchoCardiographyForm((previous) => ({
+                    ...previous,
+                    addBilling: event.target.checked
+                  }))}
+                  disabled={!!selectedEchoCardiographyEntry}
+                />
+                <span>Tambahkan tindakan ke billing</span>
+              </label>
+              {selectedEchoCardiographyEntry ? (
+                <p className="text-xs text-muted-foreground">
+                  Penambahan billing hanya berlaku saat input data baru.
+                </p>
+              ) : null}
+            </div>
+          </div>
+
+          <div className="flex justify-end gap-2">
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => {
+                setSelectedEchoCardiographyKey(null);
+                setEchoCardiographyForm(getDefaultEchoCardiographyForm());
+              }}
+              disabled={savingEchoCardiography}
+            >
+              {selectedEchoCardiographyEntry ? 'Batal Edit' : 'Reset'}
+            </Button>
+            <Button
+              type="button"
+              onClick={() => void handleSaveEchoCardiography()}
+              disabled={savingEchoCardiography}
+            >
+              {savingEchoCardiography
+                ? 'Menyimpan...'
+                : selectedEchoCardiographyEntry
+                  ? 'Update Echocardiography'
+                  : 'Simpan Echocardiography'}
+            </Button>
+          </div>
+        </div>
+
+        <div className="border rounded-lg">
+          <div className="border-b p-4">
+            <h4 className="font-medium">Riwayat Echocardiography</h4>
+          </div>
+          {echoCardiographyLoading ? (
+            <div className="p-6 text-sm text-muted-foreground">Memuat data Echocardiography...</div>
+          ) : echoCardiographyEntries.length === 0 ? (
+            <div className="p-6 text-sm text-muted-foreground">Belum ada data Echocardiography untuk nomor rawat ini.</div>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead className="bg-muted/40">
+                  <tr className="text-left">
+                    <th className="px-3 py-2 font-medium">Tanggal / Jam</th>
+                    <th className="px-3 py-2 font-medium">Hasil</th>
+                    <th className="px-3 py-2 font-medium">Kesan</th>
+                    <th className="px-3 py-2 font-medium">Saran</th>
+                    <th className="px-3 py-2 font-medium">Aksi</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {echoCardiographyEntries.map((entry) => {
+                    const entryKey = `${entry.tgl_periksa}|${entry.jam}`;
+                    return (
+                      <tr key={entryKey} className="border-t align-top">
+                        <td className="px-3 py-2 whitespace-nowrap">
+                          {formatDateSafe(`${entry.tgl_periksa} ${entry.jam}`)}
+                        </td>
+                        <td className="px-3 py-2 whitespace-pre-line min-w-[240px]">{entry.hasil || '-'}</td>
+                        <td className="px-3 py-2 whitespace-pre-line min-w-[180px]">{entry.kesan || '-'}</td>
+                        <td className="px-3 py-2 whitespace-pre-line min-w-[180px]">{entry.saran || '-'}</td>
+                        <td className="px-3 py-2">
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant={selectedEchoCardiographyKey === entryKey ? 'default' : 'outline'}
+                            onClick={() => {
+                              setSelectedEchoCardiographyKey(entryKey);
+                              setEchoCardiographyForm({
+                                hasil: entry.hasil || '',
+                                kesan: entry.kesan || '',
+                                saran: entry.saran || '',
+                                addBilling: false
+                              });
+                            }}
+                          >
+                            {selectedEchoCardiographyKey === entryKey ? 'Dipilih' : 'Edit'}
+                          </Button>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
       </div>
     );
   };
@@ -5361,6 +5613,34 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
     }
   }, [currentUsername]);
 
+  const fetchEchoCardiographyAccess = useCallback(async () => {
+    if (!currentUsername) {
+      setEchoCardiographyAccess(false);
+      return;
+    }
+
+    try {
+      setEchoCardiographyAccessLoading(true);
+      const response = await fetch(
+        `${API_URLS.ECHOCARDIOGRAPHY_ACCESS}/${encodeURIComponent(currentUsername)}`
+      );
+      const responseJson = await response.json().catch(() => null);
+
+      if (!response.ok || !responseJson?.success) {
+        throw new Error(
+          responseJson?.error || `HTTP error! status: ${response.status}`
+        );
+      }
+
+      setEchoCardiographyAccess(Boolean(responseJson?.can_access));
+    } catch (error) {
+      console.error('Error fetching echocardiography access:', error);
+      setEchoCardiographyAccess(false);
+    } finally {
+      setEchoCardiographyAccessLoading(false);
+    }
+  }, [currentUsername]);
+
   const fetchRehabMedikData = useCallback(async () => {
     if (!formattedNoRawat || !currentUsername || !rehabMedikAccess) {
       setRehabMedikCurrentEntries([]);
@@ -5702,9 +5982,128 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
     user?.name
   ]);
 
+  const fetchEchoCardiography = useCallback(async () => {
+    if (!formattedNoRawat) {
+      setEchoCardiographyEntries([]);
+      setSelectedEchoCardiographyKey(null);
+      return;
+    }
+
+    try {
+      setEchoCardiographyLoading(true);
+      const params = new URLSearchParams({
+        username: currentUsername
+      });
+      const response = await fetch(
+        `${API_URLS.ECHOCARDIOGRAPHY}/${encodeURIComponent(formattedNoRawat)}?${params.toString()}`
+      );
+      const responseJson = await response.json().catch(() => null);
+
+      if (!response.ok || !responseJson?.success) {
+        throw new Error(
+          responseJson?.error || `HTTP error! status: ${response.status}`
+        );
+      }
+
+      const entries = Array.isArray(responseJson.data) ? responseJson.data : [];
+      setEchoCardiographyEntries(entries);
+      setSelectedEchoCardiographyKey((previous) => (
+        previous && entries.some((entry: EchoCardiographyEntry) => `${entry.tgl_periksa}|${entry.jam}` === previous)
+          ? previous
+          : null
+      ));
+    } catch (error) {
+      console.error('Error fetching echocardiography:', error);
+      setEchoCardiographyEntries([]);
+      setSelectedEchoCardiographyKey(null);
+    } finally {
+      setEchoCardiographyLoading(false);
+    }
+  }, [currentUsername, formattedNoRawat]);
+
+  const handleSaveEchoCardiography = useCallback(async () => {
+    if (!formattedNoRawat) {
+      toast({
+        title: "Error",
+        description: "Pilih kunjungan rawat inap terlebih dahulu",
+        variant: "destructive"
+      });
+      return;
+    }
+
+    try {
+      setSavingEchoCardiography(true);
+      const response = await fetch(API_URLS.ECHOCARDIOGRAPHY, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          no_rawat: formattedNoRawat,
+          username: currentUsername,
+          hasil: echoCardiographyForm.hasil,
+          kesan: echoCardiographyForm.kesan,
+          saran: echoCardiographyForm.saran,
+          add_billing: echoCardiographyForm.addBilling,
+          kd_dokter: String(user?.kd_dokter || currentUsername || '').trim(),
+          mode: selectedEchoCardiographyEntry ? 'edit' : 'create',
+          tgl_periksa: selectedEchoCardiographyEntry?.tgl_periksa,
+          jam: selectedEchoCardiographyEntry?.jam
+        })
+      });
+
+      const responseJson = await response.json().catch(() => null);
+      if (!response.ok || !responseJson?.success) {
+        throw new Error(
+          responseJson?.error || `HTTP error! status: ${response.status}`
+        );
+      }
+
+      toast({
+        title: "Berhasil",
+        description: responseJson?.message || 'Echocardiography berhasil disimpan'
+      });
+
+      setSelectedEchoCardiographyKey(null);
+      setEchoCardiographyForm(getDefaultEchoCardiographyForm());
+      await fetchEchoCardiography();
+    } catch (error) {
+      console.error('Error saving echocardiography:', error);
+      const message = error instanceof Error ? error.message : 'Gagal menyimpan Echocardiography';
+      toast({
+        title: "Error",
+        description: message,
+        variant: "destructive"
+      });
+    } finally {
+      setSavingEchoCardiography(false);
+    }
+  }, [
+    currentUsername,
+    echoCardiographyForm.addBilling,
+    echoCardiographyForm.hasil,
+    echoCardiographyForm.kesan,
+    echoCardiographyForm.saran,
+    fetchEchoCardiography,
+    formattedNoRawat,
+    selectedEchoCardiographyEntry,
+    toast,
+    user?.kd_dokter
+  ]);
+
   useEffect(() => {
     void fetchRehabMedikAccess();
   }, [fetchRehabMedikAccess]);
+
+  useEffect(() => {
+    void fetchEchoCardiographyAccess();
+  }, [fetchEchoCardiographyAccess]);
+
+  useEffect(() => {
+    if (!echoCardiographyAccess && inpatientExaminationSectionTab === 'echo-echocardiography') {
+      setInpatientExaminationSectionTab('examinations');
+    }
+  }, [echoCardiographyAccess, inpatientExaminationSectionTab]);
 
   useEffect(() => {
     if (!formattedNoRawat) {
@@ -5736,6 +6135,17 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
     setBalanceCairanEntries([]);
     setSelectedBalanceCairanId(null);
   }, [fetchBalanceCairan, formattedNoRawat]);
+
+  useEffect(() => {
+    if (formattedNoRawat && echoCardiographyAccess) {
+      void fetchEchoCardiography();
+      return;
+    }
+
+    setEchoCardiographyEntries([]);
+    setSelectedEchoCardiographyKey(null);
+    setEchoCardiographyForm(getDefaultEchoCardiographyForm());
+  }, [echoCardiographyAccess, fetchEchoCardiography, formattedNoRawat]);
 
   useEffect(() => {
     if (!formattedNoRawat) {
@@ -9392,6 +9802,9 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
                           <TabsTrigger value="examinations">Pemeriksaan</TabsTrigger>
                           <TabsTrigger value="balance-cairan">Balance Cairan</TabsTrigger>
                           <TabsTrigger value="ekstrapiramidal">Ekstrapiramidal</TabsTrigger>
+                          {echoCardiographyAccess && (
+                            <TabsTrigger value="echo-echocardiography">Echocardiography</TabsTrigger>
+                          )}
                           {rehabMedikAccess && (
                             <TabsTrigger value="rehab-medik">Assesmen Rehab Medik</TabsTrigger>
                           )}
@@ -9581,6 +9994,10 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
 
                         <TabsContent value="ekstrapiramidal" className="space-y-4">
                           {renderEkstrapiramidalSection()}
+                        </TabsContent>
+
+                        <TabsContent value="echo-echocardiography" className="space-y-4">
+                          {renderEchoCardiographySection()}
                         </TabsContent>
 
                         {rehabMedikAccess && (

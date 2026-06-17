@@ -17,6 +17,7 @@ import RawatInapDataService from './services/rawatInapDataService.js';
 import HemodialisaDataService from './services/hemodialisaDataService.js';
 import GetMedicalRecordService from './services/getMedicalRecordService.js';
 import DigitalFilesService from './services/digitalFilesService.js';
+import EchoCardiographyService from './services/echoCardiographyService.js';
 import EkstrapiramidalService from './services/ekstrapiramidalService.js';
 import DeleteExaminationService from './services/deleteExaminationService.js';
 import DiagnosticAccessService from './services/diagnosticAccessService.js';
@@ -1136,6 +1137,55 @@ app.post('/api/ekstrapiramidal', async (req, res) => {
   } catch (error) {
     await auditCrudFailure(req, 'ekstrapiramidal', 'upsert', error);
     console.error('Error in ekstrapiramidal POST endpoint:', error);
+    res.status(400).json({
+      success: false,
+      error: error.message
+    });
+  }
+});
+
+app.get('/api/echocardiography/:no_rawat', async (req, res) => {
+  try {
+    const { no_rawat } = req.params;
+    const username = String(req.query.username || '').trim();
+    DiagnosticAccessService.ensureAccess('echocardiography', username);
+    const data = await EchoCardiographyService.list(no_rawat);
+    res.json({
+      success: true,
+      data
+    });
+  } catch (error) {
+    console.error('Error in echocardiography GET endpoint:', error);
+    res.status(error.statusCode || 400).json({
+      success: false,
+      error: error.message
+    });
+  }
+});
+
+app.post('/api/echocardiography', async (req, res) => {
+  try {
+    const username = String(req.body?.username || req.body?.kd_dokter || '').trim();
+    DiagnosticAccessService.ensureAccess('echocardiography', username);
+    const result = await EchoCardiographyService.save(req.body);
+    await auditCrudSuccess(req, 'echocardiography', 'upsert', result);
+    res.json(result);
+  } catch (error) {
+    await auditCrudFailure(req, 'echocardiography', 'upsert', error);
+    console.error('Error in echocardiography POST endpoint:', error);
+    res.status(error.statusCode || 400).json({
+      success: false,
+      error: error.message
+    });
+  }
+});
+
+app.get('/api/echocardiography/access/:username', async (req, res) => {
+  try {
+    const username = String(req.params.username || '').trim();
+    const result = await DiagnosticAccessService.getAccessInfo('echocardiography', username);
+    res.json(result);
+  } catch (error) {
     res.status(400).json({
       success: false,
       error: error.message
