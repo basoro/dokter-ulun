@@ -32,6 +32,31 @@ export const formatDateWIB = (date: Date): string => {
   return `${year}-${month}-${day}`;
 };
 
+// Keep calendar-date filters stable across browser timezones.
+export const formatLocalDateValue = (date: Date): string => {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+
+  return `${year}-${month}-${day}`;
+};
+
+export const parseLocalDateValue = (value: string | null, fallback: Date): Date => {
+  if (!value) {
+    return fallback;
+  }
+
+  const match = String(value).trim().match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (!match) {
+    return fallback;
+  }
+
+  const [, year, month, day] = match;
+  // Use midday local time so the selected calendar date stays stable after reloads.
+  const parsed = new Date(Number(year), Number(month) - 1, Number(day), 12, 0, 0, 0);
+  return Number.isNaN(parsed.getTime()) ? fallback : parsed;
+};
+
 // Format time to HH:mm in WIB timezone
 export const formatTimeWIB = (date: Date): string => {
   const wibDate = toIndonesianTime(date);
