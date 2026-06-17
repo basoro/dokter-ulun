@@ -26,7 +26,7 @@ import {
 import { format } from 'date-fns';
 import PatientTable from '@/components/PatientTable';
 import { DateRange } from 'react-day-picker';
-import { formatDateWIB, formatDateTimeWIB } from '@/lib/date-utils';
+import { formatDateTimeWIB, formatLocalDateValue, parseLocalDateValue } from '@/lib/date-utils';
 import { API_URLS } from '@/config/api';
 import { DatePickerPopover } from '@/components/DatePickerPopover';
 import {
@@ -39,10 +39,7 @@ import {
 } from '@/components/ui/dialog';
 
 const parseDateParam = (value: string | null, fallback: Date) => {
-  if (!value) return fallback;
-
-  const parsed = new Date(`${value}T00:00:00`);
-  return Number.isNaN(parsed.getTime()) ? fallback : parsed;
+  return parseLocalDateValue(value, fallback);
 };
 
 const parsePositiveInt = (value: string | null, fallback: number) => {
@@ -160,8 +157,8 @@ const RawatJalanTabs = () => {
     kd_poli: user?.kd_poli,
     jenis_poli: user?.jenis_poli || '',
     jenis_poli_sore: user?.jenis_poli_sore || '',
-    startDate: date?.from ? formatDateWIB(date.from) : '',
-    endDate: date?.to ? formatDateWIB(date.to) : '',
+    startDate: date?.from ? formatLocalDateValue(date.from) : '',
+    endDate: date?.to ? formatLocalDateValue(date.to) : '',
     username: user?.username,
     search: searchQuery.trim() || '',
     status: overrides.status ?? statusFilter,
@@ -231,8 +228,8 @@ const RawatJalanTabs = () => {
       const requestBody = buildRequestBody(tabFilter || activeTab, overrides);
 
       console.log('Request dates (WIB):', {
-        startDate: formatDateWIB(date.from),
-        endDate: formatDateWIB(date.to),
+        startDate: formatLocalDateValue(date.from),
+        endDate: formatLocalDateValue(date.to),
         originalDates: { from: date.from, to: date.to }
       });
 

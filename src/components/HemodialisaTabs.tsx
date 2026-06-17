@@ -19,7 +19,7 @@ import {
 import { format } from 'date-fns';
 import PatientTable from '@/components/PatientTable';
 import { DateRange } from 'react-day-picker';
-import { formatDateWIB, formatDateTimeWIB } from '@/lib/date-utils';
+import { formatDateTimeWIB, formatLocalDateValue, parseLocalDateValue } from '@/lib/date-utils';
 import { API_URLS } from '@/config/api';
 import { DatePickerPopover } from '@/components/DatePickerPopover';
 import {
@@ -32,16 +32,7 @@ import {
 } from '@/components/ui/dialog';
 
 const parseDateParam = (value: string | null, fallback: Date) => {
-  if (!value) return fallback;
-
-  const match = value.match(/^(\d{4})-(\d{2})-(\d{2})$/);
-  if (!match) {
-    return fallback;
-  }
-
-  const [, year, month, day] = match;
-  const parsed = new Date(Date.UTC(Number(year), Number(month) - 1, Number(day)));
-  return Number.isNaN(parsed.getTime()) ? fallback : parsed;
+  return parseLocalDateValue(value, fallback);
 };
 
 const parsePositiveInt = (value: string | null, fallback: number) => {
@@ -99,8 +90,8 @@ const HemodialisaTabs = () => {
     setLoading(true);
     try {
       let requestBody = {
-        startDate: formatDateWIB(date.from),
-        endDate: formatDateWIB(date.to),
+        startDate: formatLocalDateValue(date.from),
+        endDate: formatLocalDateValue(date.to),
         status: overrides.status ?? statusFilter,
         statusBayar: overrides.statusBayar ?? statusBayarFilter,
         page: overrides.page ?? currentPage.toString(),
@@ -108,8 +99,8 @@ const HemodialisaTabs = () => {
       };
 
       console.log('Request dates (WIB):', {
-        startDate: formatDateWIB(date.from),
-        endDate: formatDateWIB(date.to),
+        startDate: formatLocalDateValue(date.from),
+        endDate: formatLocalDateValue(date.to),
         originalDates: { from: date.from, to: date.to }
       });
 
