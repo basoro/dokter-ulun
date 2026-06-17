@@ -5,6 +5,18 @@ class InternalReferralService {
     return String(value || '').trim();
   }
 
+  static getHariKerja(dateInput) {
+    const normalized = this.normalizeText(dateInput);
+    const date = normalized ? new Date(`${normalized}T00:00:00`) : new Date();
+
+    if (Number.isNaN(date.getTime())) {
+      throw new Error('Format tanggal tidak valid');
+    }
+
+    const mapping = ['AKHAD', 'SENIN', 'SELASA', 'RABU', 'KAMIS', 'JUMAT', 'SABTU'];
+    return mapping[date.getDay()];
+  }
+
   static async getReferralSource(noRawat) {
     const connection = await getConnection();
     try {
@@ -38,6 +50,7 @@ class InternalReferralService {
         `
           SELECT kd_poli, nm_poli
           FROM poliklinik
+          WHERE status = '1'  
           ORDER BY nm_poli ASC
         `
       );
@@ -68,6 +81,45 @@ class InternalReferralService {
       );
 
       return rows;
+    } finally {
+      connection.release();
+    }
+  }
+
+  static async getDoctorsBySchedule(payload) {
+    const kd_poli = this.normalizeText(payload?.kd_poli);
+    const date = this.normalizeText(payload?.date);
+
+    if (!kd_poli) {
+      throw new Error('kd_poli wajib diisi');
+    }
+
+    const hariKerja = this.getHariKerja(date);
+    const connection = await getConnection();
+
+    try {
+      const [rows] = await connection.execute(
+        `
+          SELECT a.kd_dokter, b.nm_dokter
+          FROM jadwal a
+          INNER JOIN dokter b ON a.kd_dokter = b.kd_dokter
+          WHERE a.kd_poli = ?
+            AND a.hari_kerja = ?
+            AND b.status = '1'
+          GROUP BY a.kd_dokter, b.nm_dokter
+          ORDER BY b.nm_dokter ASC
+        `,
+        [kd_poli, hariKerja]
+      );
+
+      return {
+        success: true,
+        meta: {
+          kd_poli,
+          hari_kerja: hariKerja
+        },
+        data: rows || []
+      };
     } finally {
       connection.release();
     }
@@ -125,6 +177,7 @@ class InternalReferralService {
         `
           SELECT kd_poli, nm_poli
           FROM poliklinik
+          WHERE status = '1'  
           ORDER BY nm_poli ASC
         `
       );

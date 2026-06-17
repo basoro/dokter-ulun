@@ -17,6 +17,7 @@ import RawatInapDataService from './services/rawatInapDataService.js';
 import HemodialisaDataService from './services/hemodialisaDataService.js';
 import GetMedicalRecordService from './services/getMedicalRecordService.js';
 import DigitalFilesService from './services/digitalFilesService.js';
+import EchoCardiographyService from './services/echoCardiographyService.js';
 import EkstrapiramidalService from './services/ekstrapiramidalService.js';
 import DeleteExaminationService from './services/deleteExaminationService.js';
 import DiagnosticAccessService from './services/diagnosticAccessService.js';
@@ -45,7 +46,7 @@ import statisticsDataRoutes from './routes/statisticsData.js';
 import updateExaminationRoute from './routes/updateExamination.js';
 import clinicalPathwayRoutes from './routes/clinicalPathway.js';
 
-import { testConnection } from './config/database.js';
+import { executeQuery, testConnection } from './config/database.js';
 
 // Load environment variables
 const __filename = fileURLToPath(import.meta.url);
@@ -201,6 +202,84 @@ app.get('/api/audit-history', async (req, res) => {
   try {
     const { username = '', page = '1', limit = '50', action = '', status = '', entity = '', search = '' } = req.query;
     const result = await getAuditHistory(username, { page, limit, action, status, entity, search });
+
+    if (result?.success && Array.isArray(result?.data) && result.data.length > 0) {
+      const actorIds = Array.from(
+        new Set(
+          result.data
+            .map((entry) => String(entry?.actor_id || '').trim())
+            .filter(Boolean)
+        )
+      );
+
+      if (actorIds.length > 0) {
+        const placeholders = actorIds.map(() => '?').join(',');
+        const [doctorRows, userRows, employeeRows] = await Promise.all([
+          executeQuery(
+            `
+              SELECT kd_dokter AS actor_id, nm_dokter AS actor_name
+              FROM dokter
+              WHERE kd_dokter IN (${placeholders})
+            `,
+            actorIds
+          ),
+          executeQuery(
+            `
+              SELECT username AS actor_id, fullname AS actor_name
+              FROM mlite_users
+              WHERE username IN (${placeholders})
+            `,
+            actorIds
+          ),
+          executeQuery(
+            `
+              SELECT nik AS actor_id, nama AS actor_name
+              FROM pegawai
+              WHERE nik IN (${placeholders})
+            `,
+            actorIds
+          )
+        ]);
+
+        const actorNameMap = new Map();
+        (Array.isArray(employeeRows) ? employeeRows : []).forEach((row) => {
+          const id = String(row?.actor_id || '').trim();
+          const name = String(row?.actor_name || '').trim();
+          if (id && name) {
+            actorNameMap.set(id, name);
+          }
+        });
+        (Array.isArray(userRows) ? userRows : []).forEach((row) => {
+          const id = String(row?.actor_id || '').trim();
+          const name = String(row?.actor_name || '').trim();
+          if (id && name) {
+            actorNameMap.set(id, name);
+          }
+        });
+        (Array.isArray(doctorRows) ? doctorRows : []).forEach((row) => {
+          const id = String(row?.actor_id || '').trim();
+          const name = String(row?.actor_name || '').trim();
+          if (id && name) {
+            actorNameMap.set(id, name);
+          }
+        });
+
+        result.data = result.data.map((entry) => {
+          const actorId = String(entry?.actor_id || '').trim();
+          const resolvedName = actorId ? actorNameMap.get(actorId) : '';
+          const currentName = String(entry?.actor_name || '').trim();
+
+          return {
+            ...entry,
+            actor_name:
+              resolvedName && (!currentName || currentName === actorId)
+                ? resolvedName
+                : entry.actor_name
+          };
+        });
+      }
+    }
+
     res.json(result);
   } catch (error) {
     const statusCode = Number(error?.statusCode) || 500;
@@ -1136,6 +1215,70 @@ app.post('/api/ekstrapiramidal', async (req, res) => {
   } catch (error) {
     await auditCrudFailure(req, 'ekstrapiramidal', 'upsert', error);
     console.error('Error in ekstrapiramidal POST endpoint:', error);
+    res.status(400).json({
+      success: false,
+      error: error.message
+    });
+  }
+});
+
+app.get('/api/echocardiography/:no_rawat', async (req, res) => {
+  try {
+    const { no_rawat } = req.params;
+    const username = String(req.query.username || '').trim();
+    DiagnosticAccessService.ensureAccess('echocardiography', username);
+    const data = await EchoCardiographyService.list(no_rawat);
+    res.json({
+      success: true,
+      data
+    });
+  } catch (error) {
+    console.error('Error in echocardiography GET endpoint:', error);
+    res.status(error.statusCode || 400).json({
+      success: false,
+      error: error.message
+    });
+  }
+});
+
+app.post('/api/echocardiography', async (req, res) => {
+  try {
+    const username = String(req.body?.username || req.body?.kd_dokter || '').trim();
+    DiagnosticAccessService.ensureAccess('echocardiography', username);
+    const result = await EchoCardiographyService.save(req.body);
+    await auditCrudSuccess(req, 'echocardiography', 'upsert', result);
+    res.json(result);
+  } catch (error) {
+    await auditCrudFailure(req, 'echocardiography', 'upsert', error);
+    console.error('Error in echocardiography POST endpoint:', error);
+    res.status(error.statusCode || 400).json({
+      success: false,
+      error: error.message
+    });
+  }
+});
+
+app.get('/api/echocardiography/access/:username', async (req, res) => {
+  try {
+    const username = String(req.params.username || '').trim();
+    const result = await DiagnosticAccessService.getAccessInfo('echocardiography', username);
+    res.json(result);
+  } catch (error) {
+    res.status(400).json({
+      success: false,
+      error: error.message
+    });
+  }
+});
+
+app.get('/api/internal-referrals/doctors', async (req, res) => {
+  try {
+    const kd_poli = String(req.query.kd_poli || '').trim();
+    const date = String(req.query.date || '').trim();
+    const result = await InternalReferralService.getDoctorsBySchedule({ kd_poli, date });
+    res.json(result);
+  } catch (error) {
+    console.error('Error in internal-referrals doctors endpoint:', error);
     res.status(400).json({
       success: false,
       error: error.message

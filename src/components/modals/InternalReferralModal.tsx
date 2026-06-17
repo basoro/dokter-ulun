@@ -20,7 +20,6 @@ interface PoliOption {
 interface DoctorOption {
   kd_dokter: string;
   nm_dokter: string;
-  poli_codes?: string[];
 }
 
 interface ReferralSourceInfo {
@@ -65,6 +64,7 @@ export const InternalReferralModal: React.FC<InternalReferralModalProps> = ({ is
   const [referrals, setReferrals] = useState<InternalReferral[]>([]);
   const [poliOptions, setPoliOptions] = useState<PoliOption[]>([]);
   const [doctorOptions, setDoctorOptions] = useState<DoctorOption[]>([]);
+  const [doctorOptionsLoading, setDoctorOptionsLoading] = useState(false);
   const [sourceInfo, setSourceInfo] = useState<ReferralSourceInfo | null>(null);
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -130,16 +130,6 @@ export const InternalReferralModal: React.FC<InternalReferralModalProps> = ({ is
         }))
       );
       setPoliOptions(Array.isArray(result.options?.poliklinik) ? result.options.poliklinik : []);
-      setDoctorOptions(
-        (Array.isArray(result.options?.doctors) ? result.options.doctors : []).map((doctor: any) => ({
-          kd_dokter: doctor.kd_dokter,
-          nm_dokter: doctor.nm_dokter,
-          poli_codes: String(doctor.poli_codes || '')
-            .split(',')
-            .map((code) => code.trim())
-            .filter(Boolean),
-        }))
-      );
       setSourceInfo(result.meta?.source || null);
     } catch (error) {
       console.error('Error fetching internal referrals:', error);
@@ -150,6 +140,59 @@ export const InternalReferralModal: React.FC<InternalReferralModalProps> = ({ is
       });
     } finally {
       setLoading(false);
+    }
+  };
+
+  const fetchDoctorOptionsBySchedule = async (kd_poli: string) => {
+    if (!kd_poli) {
+      setDoctorOptions([]);
+      return;
+    }
+
+    setDoctorOptionsLoading(true);
+    try {
+      const params = new URLSearchParams({
+        kd_poli
+      });
+      const response = await fetch(`${API_URLS.INTERNAL_REFERRAL_DOCTORS}?${params.toString()}`);
+      const result = await response.json();
+
+      if (!response.ok || !result.success) {
+        throw new Error(result.error || 'Gagal memuat dokter tujuan');
+      }
+
+      const rows = Array.isArray(result.data) ? result.data : [];
+      const options: DoctorOption[] = rows.map((doctor: any) => ({
+        kd_dokter: doctor.kd_dokter,
+        nm_dokter: doctor.nm_dokter
+      }));
+
+      setDoctorOptions(() => {
+        const selectedDoctorCode = String(formData.kd_dokter || '').trim();
+        if (!selectedDoctorCode) {
+          return options;
+        }
+
+        const exists = options.some((item) => item.kd_dokter === selectedDoctorCode);
+        if (exists) {
+          return options;
+        }
+
+        const fallbackName = editingItem?.nm_dokter || referrals.find((item) => item.kd_dokter === selectedDoctorCode)?.nm_dokter;
+        if (!fallbackName) {
+          return options;
+        }
+
+        return [
+          { kd_dokter: selectedDoctorCode, nm_dokter: fallbackName },
+          ...options
+        ];
+      });
+    } catch (error) {
+      console.error('Error fetching doctors by schedule:', error);
+      setDoctorOptions([]);
+    } finally {
+      setDoctorOptionsLoading(false);
     }
   };
 
@@ -281,26 +324,34 @@ export const InternalReferralModal: React.FC<InternalReferralModalProps> = ({ is
   const currentPoliName = sourceInfo?.asal_nm_poli || user?.kd_poli || '-';
   const currentDoctorCode = user?.kd_dokter || user?.username || '';
   const isPerujukUser = Boolean(sourceInfo?.asal_kd_dokter) && sourceInfo?.asal_kd_dokter === currentDoctorCode;
-  const filteredDoctorOptions = useMemo(() => {
-    if (!formData.kd_poli) {
-      return doctorOptions;
+  const selectedPoliLabel = poliOptions.find((item) => item.kd_poli === formData.kd_poli)?.nm_poli;
+  const selectedDoctorLabel = doctorOptions.find((item) => item.kd_dokter === formData.kd_dokter)?.nm_dokter
+    || editingItem?.nm_dokter;
+
+  useEffect(() => {
+    if (!showForm) {
+      setDoctorOptions([]);
+      return;
     }
 
-    return doctorOptions.filter((doctor) => (doctor.poli_codes || []).includes(formData.kd_poli));
-  }, [doctorOptions, formData.kd_poli]);
-  const selectedPoliLabel = poliOptions.find((item) => item.kd_poli === formData.kd_poli)?.nm_poli;
-  const selectedDoctorLabel = doctorOptions.find((item) => item.kd_dokter === formData.kd_dokter)?.nm_dokter;
+    if (formData.kd_poli) {
+      void fetchDoctorOptionsBySchedule(formData.kd_poli);
+      return;
+    }
+
+    setDoctorOptions([]);
+  }, [formData.kd_poli, showForm]);
 
   useEffect(() => {
     if (!formData.kd_poli || !formData.kd_dokter) {
       return;
     }
 
-    const stillAllowed = filteredDoctorOptions.some((doctor) => doctor.kd_dokter === formData.kd_dokter);
+    const stillAllowed = doctorOptions.some((doctor) => doctor.kd_dokter === formData.kd_dokter);
     if (!stillAllowed) {
       setFormData((prev) => ({ ...prev, kd_dokter: '' }));
     }
-  }, [filteredDoctorOptions, formData.kd_dokter, formData.kd_poli]);
+  }, [doctorOptions, formData.kd_dokter, formData.kd_poli]);
 
   return (
     <Dialog open={isOpen} onOpenChange={onClose}>
@@ -412,10 +463,10 @@ export const InternalReferralModal: React.FC<InternalReferralModalProps> = ({ is
                           role="combobox"
                           aria-expanded={doctorOpen}
                           className="w-full justify-between"
-                          disabled={saving}
+                          disabled={saving || !formData.kd_poli || doctorOptionsLoading}
                         >
                           <span className="truncate text-left">
-                            {selectedDoctorLabel || 'Pilih Dokter Tujuan'}
+                            {doctorOptionsLoading ? 'Memuat dokter...' : (selectedDoctorLabel || 'Pilih Dokter Tujuan')}
                           </span>
                           <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
                         </Button>
@@ -425,10 +476,12 @@ export const InternalReferralModal: React.FC<InternalReferralModalProps> = ({ is
                           <CommandInput placeholder="Cari dokter..." />
                           <CommandList className="max-h-72 overflow-y-auto overscroll-contain">
                             <CommandEmpty>
-                              {formData.kd_poli ? 'Dokter tidak ditemukan pada poli ini.' : 'Dokter tidak ditemukan.'}
+                              {!formData.kd_poli
+                                ? 'Pilih poli tujuan terlebih dahulu.'
+                                : 'Dokter tidak ditemukan pada poli ini.'}
                             </CommandEmpty>
                             <CommandGroup>
-                              {filteredDoctorOptions.map((doctor) => (
+                              {doctorOptions.map((doctor) => (
                                 <CommandItem
                                   key={doctor.kd_dokter}
                                   value={`${doctor.kd_dokter} ${doctor.nm_dokter}`}

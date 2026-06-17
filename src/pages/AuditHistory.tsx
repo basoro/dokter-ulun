@@ -313,7 +313,19 @@ const AuditHistory: React.FC = () => {
                     </p>
                   </div>
                   <div className="text-sm text-muted-foreground">
-                    Aktor: <span className="font-medium text-foreground">{entry.actor_name || entry.actor_id || '-'}</span>
+                    {(() => {
+                      const actorId = String(entry.actor_id || '').trim();
+                      const actorName = String(entry.actor_name || '').trim();
+                      const display = actorId
+                        ? `${actorId}${actorName && actorName !== actorId ? ` - ${actorName}` : ''}`
+                        : actorName || '-';
+
+                      return (
+                        <>
+                          Aktor: <span className="font-medium text-foreground">{display}</span>
+                        </>
+                      );
+                    })()}
                   </div>
                 </div>
               </CardHeader>
