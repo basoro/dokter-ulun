@@ -38,6 +38,24 @@ class GetMedicalRecordService {
     );
   }
 
+  static async getLaboratoryResponsibleDoctor() {
+    const query = `
+      SELECT
+        TRIM(ms.value) AS kd_dokter,
+        COALESCE(TRIM(d.nm_dokter), '') AS nm_dokter
+      FROM mlite_settings ms
+      LEFT JOIN dokter d ON TRIM(d.kd_dokter) = TRIM(ms.value)
+      WHERE ms.module = 'settings' AND ms.field = 'pj_Laboratorium'
+      LIMIT 1
+    `;
+
+    const [rows] = await db.execute(query);
+    return {
+      kd_dokter: String(rows?.[0]?.kd_dokter || '').trim(),
+      nm_dokter: String(rows?.[0]?.nm_dokter || '').trim()
+    };
+  }
+
   // Utility function to format date only (no time conversion)
   static formatDateOnly(dateStr) {
     if (!dateStr) return '';
@@ -1591,13 +1609,18 @@ class GetMedicalRecordService {
   }
 
   static async fetchLaboratoryAll(noRawat, status = null) {
-    const [pk, mikro, pa] = await Promise.all([
+    const [responsibleDoctor, pk, mikro, pa] = await Promise.all([
+      this.getLaboratoryResponsibleDoctor(),
       this.fetchLaboratory(noRawat, status),
       this.fetchLaboratoryMicro(noRawat, status),
       this.fetchLaboratoryPa(noRawat)
     ]);
 
-    return [...(pk || []), ...(mikro || []), ...(pa || [])];
+    return [...(pk || []), ...(mikro || []), ...(pa || [])].map((entry) => ({
+      ...entry,
+      lab_responsible_doctor_code: responsibleDoctor.kd_dokter,
+      lab_responsible_doctor_name: responsibleDoctor.nm_dokter
+    }));
   }
 
   // Helper function to fetch radiology results

@@ -123,6 +123,8 @@ interface LabData {
   tanggal: string;
   pemeriksaan: LabTest[];
   lab_type?: 'pk' | 'pa' | 'mikro';
+  lab_responsible_doctor_code?: string;
+  lab_responsible_doctor_name?: string;
 }
 
 interface BalanceCairanEntry {
@@ -8272,12 +8274,13 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
   );
   const fullscreenLabDoctorName = useMemo(
     () => (
-      String(fullscreenLabVisit?.dokter || '').trim()
+      String(fullscreenLabHistory?.lab_responsible_doctor_name || '').trim()
+      || String(fullscreenLabVisit?.dokter || '').trim()
       || String(dpjpMeta.dokterUtama?.nama || '').trim()
       || String(user?.name || '').trim()
       || '-'
     ),
-    [dpjpMeta.dokterUtama?.nama, fullscreenLabVisit?.dokter, user?.name]
+    [dpjpMeta.dokterUtama?.nama, fullscreenLabHistory?.lab_responsible_doctor_name, fullscreenLabVisit?.dokter, user?.name]
   );
   const fullscreenLabRoomLabel = useMemo(
     () => (

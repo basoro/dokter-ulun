@@ -48,6 +48,8 @@ interface LaboratoryDetail {
   status_lanjut: string;
   kd_pj?: string;
   nm_dokter: string;
+  lab_responsible_doctor_code?: string;
+  lab_responsible_doctor_name?: string;
   nm_perawatan: string;
   attachments: Array<{
     lokasi_file: string;
@@ -1048,7 +1050,7 @@ const DiagnosticHubPage: React.FC<DiagnosticHubPageProps> = ({ mode }) => {
                                       <p>{labDetail.kd_pj || '-'}</p>
                                       <p className="uppercase">Dokter</p>
                                       <p>:</p>
-                                      <p>{labDetail.nm_dokter || '-'}</p>
+                                      <p>{labDetail.lab_responsible_doctor_name || labDetail.nm_dokter || '-'}</p>
                                       <p className="uppercase">Tanggal</p>
                                       <p>:</p>
                                       <p>{formatUIDateTime(new Date())}</p>
@@ -1119,7 +1121,7 @@ const DiagnosticHubPage: React.FC<DiagnosticHubPageProps> = ({ mode }) => {
                                     <p>Tanggal cetak: {formatUIDateTime(new Date())}</p>
                                     <p>Dokter Penanggung Jawab,</p>
                                     <div className="h-16" />
-                                    <p className="font-semibold">{labDetail.nm_dokter || '-'}</p>
+                                    <p className="font-semibold">{labDetail.lab_responsible_doctor_name || labDetail.nm_dokter || '-'}</p>
                                   </div>
                                 </div>
                               </div>

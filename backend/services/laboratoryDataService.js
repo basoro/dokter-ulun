@@ -101,6 +101,24 @@ class LaboratoryDataService {
     };
   }
 
+  async getLaboratoryResponsibleDoctor(connection) {
+    const query = `
+      SELECT
+        TRIM(ms.value) AS kd_dokter,
+        COALESCE(TRIM(d.nm_dokter), '') AS nm_dokter
+      FROM mlite_settings ms
+      LEFT JOIN dokter d ON TRIM(d.kd_dokter) = TRIM(ms.value)
+      WHERE ms.module = 'settings' AND ms.field = 'pj_Laboratorium'
+      LIMIT 1
+    `;
+
+    const [rows] = await connection.execute(query);
+    return {
+      kd_dokter: String(rows?.[0]?.kd_dokter || '').trim(),
+      nm_dokter: String(rows?.[0]?.nm_dokter || '').trim()
+    };
+  }
+
   async getLabRequests(no_rawat) {
     const connection = await this.getConnection();
     try {
@@ -407,7 +425,16 @@ class LaboratoryDataService {
         ORDER BY lokasi_file ASC
       `;
 
-      const [[patientRows], [resultRows], [impressionRows], [attachmentRows]] = await Promise.all([
+      const [[[responsibleDoctor]], [patientRows], [resultRows], [impressionRows], [attachmentRows]] = await Promise.all([
+        connection.execute(`
+          SELECT
+            TRIM(ms.value) AS kd_dokter,
+            COALESCE(TRIM(d.nm_dokter), '') AS nm_dokter
+          FROM mlite_settings ms
+          LEFT JOIN dokter d ON TRIM(d.kd_dokter) = TRIM(ms.value)
+          WHERE ms.module = 'settings' AND ms.field = 'pj_Laboratorium'
+          LIMIT 1
+        `),
         connection.execute(patientQuery, [no_rawat]),
         connection.execute(resultsQuery, [no_rawat]),
         connection.execute(impressionQuery, [no_rawat]),
@@ -429,6 +456,8 @@ class LaboratoryDataService {
           status_lanjut: patient.status_lanjut,
           kd_pj: patient.kd_pj,
           nm_dokter: patient.nm_dokter,
+          lab_responsible_doctor_code: String(responsibleDoctor?.kd_dokter || '').trim(),
+          lab_responsible_doctor_name: String(responsibleDoctor?.nm_dokter || '').trim(),
           nm_perawatan: patient.nm_perawatan || '',
           attachments: attachmentRows.map((row) => {
             const lokasiFile = String(row.lokasi_file || '').trim();
