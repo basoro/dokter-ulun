@@ -179,6 +179,9 @@ const AppContent = () => {
             <Route path="/pasien/igd" element={<Patients />} />
             <Route path="/pasien/rawat-jalan" element={<Patients />} />
             <Route path="/pasien/rawat-inap" element={<Patients />} />
+            <Route path="/pasien/rawat-inap/utama" element={<Patients />} />
+            <Route path="/pasien/rawat-inap/raber" element={<Patients />} />
+            <Route path="/pasien/rawat-gabung" element={<Patients />} />
             <Route path="/pasien/hemodialisa" element={<Patients />} />
             <Route path="/presensi" element={<Presensi />} />
             <Route path="/booking" element={<BookingOperasi />} />

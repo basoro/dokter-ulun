@@ -2,6 +2,11 @@ import db from '../config/database.js';
 import { getAccessibleDoctorCodesByPhpNative } from './doctorAccessMapping.js';
 
 class RawatInapDataService {
+  static getHospitalizationPeriodMonths() {
+    const parsed = Number.parseInt(String(process.env.HOSPITALIZATION_PERIOD || '').trim(), 10);
+    return Number.isFinite(parsed) && parsed > 0 ? parsed : 6;
+  }
+
   static getAccessibleDoctorCodes(username = '') {
     return getAccessibleDoctorCodesByPhpNative(username);
   }
@@ -14,14 +19,47 @@ class RawatInapDataService {
     return String(statusPulang || '').trim() === 'pindah-kamar';
   }
 
-  static shouldUseAdmissionDateForDischargeFilter(accessibleDoctorCodes = []) {
-    return accessibleDoctorCodes.includes('DR00016');
+  static normalizeStatusPulang(statusPulang = 'belum-pulang') {
+    const normalized = String(statusPulang || '').trim();
+
+    if (!normalized || normalized === 'all') {
+      return 'all';
+    }
+
+    if (normalized === 'masih-dirawat') {
+      return 'belum-pulang';
+    }
+
+    return normalized;
   }
 
-  static getDischargeDateFilterColumn(accessibleDoctorCodes = []) {
-    return this.shouldUseAdmissionDateForDischargeFilter(accessibleDoctorCodes)
-      ? 'ki.tgl_masuk'
-      : 'ki.tgl_keluar';
+  static getOpenDischargeCondition(columnName = 'ki.tgl_keluar') {
+    return `COALESCE(DATE_FORMAT(${columnName}, '%Y-%m-%d'), '0000-00-00') = '0000-00-00'`;
+  }
+
+  static getClosedDischargeCondition(columnName = 'ki.tgl_keluar') {
+    return `COALESCE(DATE_FORMAT(${columnName}, '%Y-%m-%d'), '0000-00-00') <> '0000-00-00'`;
+  }
+
+  static resolveDischargeRange(startDate, endDate) {
+    const normalizedStartDate = String(startDate || '').trim();
+    const normalizedEndDate = String(endDate || '').trim();
+
+    if (normalizedStartDate && normalizedEndDate) {
+      return {
+        startDate: normalizedStartDate,
+        endDate: normalizedEndDate
+      };
+    }
+
+    const end = new Date();
+    const start = new Date(end);
+    start.setMonth(start.getMonth() - this.getHospitalizationPeriodMonths());
+
+    return {
+      startDate: this.formatDateOnly(start),
+      endDate: this.formatDateOnly(end)
+    };
   }
 
   static getResumePendingFilter(normalizedTab = 'rawat-inap') {
@@ -78,14 +116,28 @@ class RawatInapDataService {
   }
 
   static applyStatusRawatFilter(whereConditions, params, statusPulang) {
-    const normalizedStatus = String(statusPulang || 'all').trim();
+    const normalizedStatus = this.normalizeStatusPulang(statusPulang);
 
     if (!normalizedStatus || normalizedStatus === 'all') {
       return;
     }
 
-    if (normalizedStatus === 'masih-dirawat') {
-      whereConditions.push(`COALESCE(ki.stts_pulang, '') = '-'`);
+    if (normalizedStatus === 'belum-pulang') {
+      whereConditions.push(this.getOpenDischargeCondition('ki.tgl_keluar'));
+      return;
+    }
+
+    if (
+      normalizedStatus === 'sudah-pulang'
+      || normalizedStatus === 'belum-resume'
+      || normalizedStatus === 'sudah-resume'
+      || normalizedStatus === 'belum-diajukan-klaim'
+    ) {
+      const { startDate, endDate } = this.resolveDischargeRange();
+      whereConditions.push(this.getClosedDischargeCondition('ki.tgl_keluar'));
+      whereConditions.push(`COALESCE(ki.stts_pulang, '') NOT IN ('', '-', 'Pindah Kamar')`);
+      whereConditions.push(`DATE(ki.tgl_keluar) BETWEEN ? AND ?`);
+      params.push(startDate, endDate);
       return;
     }
 
@@ -93,14 +145,6 @@ class RawatInapDataService {
       whereConditions.push(`COALESCE(ki.stts_pulang, '') = 'Pindah Kamar'`);
       return;
     }
-
-    if (normalizedStatus === 'sudah-pulang') {
-      whereConditions.push(`COALESCE(ki.stts_pulang, '') NOT IN ('', '-', 'Pindah Kamar')`);
-      return;
-    }
-
-    whereConditions.push('ki.stts_pulang = ?');
-    params.push(normalizedStatus);
   }
 
   static getBaseFilters({
@@ -116,6 +160,7 @@ class RawatInapDataService {
     const normalizedUsername = String(username || '').trim();
     const accessibleDoctorCodes = this.getAccessibleDoctorCodes(normalizedUsername);
     const normalizedTab = String(tab || 'rawat-inap').trim();
+    const normalizedStatusPulang = this.normalizeStatusPulang(statusPulang);
 
     if (accessibleDoctorCodes.length > 0 && normalizedTab !== 'rawat-gabung') {
       const doctorPlaceholders = this.buildInClausePlaceholders(accessibleDoctorCodes);
@@ -141,15 +186,24 @@ class RawatInapDataService {
       params.push(searchParam, searchParam, searchParam, searchParam, searchParam, searchParam);
     }
 
-    this.applyStatusRawatFilter(whereConditions, params, statusPulang);
+    this.applyStatusRawatFilter(whereConditions, params, normalizedStatusPulang);
 
-    if (startDate && endDate && String(statusPulang || '').trim() !== 'masih-dirawat') {
-      const normalizedStatus = String(statusPulang || '').trim();
-      const dateColumn = normalizedStatus === 'sudah-pulang'
-        ? this.getDischargeDateFilterColumn(accessibleDoctorCodes)
-        : 'ki.tgl_masuk';
-
-      whereConditions.push(`DATE(${dateColumn}) BETWEEN ? AND ?`);
+    if (
+      normalizedStatusPulang === 'sudah-pulang'
+      || normalizedStatusPulang === 'belum-resume'
+      || normalizedStatusPulang === 'sudah-resume'
+      || normalizedStatusPulang === 'belum-diajukan-klaim'
+    ) {
+      if (startDate || endDate) {
+        const dischargeRange = this.resolveDischargeRange(startDate, endDate);
+        whereConditions.pop();
+        params.splice(-2, 2);
+        whereConditions.push(this.getClosedDischargeCondition('ki.tgl_keluar'));
+        whereConditions.push(`DATE(ki.tgl_keluar) BETWEEN ? AND ?`);
+        params.push(dischargeRange.startDate, dischargeRange.endDate);
+      }
+    } else if (startDate && endDate && normalizedStatusPulang !== 'belum-pulang') {
+      whereConditions.push(`DATE(ki.tgl_masuk) BETWEEN ? AND ?`);
       params.push(startDate, endDate);
     }
 
@@ -158,7 +212,8 @@ class RawatInapDataService {
       params,
       normalizedUsername,
       accessibleDoctorCodes,
-      normalizedTab
+      normalizedTab,
+      normalizedStatusPulang
     };
   }
 
@@ -167,8 +222,12 @@ class RawatInapDataService {
     normalizedUsername = '',
     accessibleDoctorCodes = [],
     statusPulang = 'all',
-    rawatBersamaResumeStatus = 'belum_ada_resume'
+    rawatBersamaResumeStatus = 'belum_ada_resume',
+    claimVerificationStatus = 'all'
   ) {
+    const usernameLike = `%${String(normalizedUsername || '').trim()}%`;
+    const normalizedClaimVerificationStatus = String(claimVerificationStatus || 'all').trim();
+
     if (normalizedTab === 'rawat-bersama') {
       if (accessibleDoctorCodes.length === 0) {
         return { condition: '1 = 0', params: [] };
@@ -179,11 +238,41 @@ class RawatInapDataService {
       const extraParams = [];
 
       if (String(statusPulang || '').trim() === 'sudah-pulang') {
+        extraConditions.push(this.getResumePendingFilter('rawat-bersama'));
         const resumeFilter = this.getRawatBersamaResumeFilter(rawatBersamaResumeStatus, accessibleDoctorCodes);
 
         if (resumeFilter.condition) {
           extraConditions.push(resumeFilter.condition);
           extraParams.push(...resumeFilter.params);
+        }
+      }
+
+      if (String(statusPulang || '').trim() === 'belum-resume') {
+        extraConditions.push(`EXISTS (
+          SELECT 1
+          FROM resume_pasien_ranap rpr_pending
+          WHERE rpr_pending.no_rawat = ki.no_rawat
+            AND COALESCE(rpr_pending.ket_keadaan, '') NOT LIKE ?
+        )`);
+        extraParams.push(usernameLike);
+      }
+
+      if (String(statusPulang || '').trim() === 'belum-diajukan-klaim') {
+        extraConditions.push(`EXISTS (
+          SELECT 1
+          FROM resume_pasien_ranap rpr_claim
+          WHERE rpr_claim.no_rawat = ki.no_rawat
+            AND rpr_claim.ket_keluar IS NULL
+            AND COALESCE(rpr_claim.ket_keadaan, '') NOT LIKE ?
+        )`);
+        extraParams.push(usernameLike);
+        if (normalizedClaimVerificationStatus === 'unverified') {
+          extraConditions.push(`EXISTS (
+            SELECT 1
+            FROM resume_pasien_ranap rpr_claim_verification
+            WHERE rpr_claim_verification.no_rawat = ki.no_rawat
+              AND LOWER(COALESCE(rpr_claim_verification.ket_dilanjutkan, '')) <> 'selesai'
+          )`);
         }
       }
 
@@ -206,16 +295,35 @@ class RawatInapDataService {
 
       const doctorPlaceholders = this.buildInClausePlaceholders(accessibleDoctorCodes);
       const extraConditions = [];
+      const extraParams = [];
 
       if (String(statusPulang || '').trim() === 'sudah-pulang') {
         extraConditions.push(this.getResumePendingFilter(normalizedTab));
+      }
+
+      if (String(statusPulang || '').trim() === 'sudah-resume') {
+        extraConditions.push(`EXISTS (
+          SELECT 1
+          FROM resume_pasien_ranap rpr_done
+          WHERE rpr_done.no_rawat = rp.no_rawat
+        )`);
+      }
+
+      if (String(statusPulang || '').trim() === 'belum-resume') {
+        extraConditions.push(`EXISTS (
+          SELECT 1
+          FROM resume_pasien_ranap rpr_pending
+          WHERE rpr_pending.no_rawat = rp.no_rawat
+            AND COALESCE(rpr_pending.ket_keadaan, '') NOT LIKE ?
+        )`);
+        extraParams.push(usernameLike);
       }
 
       return {
         condition: `dr.kd_dokter IN (${doctorPlaceholders})
           AND COALESCE(dr.jenis_dpjp, 'Utama') IN ('Utama', 'PPDS', 'Internship')
           ${extraConditions.length > 0 ? `AND ${extraConditions.join(' AND ')}` : ''}`,
-        params: accessibleDoctorCodes
+        params: [...accessibleDoctorCodes, ...extraParams]
       };
     }
 
@@ -230,6 +338,33 @@ class RawatInapDataService {
       extraConditions.push(this.getResumePendingFilter(normalizedTab));
     }
 
+    if (String(statusPulang || '').trim() === 'belum-resume') {
+      extraConditions.push(`EXISTS (
+        SELECT 1
+        FROM resume_pasien_ranap rpr_pending
+        WHERE rpr_pending.no_rawat = ki.no_rawat
+          AND COALESCE(rpr_pending.ket_keadaan, '') NOT LIKE ?
+      )`);
+    }
+
+    if (String(statusPulang || '').trim() === 'belum-diajukan-klaim') {
+      extraConditions.push(`EXISTS (
+        SELECT 1
+        FROM resume_pasien_ranap rpr_claim
+        WHERE rpr_claim.no_rawat = ki.no_rawat
+          AND rpr_claim.ket_keluar IS NULL
+          AND COALESCE(rpr_claim.ket_keadaan, '') LIKE ?
+      )`);
+      if (normalizedClaimVerificationStatus === 'unverified') {
+        extraConditions.push(`EXISTS (
+          SELECT 1
+          FROM resume_pasien_ranap rpr_claim_verification
+          WHERE rpr_claim_verification.no_rawat = ki.no_rawat
+            AND LOWER(COALESCE(rpr_claim_verification.ket_dilanjutkan, '')) <> 'selesai'
+        )`);
+      }
+    }
+
     return {
       condition: `EXISTS (
         SELECT 1
@@ -238,8 +373,27 @@ class RawatInapDataService {
           AND dr_main.kd_dokter IN (${doctorPlaceholders})
           AND COALESCE(dr_main.jenis_dpjp, 'Utama') IN ('Utama', 'PPDS', 'Internship')
       )${extraConditions.length > 0 ? ` AND ${extraConditions.join(' AND ')}` : ''}`,
-      params: accessibleDoctorCodes
+      params: [
+        ...accessibleDoctorCodes,
+        ...(String(statusPulang || '').trim() === 'belum-resume' ? [usernameLike] : []),
+        ...(String(statusPulang || '').trim() === 'belum-diajukan-klaim' ? [usernameLike] : [])
+      ]
     };
+  }
+
+  static getResumeMetaSelect(noRawatColumn) {
+    return `
+      COALESCE((
+        SELECT MAX(COALESCE(rpr_meta.ket_keluar, ''))
+        FROM resume_pasien_ranap rpr_meta
+        WHERE rpr_meta.no_rawat = ${noRawatColumn}
+      ), '') AS ket_keluar,
+      COALESCE((
+        SELECT MAX(COALESCE(rpr_meta.ket_dilanjutkan, ''))
+        FROM resume_pasien_ranap rpr_meta
+        WHERE rpr_meta.no_rawat = ${noRawatColumn}
+      ), '') AS ket_dilanjutkan,
+    `;
   }
 
   static getFromClause() {
@@ -310,6 +464,7 @@ class RawatInapDataService {
         p.tgl_lahir,
         MIN(ki.tgl_masuk) as tgl_masuk,
         MAX(COALESCE(pj.png_jawab, '')) as cara_bayar,
+        ${this.getResumeMetaSelect('rp.no_rawat')}
         NULLIF(
           SUBSTRING_INDEX(
             GROUP_CONCAT(COALESCE(DATE_FORMAT(ki.tgl_keluar, '%Y-%m-%d'), '') ORDER BY ki.tgl_masuk DESC SEPARATOR '||'),
@@ -421,7 +576,8 @@ class RawatInapDataService {
       username = '',
       startDate,
       endDate,
-      rawatBersamaResumeStatus = 'belum_ada_resume'
+      rawatBersamaResumeStatus = 'belum_ada_resume',
+      claimVerificationStatus = 'all'
     } = {}
   ) {
     const normalizedUsername = String(username || '').trim();
@@ -437,7 +593,8 @@ class RawatInapDataService {
       countTabs.map(async ({ key, tab }) => {
         const {
           whereConditions: baseWhereConditions,
-          params: baseParams
+          params: baseParams,
+          normalizedStatusPulang
         } = this.getBaseFilters({
           search,
           statusPulang,
@@ -446,7 +603,14 @@ class RawatInapDataService {
           startDate,
           endDate
         });
-        const tabFilter = this.getTabFilter(tab, normalizedUsername, accessibleDoctorCodes, statusPulang, rawatBersamaResumeStatus);
+        const tabFilter = this.getTabFilter(
+          tab,
+          normalizedUsername,
+          accessibleDoctorCodes,
+          normalizedStatusPulang,
+          rawatBersamaResumeStatus,
+          claimVerificationStatus
+        );
         const whereConditions = [...baseWhereConditions, tabFilter.condition];
         const params = [...baseParams, ...tabFilter.params];
         const whereClause = `WHERE ${whereConditions.join(' AND ')}`;
@@ -496,6 +660,7 @@ class RawatInapDataService {
     startDate,
     endDate,
     rawatBersamaResumeStatus = "belum_ada_resume",
+    claimVerificationStatus = "all",
     includeTabCounts = true,
     countsOnly = false
   }) {
@@ -512,7 +677,8 @@ class RawatInapDataService {
         whereConditions: baseWhereConditions,
         params: baseParams,
         normalizedUsername,
-        accessibleDoctorCodes
+        accessibleDoctorCodes,
+        normalizedStatusPulang
       } = this.getBaseFilters({
         search,
         statusPulang,
@@ -528,8 +694,9 @@ class RawatInapDataService {
         normalizedTab,
         normalizedUsername,
         accessibleDoctorCodes,
-        statusPulang,
-        rawatBersamaResumeStatus
+        normalizedStatusPulang,
+        rawatBersamaResumeStatus,
+        claimVerificationStatus
       );
       const whereConditions = [...baseWhereConditions, tabFilter.condition];
       const params = [...baseParams, ...tabFilter.params];
@@ -538,7 +705,7 @@ class RawatInapDataService {
         ? this.getRawatGabungFromClause()
         : this.getFromClause();
       const rawatBersamaResumeSelect = this.getRawatBersamaResumeSelect(normalizedTab, accessibleDoctorCodes);
-      const keepMovementRows = this.shouldKeepMovementRows(statusPulang);
+      const keepMovementRows = this.shouldKeepMovementRows(normalizedStatusPulang);
       const orderDirection = normalizedTab === 'rawat-inap' || normalizedTab === 'rawat-bersama' ? 'ASC' : 'DESC';
       console.log('WHERE clause:', whereClause);
       console.log('Parameters:', params);
@@ -554,6 +721,7 @@ class RawatInapDataService {
               p.jk as jenis_kelamin,
               p.tgl_lahir,
               MAX(COALESCE(pj.png_jawab, '')) as cara_bayar,
+              ${this.getResumeMetaSelect('ki.no_rawat')}
               ki.tgl_masuk,
               ki.tgl_keluar,
               ki.diagnosa_awal,
@@ -589,6 +757,7 @@ class RawatInapDataService {
               p.jk as jenis_kelamin,
               p.tgl_lahir,
               MAX(COALESCE(pj.png_jawab, '')) as cara_bayar,
+              ${this.getResumeMetaSelect('ki.no_rawat')}
               MIN(ki.tgl_masuk) as tgl_masuk,
               NULLIF(
                 SUBSTRING_INDEX(
@@ -691,11 +860,12 @@ class RawatInapDataService {
       if (shouldIncludeTabCounts || shouldReturnCountsOnly) {
         tabCounts = await this.getTabCounts({
           search,
-          statusPulang,
+          statusPulang: normalizedStatusPulang,
           username: normalizedUsername,
           startDate,
           endDate,
-          rawatBersamaResumeStatus
+          rawatBersamaResumeStatus,
+          claimVerificationStatus
         });
         console.log('Tab counts:', tabCounts);
       }
@@ -713,6 +883,7 @@ class RawatInapDataService {
         success: true,
         data: formattedData,
         total,
+        hospitalizationPeriodMonths: this.getHospitalizationPeriodMonths(),
         ...(tabCounts ? { tabCounts } : {}),
         limit,
         offset,

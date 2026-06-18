@@ -61,6 +61,7 @@ import HemodialisaTabs from '@/components/HemodialisaTabs';
 import { API_URLS } from '@/config/api';
 import { DatePickerPopover } from '@/components/DatePickerPopover';
 import { StatusPill } from '@/components/StatusPill';
+import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import {
   Dialog,
   DialogContent,
@@ -350,7 +351,13 @@ const BookingTabs = () => {
             placeholder="Cari pasien..."
             className="w-full pl-8"
             value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
+            onChange={(e) => {
+              const nextValue = e.target.value;
+              setSearchQuery(nextValue);
+              if (currentPage !== 1) {
+                setCurrentPage(1);
+              }
+            }}
           />
         </div>
 
@@ -968,23 +975,44 @@ const DokterDPJPCell = ({ dokterDpjp, caraBayar }: { dokterDpjp: string; caraBay
   );
 };
 
-const RawatInapTabs = () => {
+type RawatInapViewMode = 'utama' | 'raber' | 'rawat-gabung';
+type RawatInapStatusTab = 'belum-pulang' | 'sudah-pulang' | 'sudah-resume' | 'belum-resume' | 'belum-diajukan-klaim';
+type RawatInapListTab = 'rawat-inap' | 'rawat-bersama' | 'rawat-gabung';
+
+interface RawatInapTabsProps {
+  viewMode?: RawatInapViewMode;
+}
+
+const RawatInapTabs = ({ viewMode = 'utama' }: RawatInapTabsProps) => {
   const { user } = useAuth();
   const navigate = useNavigate();
-  type RawatInapListTab = 'rawat-inap' | 'rawat-bersama' | 'rawat-gabung';
-  type RawatInapTab = RawatInapListTab | 'resume-pasien';
   const [searchParams, setSearchParams] = useSearchParams();
-  const rawatInapTabOptions: RawatInapTab[] = ['rawat-inap', 'rawat-bersama', 'rawat-gabung', 'resume-pasien'];
-  const defaultRawatInapFrom = subMonths(new Date(), 6);
+  const baseListTab: RawatInapListTab = viewMode === 'raber'
+    ? 'rawat-bersama'
+    : viewMode === 'rawat-gabung'
+      ? 'rawat-gabung'
+      : 'rawat-inap';
+  const normalizeRawatInapStatusTab = (value: string | null): RawatInapStatusTab => {
+    const normalized = String(value || '').trim();
+    if (normalized === 'belum-diajukan-klaim') return 'belum-diajukan-klaim';
+    if (normalized === 'belum-resume') return 'belum-resume';
+    if (normalized === 'sudah-resume') return 'sudah-resume';
+    if (normalized === 'sudah-pulang') return 'sudah-pulang';
+    return 'belum-pulang';
+  };
+  const rawatInapTabOptions: RawatInapStatusTab[] = viewMode === 'rawat-gabung'
+    ? ['belum-pulang', 'sudah-pulang', 'sudah-resume']
+    : ['belum-pulang', 'sudah-pulang', 'belum-resume', 'belum-diajukan-klaim'];
+  const [hospitalizationPeriodMonths, setHospitalizationPeriodMonths] = useState(6);
+  const defaultRawatInapFrom = subMonths(new Date(), hospitalizationPeriodMonths);
   const defaultRawatInapTo = new Date();
-  const initialRawatInapTab = rawatInapTabOptions.includes(searchParams.get('tab') as RawatInapTab)
-    ? searchParams.get('tab') as RawatInapTab
-    : 'rawat-inap';
+  const initialRawatInapTab = normalizeRawatInapStatusTab(searchParams.get('tab'));
   const emptyTabCounts = {
-    rawat_inap: 0,
-    rawat_bersama: 0,
-    rawat_gabung: 0,
-    resume_pasien: 0
+    belum_pulang: 0,
+    sudah_pulang: 0,
+    sudah_resume: 0,
+    belum_resume: 0,
+    belum_diajukan_klaim: 0
   };
   type RawatInapRequestBody = {
     page: string;
@@ -996,31 +1024,30 @@ const RawatInapTabs = () => {
     startDate: string;
     endDate: string;
     rawatBersamaResumeStatus?: string;
+    claimVerificationStatus?: string;
     includeTabCounts?: boolean;
     countsOnly?: boolean;
   };
   const [rawatInapData, setRawatInapData] = useState<any[]>([]);
   const [resumeData, setResumeData] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
-  const [activeTab, setActiveTab] = useState<RawatInapTab>(initialRawatInapTab);
+  const [activeTab, setActiveTab] = useState<RawatInapStatusTab>(initialRawatInapTab);
   const [searchQuery, setSearchQuery] = useState(searchParams.get('search') || "");
-  const [statusPulangRawatInap, setStatusPulangRawatInap] = useState(searchParams.get('statusPulangRawatInap') || "masih-dirawat");
-  const [statusPulangResume, setStatusPulangResume] = useState(searchParams.get('statusPulangResume') || "sudah-pulang");
   const [resumeStatus, setResumeStatus] = useState(searchParams.get('resumeStatus') || "belum_resume");
-  const [resumeJenisDpjp, setResumeJenisDpjp] = useState(searchParams.get('resumeJenisDpjp') || "all");
   const [resumeVerificationStatus, setResumeVerificationStatus] = useState(searchParams.get('resumeVerificationStatus') || "all");
   const [rawatBersamaResumeStatus, setRawatBersamaResumeStatus] = useState(
     searchParams.get('rawatBersamaResumeStatus') || "belum_ada_resume"
   );
+  const [claimVerificationStatus, setClaimVerificationStatus] = useState(
+    searchParams.get('claimVerificationStatus') || "all"
+  );
+  const hasDateRangeQueryRef = useRef(Boolean(searchParams.get('from') || searchParams.get('to')));
   const [dateRange, setDateRange] = useState<DateRange | undefined>({
     from: parseDateParam(searchParams.get('from'), defaultRawatInapFrom),
     to: parseDateParam(searchParams.get('to'), defaultRawatInapTo)
   });
   const [isFilterModalOpen, setIsFilterModalOpen] = useState(false);
-  const [pendingStatusPulangRawatInap, setPendingStatusPulangRawatInap] = useState(searchParams.get('statusPulangRawatInap') || "masih-dirawat");
-  const [pendingStatusPulangResume, setPendingStatusPulangResume] = useState(searchParams.get('statusPulangResume') || "sudah-pulang");
   const [pendingResumeStatus, setPendingResumeStatus] = useState(searchParams.get('resumeStatus') || "belum_resume");
-  const [pendingResumeJenisDpjp, setPendingResumeJenisDpjp] = useState(searchParams.get('resumeJenisDpjp') || "all");
   const [pendingResumeVerificationStatus, setPendingResumeVerificationStatus] = useState(searchParams.get('resumeVerificationStatus') || "all");
   const [pendingRawatBersamaResumeStatus, setPendingRawatBersamaResumeStatus] = useState(
     searchParams.get('rawatBersamaResumeStatus') || "belum_ada_resume"
@@ -1029,6 +1056,14 @@ const RawatInapTabs = () => {
   const [total, setTotal] = useState(0);
   const [itemsPerPage, setItemsPerPage] = useState(parsePositiveInt(searchParams.get('itemsPerPage'), 10));
   const [tabCounts, setTabCounts] = useState(emptyTabCounts);
+  const effectiveResumeJenisDpjp = viewMode === 'raber' ? 'raber' : 'utama';
+
+  useEffect(() => {
+    if (!rawatInapTabOptions.includes(activeTab)) {
+      setActiveTab(rawatInapTabOptions[0]);
+      setCurrentPage(1);
+    }
+  }, [activeTab, rawatInapTabOptions]);
   const getResumeStatusBadge = (value: string) => {
     switch (String(value || '').trim()) {
       case 'sudah_resume':
@@ -1066,6 +1101,28 @@ const RawatInapTabs = () => {
           tone: 'slate' as const,
           label: '-'
         };
+    }
+  };
+  const getVerificationBadge = (value: string) => {
+    const normalized = String(value || '').trim().toLowerCase();
+    if (normalized === 'selesai') {
+      return {
+        tone: 'blue' as const,
+        label: 'Verifikasi'
+      };
+    }
+
+    return {
+      tone: 'amber' as const,
+      label: 'Belum Verifikasi'
+    };
+  };
+  const verificationColumn = {
+    accessor: 'ket_dilanjutkan',
+    header: 'Status Verifikasi',
+    render: (row: any) => {
+      const badge = getVerificationBadge(row.ket_dilanjutkan);
+      return <StatusPill label={badge.label} tone={badge.tone} />;
     }
   };
   const rawatInapColumns = [
@@ -1134,6 +1191,19 @@ const RawatInapTabs = () => {
     },
     rawatInapColumns[rawatInapColumns.length - 1]
   ];
+  const getInapColumns = (tab: RawatInapStatusTab) => {
+    const baseColumns = baseListTab === 'rawat-bersama' ? rawatBersamaColumns : rawatInapColumns;
+
+    if (tab !== 'belum-diajukan-klaim') {
+      return baseColumns;
+    }
+
+    return [
+      ...baseColumns.slice(0, 2),
+      verificationColumn,
+      ...baseColumns.slice(2)
+    ];
+  };
 
   const buildRawatInapRequestBody = (
     tabValue: RawatInapListTab,
@@ -1142,12 +1212,13 @@ const RawatInapTabs = () => {
     page: overrides.page ?? currentPage.toString(),
     itemsPerPage: overrides.itemsPerPage ?? itemsPerPage.toString(),
     search: overrides.search ?? searchQuery,
-    statusPulang: overrides.statusPulang ?? statusPulangRawatInap,
+    statusPulang: overrides.statusPulang ?? 'belum-pulang',
     username: user?.username || '',
     tab: tabValue,
     startDate: overrides.startDate ?? (dateRange?.from ? format(dateRange.from, 'yyyy-MM-dd') : ''),
     endDate: overrides.endDate ?? (dateRange?.to ? format(dateRange.to, 'yyyy-MM-dd') : ''),
     rawatBersamaResumeStatus: overrides.rawatBersamaResumeStatus ?? rawatBersamaResumeStatus,
+    claimVerificationStatus: overrides.claimVerificationStatus ?? claimVerificationStatus,
     ...overrides
   });
 
@@ -1155,40 +1226,34 @@ const RawatInapTabs = () => {
     page: overrides.page ?? currentPage.toString(),
     itemsPerPage: overrides.itemsPerPage ?? itemsPerPage.toString(),
     search: overrides.search ?? searchQuery,
-    statusPulang: overrides.statusPulang ?? statusPulangResume,
+    statusPulang: overrides.statusPulang ?? 'sudah-pulang',
     username: user?.username || '',
     resumeStatus: overrides.resumeStatus ?? resumeStatus,
-    jenisDpjp: overrides.jenisDpjp ?? resumeJenisDpjp,
+    jenisDpjp: overrides.jenisDpjp ?? effectiveResumeJenisDpjp,
     verificationStatus: overrides.verificationStatus ?? resumeVerificationStatus,
     startDate: overrides.startDate ?? (dateRange?.from ? format(dateRange.from, 'yyyy-MM-dd') : ''),
     endDate: overrides.endDate ?? (dateRange?.to ? format(dateRange.to, 'yyyy-MM-dd') : ''),
     ...overrides
   });
 
-  const getStatusPulangByTab = (tab: string) => (
-    tab === 'resume-pasien' ? statusPulangResume : statusPulangRawatInap
-  );
-
-  const setStatusPulangByTab = (tab: string, value: string) => {
-    if (tab === 'resume-pasien') {
-      setStatusPulangResume(value);
-      return;
+  const getStatusPulangForActiveTab = (tab: RawatInapStatusTab): string => {
+    if (tab === 'belum-diajukan-klaim') {
+      return 'belum-diajukan-klaim';
     }
 
-    setStatusPulangRawatInap(value);
-  };
-
-  const getPendingStatusPulangByTab = (tab: string) => (
-    tab === 'resume-pasien' ? pendingStatusPulangResume : pendingStatusPulangRawatInap
-  );
-
-  const setPendingStatusPulangByTab = (tab: string, value: string) => {
-    if (tab === 'resume-pasien') {
-      setPendingStatusPulangResume(value);
-      return;
+    if (tab === 'belum-resume') {
+      return 'belum-resume';
     }
 
-    setPendingStatusPulangRawatInap(value);
+    if (tab === 'sudah-resume') {
+      return 'sudah-resume';
+    }
+
+    if (tab === 'sudah-pulang') {
+      return 'sudah-pulang';
+    }
+
+    return 'belum-pulang';
   };
 
   useEffect(() => {
@@ -1197,24 +1262,36 @@ const RawatInapTabs = () => {
     params.set('tab', activeTab);
     params.set('page', String(currentPage));
     params.set('itemsPerPage', String(itemsPerPage));
-    params.set('statusPulangRawatInap', statusPulangRawatInap);
-    params.set('statusPulangResume', statusPulangResume);
     params.set('resumeStatus', resumeStatus);
-    params.set('resumeJenisDpjp', resumeJenisDpjp);
     params.set('resumeVerificationStatus', resumeVerificationStatus);
     params.set('rawatBersamaResumeStatus', rawatBersamaResumeStatus);
+    params.set('resumeJenisDpjp', effectiveResumeJenisDpjp);
     params.delete('statusPulang');
+    params.delete('statusPulangRawatInap');
+    params.delete('statusPulangResume');
 
-    if (dateRange?.from) {
-      params.set('from', format(dateRange.from, 'yyyy-MM-dd'));
+    const shouldPersistDateRange = activeTab === 'belum-resume';
+    if (shouldPersistDateRange) {
+      if (dateRange?.from) {
+        params.set('from', format(dateRange.from, 'yyyy-MM-dd'));
+      } else {
+        params.delete('from');
+      }
+
+      if (dateRange?.to) {
+        params.set('to', format(dateRange.to, 'yyyy-MM-dd'));
+      } else {
+        params.delete('to');
+      }
     } else {
       params.delete('from');
+      params.delete('to');
     }
 
-    if (dateRange?.to) {
-      params.set('to', format(dateRange.to, 'yyyy-MM-dd'));
+    if (activeTab === 'belum-diajukan-klaim' && claimVerificationStatus !== 'all') {
+      params.set('claimVerificationStatus', claimVerificationStatus);
     } else {
-      params.delete('to');
+      params.delete('claimVerificationStatus');
     }
 
     if (searchQuery.trim()) {
@@ -1230,12 +1307,11 @@ const RawatInapTabs = () => {
     activeTab,
     currentPage,
     itemsPerPage,
-    statusPulangRawatInap,
-    statusPulangResume,
     resumeStatus,
-    resumeJenisDpjp,
     resumeVerificationStatus,
     rawatBersamaResumeStatus,
+    claimVerificationStatus,
+    effectiveResumeJenisDpjp,
     searchQuery,
     dateRange?.from,
     dateRange?.to,
@@ -1244,91 +1320,93 @@ const RawatInapTabs = () => {
   ]);
 
   const applyTabCounts = (counts: any) => {
-    setTabCounts((prev) => ({
-      rawat_inap: Number(counts?.rawat_inap || 0),
-      rawat_bersama: Number(counts?.rawat_bersama || 0),
-      rawat_gabung: Number(counts?.rawat_gabung || 0),
-      resume_pasien: prev.resume_pasien
-    }));
+    setTabCounts({
+      belum_pulang: Number(counts?.belum_pulang || 0),
+      sudah_pulang: Number(counts?.sudah_pulang || 0),
+      sudah_resume: Number(counts?.sudah_resume || 0),
+      belum_resume: Number(counts?.belum_resume || 0),
+      belum_diajukan_klaim: Number(counts?.belum_diajukan_klaim || 0)
+    });
   };
 
-  const applyResumeCount = (resumeCount: number) => {
-    setTabCounts((prev) => ({
-      ...prev,
-      resume_pasien: Number(resumeCount || 0)
-    }));
+  const applyHospitalizationPeriod = (value: unknown) => {
+    const parsed = Number.parseInt(String(value || '').trim(), 10);
+    if (!Number.isFinite(parsed) || parsed <= 0) {
+      return;
+    }
+
+    setHospitalizationPeriodMonths((prev) => {
+      if (prev === parsed) {
+        return prev;
+      }
+
+      if (!hasDateRangeQueryRef.current) {
+        const nextTo = new Date();
+        const nextFrom = subMonths(new Date(), parsed);
+        setDateRange({
+          from: nextFrom,
+          to: nextTo
+        });
+      }
+
+      return parsed;
+    });
   };
 
-  const fetchRawatInapTabCounts = async () => {
+  const fetchRawatInapStatusCounts = async () => {
     try {
-      const response = await fetch(API_URLS.RAWAT_INAP_DATA, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(
-          buildRawatInapRequestBody('rawat-inap', {
-            page: '1',
-            itemsPerPage: '1',
-            countsOnly: true
-          })
-        )
+      const statusEntries = await Promise.all(
+        rawatInapTabOptions.map(async (status) => {
+          const response = await fetch(API_URLS.RAWAT_INAP_DATA, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify(
+              buildRawatInapRequestBody(baseListTab, {
+                page: '1',
+                itemsPerPage: '1',
+                statusPulang: status,
+                claimVerificationStatus: 'all',
+                includeTabCounts: false
+              })
+            )
+          });
+
+          if (!response.ok) {
+            const errorText = await response.text();
+            throw new Error(`HTTP ${response.status}: ${errorText}`);
+          }
+
+          const data = await response.json();
+          if (!data.success) {
+            throw new Error(data.error);
+          }
+
+          applyHospitalizationPeriod(data?.hospitalizationPeriodMonths);
+          return [status, Number(data?.total || 0)] as const;
+        })
+      );
+
+      applyTabCounts({
+        belum_pulang: statusEntries.find(([status]) => status === 'belum-pulang')?.[1] || 0,
+        sudah_pulang: statusEntries.find(([status]) => status === 'sudah-pulang')?.[1] || 0,
+        sudah_resume: statusEntries.find(([status]) => status === 'sudah-resume')?.[1] || 0,
+        belum_resume: statusEntries.find(([status]) => status === 'belum-resume')?.[1] || 0,
+        belum_diajukan_klaim: statusEntries.find(([status]) => status === 'belum-diajukan-klaim')?.[1] || 0
       });
-
-      if (!response.ok) {
-        const errorText = await response.text();
-        throw new Error(`HTTP ${response.status}: ${errorText}`);
-      }
-
-      const data = await response.json();
-      if (!data.success) {
-        throw new Error(data.error);
-      }
-
-      applyTabCounts(data?.tabCounts);
     } catch (error) {
-      console.error('Error fetching Rawat Inap tab counts:', error);
+      console.error('Error fetching Rawat Inap status counts:', error);
       setTabCounts((prev) => ({
         ...emptyTabCounts,
-        resume_pasien: prev.resume_pasien
+        belum_resume: prev.belum_resume,
+        belum_diajukan_klaim: prev.belum_diajukan_klaim
       }));
     }
   };
 
-  const fetchResumeTabCount = async () => {
-    try {
-      const response = await fetch(API_URLS.RESUME_PASIEN_DATA, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(
-          buildResumeRequestBody({
-            page: '1',
-            itemsPerPage: '1'
-          })
-        )
-      });
-
-      if (!response.ok) {
-        const errorText = await response.text();
-        throw new Error(`HTTP ${response.status}: ${errorText}`);
-      }
-
-      const data = await response.json();
-      if (!data.success) {
-        throw new Error(data.error);
-      }
-
-      applyResumeCount(data?.total || 0);
-    } catch (error) {
-      console.error('Error fetching Resume Pasien tab count:', error);
-      applyResumeCount(0);
-    }
-  };
-
   const fetchRawatInapData = async (
-    tabValue: RawatInapListTab = activeTab as RawatInapListTab,
+    tabValue: RawatInapListTab = baseListTab,
     overrides: Partial<RawatInapRequestBody> = {}
   ) => {
     setLoading(true);
@@ -1360,14 +1438,11 @@ const RawatInapTabs = () => {
       }
 
       console.log('Rawat Inap data response:', data);
+      applyHospitalizationPeriod(data?.hospitalizationPeriodMonths);
       setRawatInapData(data?.data || []);
       setTotal(data?.total || 0);
-      if (data?.tabCounts) {
-        applyTabCounts(data?.tabCounts);
-      }
       void Promise.allSettled([
-        fetchRawatInapTabCounts(),
-        fetchResumeTabCount()
+        fetchRawatInapStatusCounts()
       ]);
 
     } catch (error) {
@@ -1376,69 +1451,17 @@ const RawatInapTabs = () => {
       setTotal(0);
       setTabCounts((prev) => ({
         ...emptyTabCounts,
-        resume_pasien: prev.resume_pasien
+        belum_resume: prev.belum_resume,
+        belum_diajukan_klaim: prev.belum_diajukan_klaim
       }));
     } finally {
       setLoading(false);
     }
   };
 
-  const fetchResumeData = async (overrides: Partial<Record<string, string>> = {}) => {
-    setLoading(true);
-    try {
-      const requestBody = buildResumeRequestBody(overrides);
-
-      console.log('Fetching Resume Pasien data:', requestBody);
-
-      const response = await fetch(API_URLS.RESUME_PASIEN_DATA, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(requestBody)
-      });
-
-      if (!response.ok) {
-        const errorText = await response.text();
-        console.error('Error fetching Resume Pasien data:', errorText);
-        throw new Error(`HTTP ${response.status}: ${errorText}`);
-      }
-
-      const data = await response.json();
-      
-      if (!data.success) {
-        console.error('Error fetching Resume Pasien data:', data.error);
-        throw new Error(data.error);
-      }
-
-      console.log('Resume Pasien data response:', data);
-      setResumeData(data?.data || []);
-      setTotal(data?.total || 0);
-      applyResumeCount(data?.total || 0);
-      void fetchRawatInapTabCounts();
-
-    } catch (error) {
-      console.error('Error fetching Resume Pasien data:', error);
-      setResumeData([]);
-      setTotal(0);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const handleFilterApply = (tab: string) => {
-    const nextStatusPulangRawatInap = pendingStatusPulangRawatInap || "masih-dirawat";
-    const nextStatusPulangResume = pendingStatusPulangResume || "sudah-pulang";
-    const nextResumeStatus = pendingResumeStatus || "belum_resume";
-    const nextResumeJenisDpjp = pendingResumeJenisDpjp || "all";
-    const nextResumeVerificationStatus = pendingResumeVerificationStatus || "all";
+  const handleFilterApply = (tab: RawatInapStatusTab) => {
     const nextRawatBersamaResumeStatus = pendingRawatBersamaResumeStatus || "belum_ada_resume";
 
-    setStatusPulangRawatInap(nextStatusPulangRawatInap);
-    setStatusPulangResume(nextStatusPulangResume);
-    setResumeStatus(nextResumeStatus);
-    setResumeJenisDpjp(nextResumeJenisDpjp);
-    setResumeVerificationStatus(nextResumeVerificationStatus);
     setRawatBersamaResumeStatus(nextRawatBersamaResumeStatus);
     setIsFilterModalOpen(false);
 
@@ -1447,32 +1470,19 @@ const RawatInapTabs = () => {
       return;
     }
 
-    if (tab === 'resume-pasien') {
-      fetchResumeData({
-        statusPulang: nextStatusPulangResume,
-        resumeStatus: nextResumeStatus,
-        jenisDpjp: nextResumeJenisDpjp,
-        verificationStatus: nextResumeVerificationStatus
-      });
-    } else {
-      fetchRawatInapData(tab as 'rawat-inap' | 'rawat-bersama' | 'rawat-gabung', {
-        statusPulang: nextStatusPulangRawatInap,
-        rawatBersamaResumeStatus: nextRawatBersamaResumeStatus
-      });
-    }
+    fetchRawatInapData(baseListTab, {
+      statusPulang: getStatusPulangForActiveTab(tab),
+      rawatBersamaResumeStatus: nextRawatBersamaResumeStatus
+    });
   };
 
   const handleClearFilters = (tab: string) => {
     setSearchQuery("");
-    setStatusPulangByTab(tab, tab === 'resume-pasien' ? "sudah-pulang" : "masih-dirawat");
     setResumeStatus("belum_resume");
-    setResumeJenisDpjp("all");
     setResumeVerificationStatus("all");
     setRawatBersamaResumeStatus("belum_ada_resume");
-    setPendingStatusPulangRawatInap("masih-dirawat");
-    setPendingStatusPulangResume("sudah-pulang");
+    setClaimVerificationStatus("all");
     setPendingResumeStatus("belum_resume");
-    setPendingResumeJenisDpjp("all");
     setPendingResumeVerificationStatus("all");
     setPendingRawatBersamaResumeStatus("belum_ada_resume");
     setIsFilterModalOpen(false);
@@ -1484,106 +1494,96 @@ const RawatInapTabs = () => {
   };
 
   useEffect(() => {
-    if (activeTab === 'resume-pasien') {
-      fetchResumeData();
-    } else {
-      fetchRawatInapData(activeTab);
+    fetchRawatInapData(baseListTab, {
+      statusPulang: getStatusPulangForActiveTab(activeTab),
+      ...((activeTab === 'sudah-pulang'
+        || activeTab === 'sudah-resume'
+        || activeTab === 'belum-diajukan-klaim')
+        ? { startDate: '', endDate: '' }
+        : {})
+    });
+  }, [
+    activeTab,
+    currentPage,
+    itemsPerPage,
+    baseListTab,
+    searchQuery,
+    claimVerificationStatus,
+    dateRange?.from,
+    dateRange?.to
+  ]);
+
+  useEffect(() => {
+    if (currentPage !== 1) {
+      setCurrentPage(1);
     }
-  }, [activeTab, currentPage, itemsPerPage]);
+  }, [dateRange?.from, dateRange?.to]);
 
   useEffect(() => {
     if (!isFilterModalOpen) {
       return;
     }
 
-    setPendingStatusPulangRawatInap(statusPulangRawatInap);
-    setPendingStatusPulangResume(statusPulangResume);
     setPendingResumeStatus(resumeStatus);
-    setPendingResumeJenisDpjp(resumeJenisDpjp);
     setPendingResumeVerificationStatus(resumeVerificationStatus);
     setPendingRawatBersamaResumeStatus(rawatBersamaResumeStatus);
   }, [
     isFilterModalOpen,
-    statusPulangRawatInap,
-    statusPulangResume,
     resumeStatus,
-    resumeJenisDpjp,
     resumeVerificationStatus,
     rawatBersamaResumeStatus
   ]);
 
-  // Use the global rawatInapColumns definition
-
-  const resumeColumns = [
-    { accessor: 'no_rkm_medis', header: 'No. RM' },
-    { accessor: 'nm_pasien', header: 'Nama Pasien' },
-    {
-      accessor: 'ket_verifikasi',
-      header: 'Status Verifikasi',
-      render: (row: any) => {
-        const isVerified = String(row?.ket_dilanjutkan || '').trim().toLowerCase() === 'selesai';
-        return (
-          <StatusPill
-            label={isVerified ? 'Sudah Verifikasi' : 'Belum Verifikasi'}
-            tone={isVerified ? 'blue' : 'amber'}
-          />
-        );
-      }
-    },
-    { accessor: 'jenis_kelamin', header: 'JK' },
-    { accessor: 'tgl_masuk', header: 'Tgl Masuk' },
-    { accessor: 'tgl_keluar', header: 'Tgl Keluar' },
-    { accessor: 'kd_kamar', header: 'Kamar' },
-    { accessor: 'nm_bangsal', header: 'Bangsal' },
-    { 
-      accessor: 'dokter_dpjp', 
-      header: 'DPJP',
-      render: (row: any) => <DokterDPJPCell dokterDpjp={row.dokter_dpjp} caraBayar={row.cara_bayar} />
-    },
-    { accessor: 'diagnosa_utama', header: 'Diagnosa Utama' },
-    { accessor: 'stts_pulang', header: 'Status Pulang' },
-    { accessor: 'lama', header: 'Lama Rawat' },
-    { 
-      accessor: 'status_resume', 
-      header: 'Status Resume',
-      render: (row: any) => {
-        const badge = getResumeStatusBadge(row.status_resume);
-        if (row.status_resume === 'sudah_resume') {
-          return <StatusPill label={badge.label} tone={badge.tone} />;
-        } else {
-          return (
-            <StatusPill
-              label={badge.label}
-              tone={badge.tone}
-              onClick={() => handleCreateResume(row.no_rawat)}
-              className="px-3"
-            />
-          );
-        }
-      }
-    }
-  ];
-
-  const handleCreateResume = (noRawat: string) => {
-    // TODO: Implement resume creation functionality
-    console.log('Create resume for:', noRawat);
-    // This will redirect to resume creation page or open a modal
-  };
-
   const getInapTitle = (tab: string) => {
     switch (tab) {
+      case 'rawat-inap':
+        return 'Data Pasien Rawat Inap Rawat Utama';
       case 'rawat-bersama':
-        return 'Data Pasien Rawat Bersama';
+        return 'Data Pasien Rawat Inap Rawat Bersama';
       case 'rawat-gabung':
         return 'Data Pasien Rawat Gabung';
       default:
         return 'Data Pasien Rawat Inap';
     }
   };
-  const resumeTabDisplayCount = tabCounts.resume_pasien;
+  const renderInapCard = (filterTab: RawatInapStatusTab, columns: any[]) => (
+    <Card>
+      <CardHeader className="pb-2">
+        <CardTitle>{getInapTitle(baseListTab)}</CardTitle>
+        {renderFilterSection(filterTab)}
+      </CardHeader>
+      <CardContent>
+        <div className="space-y-4">
+          <PatientTable
+            patients={rawatInapData}
+            columns={columns}
+            loading={loading}
+            pagination={{
+              currentPage,
+              totalPages: Math.ceil(total / itemsPerPage),
+              totalItems: total,
+              itemsPerPage,
+              onPageChange: (page) => {
+                setCurrentPage(page);
+              },
+              onItemsPerPageChange: (newItemsPerPage) => {
+                setItemsPerPage(newItemsPerPage);
+                setCurrentPage(1);
+              }
+            }}
+          />
+        </div>
+      </CardContent>
+    </Card>
+  );
 
-  const renderFilterSection = (tab: string) => (
-    <>
+  const renderFilterSection = (tab: RawatInapStatusTab) => {
+    const showDateRange = tab === 'belum-resume';
+    const showAdvancedFilter = false;
+    const showClaimVerificationRadio = tab === 'belum-diajukan-klaim';
+
+    return (
+      <>
       <div className="mb-4 flex w-full flex-col items-start gap-2 lg:flex-row lg:flex-nowrap lg:items-center">
         <div className="relative w-full lg:min-w-0 lg:flex-[1.8_1_0%]">
           <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
@@ -1596,34 +1596,61 @@ const RawatInapTabs = () => {
           />
         </div>
 
-        <div className="flex w-full flex-col gap-2 sm:flex-row lg:w-auto lg:flex-none">
-          <DatePickerPopover
-            mode="range"
-            defaultMonth={dateRange?.from}
-            selected={dateRange}
-            onSelect={setDateRange}
-            numberOfMonths={2}
-            locale={indonesianLocale}
-            calendarClassName="min-w-[600px]"
-            buttonClassName="w-[350px]"
-            placeholder="Pilih rentang tanggal"
-            displayValue={dateRange?.from ? (
-              dateRange.to ? (
-                <>
-                  {format(dateRange.from, "LLL dd, y")} - {format(dateRange.to, "LLL dd, y")}
-                </>
-              ) : (
-                format(dateRange.from, "LLL dd, y")
-              )
-            ) : undefined}
-          />
-        </div>
+        {showDateRange ? (
+          <div className="flex w-full flex-col gap-2 sm:flex-row lg:w-auto lg:flex-none">
+            <DatePickerPopover
+              mode="range"
+              defaultMonth={dateRange?.from}
+              selected={dateRange}
+              onSelect={setDateRange}
+              numberOfMonths={2}
+              locale={indonesianLocale}
+              calendarClassName="min-w-[600px]"
+              buttonClassName="w-[350px]"
+              placeholder="Pilih rentang tanggal"
+              displayValue={dateRange?.from ? (
+                dateRange.to ? (
+                  <>
+                    {format(dateRange.from, "LLL dd, y")} - {format(dateRange.to, "LLL dd, y")}
+                  </>
+                ) : (
+                  format(dateRange.from, "LLL dd, y")
+                )
+              ) : undefined}
+            />
+          </div>
+        ) : null}
 
-        <div className="flex w-full flex-col gap-2 sm:flex-row lg:w-auto lg:flex-none lg:shrink-0">
-          <Button variant="secondary" onClick={() => setIsFilterModalOpen(true)} className="w-full sm:w-auto">
-            <Filter className="mr-2 h-4 w-4" />
-            Filter
-          </Button>
+        <div className="flex w-full flex-col gap-2 sm:flex-row sm:items-center lg:w-auto lg:flex-none lg:shrink-0">
+          {showAdvancedFilter ? (
+            <Button variant="secondary" onClick={() => setIsFilterModalOpen(true)} className="w-full sm:w-auto">
+              <Filter className="mr-2 h-4 w-4" />
+              Filter
+            </Button>
+          ) : null}
+          {showClaimVerificationRadio ? (
+            <RadioGroup
+              value={claimVerificationStatus}
+              onValueChange={(value) => {
+                setClaimVerificationStatus(value);
+                setCurrentPage(1);
+              }}
+              className="flex items-center gap-3 rounded-md border border-input px-3 py-2"
+            >
+              <div className="flex items-center space-x-2">
+                <RadioGroupItem value="all" id="claim-verification-all" />
+                <label htmlFor="claim-verification-all" className="text-sm font-medium text-gray-700">
+                  Semua
+                </label>
+              </div>
+              <div className="flex items-center space-x-2">
+                <RadioGroupItem value="unverified" id="claim-verification-unverified" />
+                <label htmlFor="claim-verification-unverified" className="text-sm font-medium text-gray-700">
+                  Belum Verifikasi
+                </label>
+              </div>
+            </RadioGroup>
+          ) : null}
           <Button variant="outline" onClick={() => handleClearFilters(tab)} className="w-full sm:w-auto">
             <X className="mr-2 h-4 w-4" />
             Reset
@@ -1640,85 +1667,9 @@ const RawatInapTabs = () => {
             </DialogDescription>
           </DialogHeader>
           <div className="grid gap-4 py-2">
-            <div className="grid gap-2">
-              <div className="text-sm font-medium">Status Rawat</div>
-              <Select value={getPendingStatusPulangByTab(tab)} onValueChange={(value) => setPendingStatusPulangByTab(tab, value)}>
-                <SelectTrigger className="w-full">
-                  <SelectValue placeholder="Status Rawat" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">Semua Status</SelectItem>
-                  <SelectItem value="masih-dirawat">Masih Dirawat (-)</SelectItem>
-                  <SelectItem value="pindah-kamar">Pindah Kamar</SelectItem>
-                  <SelectItem value="sudah-pulang">Sudah Pulang</SelectItem>
-                </SelectContent>
-              </Select>
+            <div className="rounded-md border border-border/60 bg-muted/30 px-3 py-2 text-sm text-muted-foreground">
+              Tidak ada filter tambahan pada menu ini.
             </div>
-
-            {tab === 'resume-pasien' ? (
-              <div className="grid gap-2">
-                <div className="text-sm font-medium">Jenis DPJP</div>
-                <Select value={pendingResumeJenisDpjp} onValueChange={setPendingResumeJenisDpjp}>
-                  <SelectTrigger className="w-full">
-                    <SelectValue placeholder="Jenis DPJP" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="all">Semua</SelectItem>
-                    <SelectItem value="utama">Utama</SelectItem>
-                    <SelectItem value="raber">Raber</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-            ) : null}
-
-            {tab === 'resume-pasien' ? (
-              <div className="grid gap-2">
-                <div className="text-sm font-medium">Status Resume</div>
-                <Select value={pendingResumeStatus} onValueChange={setPendingResumeStatus}>
-                  <SelectTrigger className="w-full">
-                    <SelectValue placeholder="Status Resume" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="all">Semua Resume</SelectItem>
-                    <SelectItem value="belum_resume">Belum Resume</SelectItem>
-                    <SelectItem value="sudah_resume">Sudah Resume</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-            ) : null}
-
-            {tab === 'resume-pasien' ? (
-              <div className="grid gap-2">
-                <div className="text-sm font-medium">Keterangan Verifikasi</div>
-                <Select value={pendingResumeVerificationStatus} onValueChange={setPendingResumeVerificationStatus}>
-                  <SelectTrigger className="w-full">
-                    <SelectValue placeholder="Keterangan Verifikasi" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="all">Semua</SelectItem>
-                    <SelectItem value="verified">Verifikasi</SelectItem>
-                    <SelectItem value="unverified">Belum Verifikasi</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-            ) : null}
-
-            {tab === 'rawat-bersama' && getPendingStatusPulangByTab(tab) === 'sudah-pulang' ? (
-              <div className="grid gap-2">
-                <div className="text-sm font-medium">Mode Resume Bersama</div>
-                <Select value={pendingRawatBersamaResumeStatus} onValueChange={setPendingRawatBersamaResumeStatus}>
-                  <SelectTrigger className="w-full">
-                    <SelectValue placeholder="Mode Resume Bersama" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="belum_ada_resume">Belum Ada Resume</SelectItem>
-                    <SelectItem value="belum_resume_dokter">Belum Resume Dokter</SelectItem>
-                    <SelectItem value="sudah_resume">Sudah Resume</SelectItem>
-                    <SelectItem value="all">Semua Resume</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-            ) : null}
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setIsFilterModalOpen(false)}>
@@ -1731,155 +1682,64 @@ const RawatInapTabs = () => {
         </DialogContent>
       </Dialog>
     </>
-  );
+    );
+  };
 
   return (
     <Tabs value={activeTab} onValueChange={(value) => {
       setCurrentPage(1);
-      setActiveTab(value as RawatInapTab);
+      setActiveTab(value as RawatInapStatusTab);
     }}>
       <TabsList className="mb-4">
-        <TabsTrigger value="rawat-inap">
+        <TabsTrigger value="belum-pulang">
           <Home className="mr-2 h-4 w-4" />
-          <span>Rawat Inap ({tabCounts.rawat_inap})</span>
+          <span>Belum Pulang ({tabCounts.belum_pulang})</span>
         </TabsTrigger>
-        <TabsTrigger value="rawat-bersama">
+        <TabsTrigger value="sudah-pulang">
           <Home className="mr-2 h-4 w-4" />
-          <span>Rawat Bersama ({tabCounts.rawat_bersama})</span>
+          <span>Sudah Pulang ({tabCounts.sudah_pulang})</span>
         </TabsTrigger>
-        <TabsTrigger value="rawat-gabung">
-          <Home className="mr-2 h-4 w-4" />
-          <span>Rawat Gabung ({tabCounts.rawat_gabung})</span>
-        </TabsTrigger>
-        <TabsTrigger value="resume-pasien">
-          <File className="mr-2 h-4 w-4" />
-          <span>Resume Pasien ({resumeTabDisplayCount})</span>
-        </TabsTrigger>
+        {viewMode === 'rawat-gabung' ? (
+          <TabsTrigger value="sudah-resume">
+            <File className="mr-2 h-4 w-4" />
+            <span>Sudah Resume ({tabCounts.sudah_resume})</span>
+          </TabsTrigger>
+        ) : (
+          <>
+            <TabsTrigger value="belum-resume">
+              <File className="mr-2 h-4 w-4" />
+              <span>Belum Resume ({tabCounts.belum_resume})</span>
+            </TabsTrigger>
+            <TabsTrigger value="belum-diajukan-klaim">
+              <File className="mr-2 h-4 w-4" />
+              <span>Belum Diajukan Klaim ({tabCounts.belum_diajukan_klaim})</span>
+            </TabsTrigger>
+          </>
+        )}
       </TabsList>
-      
-      <TabsContent value="rawat-inap" className="space-y-4">
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle>{getInapTitle('rawat-inap')}</CardTitle>
-            {renderFilterSection('rawat-inap')}
-          </CardHeader>
-          <CardContent>
-            <div className="space-y-4">
-              <PatientTable 
-                patients={rawatInapData} 
-                columns={rawatBersamaColumns}
-                loading={loading}
-                pagination={{
-                  currentPage,
-                  totalPages: Math.ceil(total / itemsPerPage),
-                  totalItems: total,
-                  itemsPerPage,
-                  onPageChange: (page) => {
-                    setCurrentPage(page);
-                  },
-                  onItemsPerPageChange: (newItemsPerPage) => {
-                    setItemsPerPage(newItemsPerPage);
-                    setCurrentPage(1);
-                  }
-                }}
-              />              
-            </div>
-          </CardContent>
-        </Card>
+
+      <TabsContent value="belum-pulang" className="space-y-4">
+        {renderInapCard('belum-pulang', getInapColumns('belum-pulang'))}
       </TabsContent>
 
-      <TabsContent value="rawat-bersama" className="space-y-4">
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle>{getInapTitle('rawat-bersama')}</CardTitle>
-            {renderFilterSection('rawat-bersama')}
-          </CardHeader>
-          <CardContent>
-            <div className="space-y-4">
-              <PatientTable 
-                patients={rawatInapData} 
-                columns={rawatInapColumns}
-                loading={loading}
-                pagination={{
-                  currentPage,
-                  totalPages: Math.ceil(total / itemsPerPage),
-                  totalItems: total,
-                  itemsPerPage,
-                  onPageChange: (page) => {
-                    setCurrentPage(page);
-                  },
-                  onItemsPerPageChange: (newItemsPerPage) => {
-                    setItemsPerPage(newItemsPerPage);
-                    setCurrentPage(1);
-                  }
-                }}
-              />
-            </div>
-          </CardContent>
-        </Card>
+      <TabsContent value="sudah-pulang" className="space-y-4">
+        {renderInapCard('sudah-pulang', getInapColumns('sudah-pulang'))}
       </TabsContent>
 
-      <TabsContent value="rawat-gabung" className="space-y-4">
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle>{getInapTitle('rawat-gabung')}</CardTitle>
-            {renderFilterSection('rawat-gabung')}
-          </CardHeader>
-          <CardContent>
-            <div className="space-y-4">
-              <PatientTable 
-                patients={rawatInapData} 
-                columns={rawatInapColumns}
-                loading={loading}
-                pagination={{
-                  currentPage,
-                  totalPages: Math.ceil(total / itemsPerPage),
-                  totalItems: total,
-                  itemsPerPage,
-                  onPageChange: (page) => {
-                    setCurrentPage(page);
-                  },
-                  onItemsPerPageChange: (newItemsPerPage) => {
-                    setItemsPerPage(newItemsPerPage);
-                    setCurrentPage(1);
-                  }
-                }}
-              />
-            </div>
-          </CardContent>
-        </Card>
-      </TabsContent>
-
-      <TabsContent value="resume-pasien" className="space-y-4">
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle>Resume Pasien Rawat Inap</CardTitle>
-            {renderFilterSection('resume-pasien')}
-          </CardHeader>
-          <CardContent>
-            <div className="space-y-4">
-              <PatientTable 
-                patients={resumeData} 
-                columns={resumeColumns}
-                loading={loading}
-                pagination={{
-                  currentPage,
-                  totalPages: Math.ceil(total / itemsPerPage),
-                  totalItems: total,
-                  itemsPerPage,
-                  onPageChange: (page) => {
-                    setCurrentPage(page);
-                  },
-                  onItemsPerPageChange: (newItemsPerPage) => {
-                    setItemsPerPage(newItemsPerPage);
-                    setCurrentPage(1);
-                  }
-                }}
-              />
-            </div>
-          </CardContent>
-        </Card>
-      </TabsContent>
+      {viewMode === 'rawat-gabung' ? (
+        <TabsContent value="sudah-resume" className="space-y-4">
+          {renderInapCard('sudah-resume', getInapColumns('sudah-resume'))}
+        </TabsContent>
+      ) : (
+        <>
+          <TabsContent value="belum-resume" className="space-y-4">
+            {renderInapCard('belum-resume', getInapColumns('belum-resume'))}
+          </TabsContent>
+          <TabsContent value="belum-diajukan-klaim" className="space-y-4">
+            {renderInapCard('belum-diajukan-klaim', getInapColumns('belum-diajukan-klaim'))}
+          </TabsContent>
+        </>
+      )}
     </Tabs>
   );
 };
@@ -2527,10 +2387,19 @@ const Patients = () => {
     title = "IGD";
     description = "Pasien yang memerlukan penanganan darurat segera di Instalasi Gawat Darurat (IGD) rumah sakit";
     tabs = <IGDTabs />;
+  } else if (path.includes('rawat-gabung')) {
+    title = "Rawat Gabung";
+    description = "Pasien rawat gabung yang ditangani user.";
+    tabs = <RawatInapTabs key="rawat-gabung" viewMode="rawat-gabung" />;
   } else if (path.includes('rawat-inap')) {
     title = "Rawat Inap";
     description = "Pasien yang mendapatkan perawatan medis yang intensif, meliputi observasi, diagnosis, pengobatan, keperawatan, dan rehabilitasi. ";
-    tabs = <RawatInapTabs />;
+    tabs = (
+      <RawatInapTabs
+        key={path.includes('/raber') ? 'rawat-inap-raber' : 'rawat-inap-utama'}
+        viewMode={path.includes('/raber') ? 'raber' : 'utama'}
+      />
+    );
   } else if (path.includes('hemodialisa')) {
     title = "Hemodialisa";
     description = "Pasien yang prosedur cuci darah yang dilakukan untuk membersihkan darah dari racun dan sisa metabolisme tubuh";

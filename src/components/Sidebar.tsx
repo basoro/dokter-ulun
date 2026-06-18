@@ -1,5 +1,5 @@
 
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import { 
   Users, 
@@ -55,6 +55,7 @@ const Sidebar: React.FC<SidebarProps> = ({
   const location = useLocation();
   const [pasienOpen, setPasienOpen] = useState(true);
   const [statistikOpen, setStatistikOpen] = useState(true);
+  const [rawatInapOpen, setRawatInapOpen] = useState(location.pathname.startsWith('/pasien/rawat-inap'));
   
   const [aboutOpen, setAboutOpen] = useState(false);
 
@@ -91,8 +92,16 @@ const Sidebar: React.FC<SidebarProps> = ({
     { name: 'Booking', path: '/pasien/booking' },
     { name: 'IGD', path: '/pasien/igd' },
     { name: 'Rawat Jalan', path: '/pasien/rawat-jalan' },
-    { name: 'Rawat Inap', path: '/pasien/rawat-inap' },
-    { name: 'Hemodialisa', path: '/pasien/hemodialisa' },
+  ];
+
+  const pasienSubmenuStandaloneItems: SubmenuItem[] = [
+    { name: 'Hemodialisa', path: '/pasien/hemodialisa' }
+  ];
+
+  const rawatInapSubmenuItems: SubmenuItem[] = [
+    { name: 'Rawat Utama', path: '/pasien/rawat-inap/utama' },
+    { name: 'Rawat Bersama', path: '/pasien/rawat-inap/raber' },
+    { name: 'Rawat Gabung', path: '/pasien/rawat-gabung' }
   ];
 
   const statistikSubmenuItems: SubmenuItem[] = [
@@ -116,6 +125,12 @@ const Sidebar: React.FC<SidebarProps> = ({
       onClose();
     }
   };
+
+  useEffect(() => {
+    if (location.pathname.startsWith('/pasien/rawat-inap') || location.pathname.startsWith('/pasien/rawat-gabung')) {
+      setRawatInapOpen(true);
+    }
+  }, [location.pathname]);
 
   return (
     <aside className="fixed left-0 top-0 sm:top-16 h-[calc(100vh)] sm:h-[calc(100vh-4rem)] w-64 bg-white shadow-sm flex flex-col z-30">
@@ -194,6 +209,54 @@ const Sidebar: React.FC<SidebarProps> = ({
                     to={item.path}
                     className={`flex items-center px-3 py-2 rounded-md text-sm font-medium transition-colors ${
                       item.exact 
+                        ? (location.pathname === item.path ? 'bg-primary/10 text-primary' : 'text-gray-600 hover:bg-gray-100')
+                        : (location.pathname.startsWith(item.path) ? 'bg-primary/10 text-primary' : 'text-gray-600 hover:bg-gray-100')
+                    }`}
+                    onClick={handlePatientsMenuClick}
+                  >
+                    {item.name}
+                  </Link>
+                ))}
+                <Collapsible
+                  open={rawatInapOpen}
+                  onOpenChange={setRawatInapOpen}
+                  className="w-full"
+                >
+                  <CollapsibleTrigger
+                    className={`flex items-center justify-between w-full rounded-md px-3 py-2 text-sm font-medium transition-colors ${
+                      (location.pathname.startsWith('/pasien/rawat-inap') || location.pathname.startsWith('/pasien/rawat-gabung'))
+                        ? 'bg-primary/10 text-primary'
+                        : 'text-gray-600 hover:bg-gray-100'
+                    }`}
+                  >
+                    <span>Rawat Inap</span>
+                    <span className="text-gray-500">
+                      {rawatInapOpen ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
+                    </span>
+                  </CollapsibleTrigger>
+                  <CollapsibleContent className="ml-4 mt-1 space-y-1">
+                    {rawatInapSubmenuItems.map((item) => (
+                      <Link
+                        key={item.path}
+                        to={item.path}
+                        className={`flex items-center rounded-md px-3 py-2 text-sm font-medium transition-colors ${
+                          location.pathname.startsWith(item.path)
+                            ? 'bg-primary/10 text-primary'
+                            : 'text-gray-600 hover:bg-gray-100'
+                        }`}
+                        onClick={handlePatientsMenuClick}
+                      >
+                        {item.name}
+                      </Link>
+                    ))}
+                  </CollapsibleContent>
+                </Collapsible>
+                {pasienSubmenuStandaloneItems.map((item) => (
+                  <Link
+                    key={item.path}
+                    to={item.path}
+                    className={`flex items-center px-3 py-2 rounded-md text-sm font-medium transition-colors ${
+                      item.exact
                         ? (location.pathname === item.path ? 'bg-primary/10 text-primary' : 'text-gray-600 hover:bg-gray-100')
                         : (location.pathname.startsWith(item.path) ? 'bg-primary/10 text-primary' : 'text-gray-600 hover:bg-gray-100')
                     }`}

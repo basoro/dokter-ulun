@@ -11,6 +11,7 @@ export class DashboardService {
       const day = String(indonesianDate.getUTCDate()).padStart(2, '0');
       const currentMonth = `${year}-${month}`;
       const currentDateStr = `${year}-${month}-${day}`;
+      const shiftLike = indonesianDate.getUTCHours() < 12 ? '%pagi%' : '%sore%';
 
       console.log('Current date:', currentDateStr, 'Current month:', currentMonth);
 
@@ -29,8 +30,14 @@ export class DashboardService {
         const poliCodes = kdPoli.split(',').map(code => code.trim());
         const placeholders = poliCodes.map(() => '?').join(',');
         const monthlyPoliResult = await executeQuery(
-          `SELECT COUNT(no_rawat) as total FROM reg_periksa WHERE kd_poli IN (${placeholders}) AND stts != "Belum" AND tgl_registrasi LIKE ?`,
-          [...poliCodes, `${currentMonth}%`]
+          `SELECT COUNT(r.no_rawat) as total
+           FROM reg_periksa r
+           INNER JOIN poliklinik p ON r.kd_poli = p.kd_poli
+           WHERE r.kd_poli IN (${placeholders})
+             AND r.stts != "Belum"
+             AND r.tgl_registrasi LIKE ?
+             AND LOWER(p.nm_poli) LIKE ?`,
+          [...poliCodes, `${currentMonth}%`, shiftLike]
         );
         monthlyPoliPatients = monthlyPoliResult[0]?.total || 0;
       }
@@ -42,8 +49,13 @@ export class DashboardService {
         const poliCodes = kdPoli.split(',').map(code => code.trim());
         const placeholders = poliCodes.map(() => '?').join(',');
         const dailyPoliResult = await executeQuery(
-          `SELECT COUNT(no_rawat) as total FROM reg_periksa WHERE kd_poli IN (${placeholders}) AND tgl_registrasi = ?`,
-          [...poliCodes, currentDateStr]
+          `SELECT COUNT(r.no_rawat) as total
+           FROM reg_periksa r
+           INNER JOIN poliklinik p ON r.kd_poli = p.kd_poli
+           WHERE r.kd_poli IN (${placeholders})
+             AND r.tgl_registrasi = ?
+             AND LOWER(p.nm_poli) LIKE ?`,
+          [...poliCodes, currentDateStr, shiftLike]
         );
         dailyPoliPatients = dailyPoliResult[0]?.total || 0;
       }
