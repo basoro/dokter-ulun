@@ -900,6 +900,7 @@ class GetMedicalRecordService {
             rdp.no_resep,
             rdp.tgl_peresepan,
             rdp.jam_peresepan,
+            IF(rdp.jam_peresepan = rdp.jam_perawatan, 'Belum Terlayani', 'Sudah Terlayani') AS status_layanan,
             rdp.kd_dokter,
             COALESCE(d.nm_dokter, '') AS nm_dokter
           FROM resep_dokter_pulang rdp
@@ -910,7 +911,7 @@ class GetMedicalRecordService {
           ORDER BY rdp.tgl_peresepan, rdp.jam_peresepan
         `
       : `
-          SELECT DISTINCT ro.no_resep, ro.tgl_peresepan, ro.jam_peresepan, ro.kd_dokter, COALESCE(d.nm_dokter, '') AS nm_dokter
+          SELECT DISTINCT ro.no_resep, ro.tgl_peresepan, ro.jam_peresepan, IF(ro.jam_peresepan = ro.jam, 'Belum Terlayani', 'Sudah Terlayani') AS status_layanan, ro.kd_dokter, COALESCE(d.nm_dokter, '') AS nm_dokter
           FROM resep_obat ro
           LEFT JOIN dokter d ON d.kd_dokter = ro.kd_dokter
           WHERE ro.no_rawat = ? AND ro.status = ?
@@ -1039,6 +1040,7 @@ class GetMedicalRecordService {
           tanggal: this.formatDateOnly(prescRequestRow.tgl_peresepan) + ' ' + prescRequestRow.jam_peresepan,
           no_resep: prescRequestRow.no_resep,
           no_rawat: noRawat,
+          status_layanan: String(prescRequestRow.status_layanan || '').trim() || 'Belum Terlayani',
           kd_dokter: prescRequestRow.kd_dokter || '',
           nm_dokter: prescRequestRow.nm_dokter || '',
           obat: obatList,
@@ -1147,6 +1149,7 @@ class GetMedicalRecordService {
             rp.no_rawat,
             rdp.tgl_peresepan,
             rdp.jam_peresepan,
+            IF(rdp.jam_peresepan = rdp.jam_perawatan, 'Belum Terlayani', 'Sudah Terlayani') AS status_layanan,
             rdp.kd_dokter,
             COALESCE(d.nm_dokter, '') AS nm_dokter
           FROM reg_periksa reg
@@ -1165,6 +1168,7 @@ class GetMedicalRecordService {
               ro.no_rawat,
               ro.tgl_peresepan,
               ro.jam_peresepan,
+              IF(ro.jam_peresepan = ro.jam, 'Belum Terlayani', 'Sudah Terlayani') AS status_layanan,
               ro.kd_dokter,
               COALESCE(d.nm_dokter, '') AS nm_dokter
             FROM reg_periksa rp
@@ -1182,6 +1186,7 @@ class GetMedicalRecordService {
             ro.no_rawat,
             ro.tgl_peresepan,
             ro.jam_peresepan,
+            IF(ro.jam_peresepan = ro.jam, 'Belum Terlayani', 'Sudah Terlayani') AS status_layanan,
             ro.kd_dokter,
             COALESCE(d.nm_dokter, '') AS nm_dokter
           FROM reg_periksa rp
@@ -1336,6 +1341,7 @@ class GetMedicalRecordService {
           tanggal: this.formatDateOnly(prescRequestRow.tgl_peresepan) + ' ' + prescRequestRow.jam_peresepan,
           no_resep: prescRequestRow.no_resep,
           no_rawat: String(prescRequestRow.no_rawat || '').trim(),
+          status_layanan: String(prescRequestRow.status_layanan || '').trim() || 'Belum Terlayani',
           kd_dokter: prescRequestRow.kd_dokter || '',
           nm_dokter: prescRequestRow.nm_dokter || '',
           obat: obatList,
@@ -2396,6 +2402,12 @@ class GetMedicalRecordService {
         inpatientDetails.map(detail => [detail.no_rawat, detail])
       );
 
+      const focusedVisitStatusLanjut = String(
+        outpatientVisits.find((visit) => String(visit?.no_rawat || '').trim() === String(focusNoRawat || '').trim())?.status_lanjut
+        || inpatientVisitRefs.find((visit) => String(visit?.no_rawat || '').trim() === String(focusNoRawat || '').trim())?.status_lanjut
+        || ''
+      ).trim();
+
       const [finalOutpatientVisits, finalInpatientVisits] = await Promise.all([
         includeVisitDetails
           ? Promise.all(outpatientVisits.map((visit) => this.buildOutpatientVisit(visit)))
@@ -2433,7 +2445,7 @@ class GetMedicalRecordService {
           alergi: allergySummary,
           prb: prbLabel,
           prb_program: prbProgram,
-          status_lanjut: latestVisits[0]?.status_lanjut || 'Ralan'
+          status_lanjut: focusedVisitStatusLanjut || latestVisits[0]?.status_lanjut || 'Ralan'
         },
         readmisi: readmisiNoRawats.length > 0,
         readmisi_no_rawats: readmisiNoRawats,

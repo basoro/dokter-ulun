@@ -117,6 +117,46 @@ class PrescriptionDataService {
     return (Number(rows?.[0]?.max_no_racik) || 0) + 1;
   }
 
+  async getPrescriptionServiceStatus(connection, no_resep) {
+    const normalizedNoResep = String(no_resep || '').trim();
+
+    if (!normalizedNoResep) {
+      return null;
+    }
+
+    const [regularRows] = await connection.execute(
+      `
+        SELECT
+          IF(jam_peresepan = jam, 'Belum Terlayani', 'Sudah Terlayani') AS status_layanan
+        FROM resep_obat
+        WHERE no_resep = ?
+        LIMIT 1
+      `,
+      [normalizedNoResep]
+    );
+
+    if (regularRows?.[0]?.status_layanan) {
+      return String(regularRows[0].status_layanan).trim();
+    }
+
+    const [pulangRows] = await connection.execute(
+      `
+        SELECT
+          IF(jam_peresepan = jam_perawatan, 'Belum Terlayani', 'Sudah Terlayani') AS status_layanan
+        FROM resep_dokter_pulang
+        WHERE no_resep = ?
+        LIMIT 1
+      `,
+      [normalizedNoResep]
+    );
+
+    if (pulangRows?.[0]?.status_layanan) {
+      return String(pulangRows[0].status_layanan).trim();
+    }
+
+    return null;
+  }
+
   normalizeCompoundDose(rawValue, kapasitas) {
     const normalizedRaw = String(rawValue ?? '')
       .toLowerCase()
@@ -1143,6 +1183,11 @@ class PrescriptionDataService {
         throw new Error('Anda tidak berhak mengedit resep ini');
       }
 
+      const serviceStatus = await this.getPrescriptionServiceStatus(connection, no_resep);
+      if (serviceStatus && serviceStatus !== 'Belum Terlayani') {
+        throw new Error('Resep yang sudah tervalidasi/terlayani tidak dapat diedit');
+      }
+
       const noRawatHeader = String(header.no_rawat || '').trim();
       const headerStatus = String(header.status || '').trim();
       const resolvedStatus = normalizedPrescriptionStatus || (await this.resolvePrescriptionStatus(connection, noRawatHeader, headerStatus));
@@ -1342,6 +1387,11 @@ class PrescriptionDataService {
 
       if (normalizedUsername && ownerDoctor !== normalizedUsername) {
         throw new Error('Anda tidak berhak menghapus resep ini');
+      }
+
+      const serviceStatus = await this.getPrescriptionServiceStatus(connection, no_resep);
+      if (serviceStatus && serviceStatus !== 'Belum Terlayani') {
+        throw new Error('Resep yang sudah tervalidasi/terlayani tidak dapat dihapus');
       }
 
       if (isPulangPrescription) {

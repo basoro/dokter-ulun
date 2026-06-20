@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { useParams, useSearchParams } from 'react-router-dom';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -1229,6 +1229,10 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
     focusedVisit?.status_lanjut,
     medicalData?.patient?.status_lanjut
   ]);
+  const effectiveStatusRawat = useMemo(
+    () => (editingExamination ? statusRawat : defaultExaminationStatusRawat),
+    [defaultExaminationStatusRawat, editingExamination, statusRawat]
+  );
   const preferredCareSectionTab = useMemo<CareSectionTabValue>(
     () => (defaultExaminationStatusRawat === 'Ranap' ? 'inpatient' : 'outpatient'),
     [defaultExaminationStatusRawat]
@@ -2327,11 +2331,37 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
       setLoadingIgdTriage(false);
     }
   }, [applyIgdTriageForm]);
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (!editingExamination) {
       setStatusRawat(defaultExaminationStatusRawat);
     }
   }, [defaultExaminationStatusRawat, editingExamination]);
+
+  useEffect(() => {
+    if (!import.meta.env.DEV) {
+      return;
+    }
+
+    console.info('[MedicalRecord status debug]', {
+      no_rawat: formattedNoRawat || '',
+      focused_visit_status_lanjut: focusedVisit?.status_lanjut || '',
+      patient_status_lanjut: medicalData?.patient?.status_lanjut || '',
+      default_examination_status_rawat: defaultExaminationStatusRawat,
+      status_rawat_state: statusRawat,
+      first_medication_status: medications[0]?.status || '',
+      editing_examination: Boolean(editingExamination),
+      editing_prescription_no: editingPrescriptionNo || ''
+    });
+  }, [
+    defaultExaminationStatusRawat,
+    editingExamination,
+    editingPrescriptionNo,
+    focusedVisit?.status_lanjut,
+    formattedNoRawat,
+    medicalData?.patient?.status_lanjut,
+    medications,
+    statusRawat
+  ]);
 
   useEffect(() => {
     setVisitHistoryTab(preferredCareSectionTab);
@@ -2399,9 +2429,13 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
         return normalized && normalized === currentUsername;
       })
     );
+  const isPrescriptionPendingService = (med: any) => {
+    const normalizedStatus = String(med?.status_layanan || '').trim();
+    return !normalizedStatus || normalizedStatus === 'Belum Terlayani';
+  };
   const canDeleteExamination = (exam: any) => matchesCurrentUser(exam?.nip, exam?.kd_dokter);
   const canDeleteProcedure = (procedure: any) => matchesCurrentUser(procedure?.kd_dokter, procedure?.nip);
-  const canDeletePrescription = (med: any) => matchesCurrentUser(med?.kd_dokter);
+  const canDeletePrescription = (med: any) => matchesCurrentUser(med?.kd_dokter) && isPrescriptionPendingService(med);
   const canDeleteLabRequest = (lab: any) => matchesCurrentUser(lab?.dokter_perujuk);
   const canDeleteRadiologyRequest = (rad: any) => matchesCurrentUser(rad?.dokter_perujuk);
   const canEditExamination = canDeleteExamination;
@@ -3507,18 +3541,23 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
 
     return items.map((med, index) => {
       const allowedToDelete = canDeletePrescription(med);
+      const isPrescriptionVerified = !isPrescriptionPendingService(med);
       const compoundItems = Array.isArray(med?.compounds) ? med.compounds : [];
       const hasCompoundItems = compoundItems.length > 0;
       const hasCompoundItemsOriginal = Boolean(med?.__has_compounds_original) || hasCompoundItems;
       const medicationItems = Array.isArray(med?.obat) ? med.obat : [];
       const hasMedicationItems = medicationItems.length > 0;
       const canEditThisPrescription = canEditPrescription(med) && !hasCompoundItemsOriginal;
-      const editPrescriptionLabel = canEditPrescription(med)
-        ? (hasCompoundItemsOriginal ? 'Ada Racikan' : 'Edit Resep')
-        : 'Bukan Data Anda';
+      const editPrescriptionLabel = isPrescriptionVerified
+        ? 'Verified'
+        : canEditPrescription(med)
+          ? (hasCompoundItemsOriginal ? 'Ada Racikan' : 'Edit Resep')
+          : 'Bukan Data Anda';
       const deletePrescriptionLabel = deletingPrescriptionNo === med.no_resep
         ? 'Menghapus...'
-        : (allowedToDelete ? 'Hapus' : 'Bukan Data Anda');
+        : isPrescriptionVerified
+          ? 'Verified'
+          : (allowedToDelete ? 'Hapus' : 'Bukan Data Anda');
 
       return (
       <div key={med.__split_key || `${med.no_resep || med.tanggal}-${index}`} className="border rounded-lg p-4">
@@ -3531,6 +3570,11 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
                 <span className="inline-flex items-center rounded-full border border-violet-200 bg-violet-100/70 px-2.5 py-0.5 text-xs font-medium text-violet-700">
                   {med.nm_dokter ? `${med.nm_dokter}` : `${med.kd_dokter || '-'}`}
                 </span>
+                {isPrescriptionVerified ? (
+                  <span className="inline-flex items-center rounded-full border border-emerald-200 bg-emerald-100 px-2.5 py-0.5 text-xs font-medium text-emerald-700 dark:border-emerald-900/60 dark:bg-emerald-950/50 dark:text-emerald-300">
+                    Verified
+                  </span>
+                ) : null}
               </div>
             </div>
             <div>
@@ -4106,6 +4150,21 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
     };
     examinationHistoryRequestRef.current = 0;
     setIsDpjpExpanded(false);
+    setEditingPrescriptionNo(null);
+    setMedications(getDefaultMedicationForm('Ralan'));
+    setMedicineOptions({});
+    setMedicineSearchOpen({});
+    setMedicineSearchQuery({});
+    setMedicineSearchLoading({});
+    setCompoundPrescriptions([createDefaultCompoundPrescription()]);
+    setCompoundMedicineOptions({});
+    setCompoundMedicineSearchOpen({});
+    setCompoundMedicineSearchQuery({});
+    setCompoundMedicineSearchLoading({});
+    setSelectedPackageId('');
+    setSelectedPackageText('');
+    setPackageItems([]);
+    setPackageIsIbs(false);
   }, [formattedNoRawat, no_rkm_medis]);
   
   useEffect(() => {
@@ -4620,7 +4679,7 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
   ]);
 
   useEffect(() => {
-    const defaultPrescriptionStatus = statusRawat === 'Ranap' ? 'Ranap' : 'Ralan';
+    const defaultPrescriptionStatus = effectiveStatusRawat === 'Ranap' ? 'Ranap' : 'Ralan';
 
     setMedications((previous) => previous.map((medication) => {
       const isBlankMedication = medication.obat.every((item) => (
@@ -4631,23 +4690,23 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
         ? { ...medication, status: defaultPrescriptionStatus }
         : medication;
     }));
-  }, [statusRawat]);
+  }, [effectiveStatusRawat]);
 
   useEffect(() => {
-    setProcedureStatusRawat(statusRawat === 'Ranap' ? 'Ranap' : 'Ralan');
-  }, [statusRawat]);
+    setProcedureStatusRawat(effectiveStatusRawat === 'Ranap' ? 'Ranap' : 'Ralan');
+  }, [effectiveStatusRawat]);
 
   useEffect(() => {
     setLabStatusRawat(
-      statusRawat === 'Ranap' ? 'Ranap' : statusRawat === 'IGD' ? 'IGD' : 'Ralan'
+      effectiveStatusRawat === 'Ranap' ? 'Ranap' : effectiveStatusRawat === 'IGD' ? 'IGD' : 'Ralan'
     );
-  }, [statusRawat]);
+  }, [effectiveStatusRawat]);
 
   useEffect(() => {
     setRadiologyStatusRawat(
-      statusRawat === 'Ranap' ? 'Ranap' : statusRawat === 'IGD' ? 'IGD' : 'Ralan'
+      effectiveStatusRawat === 'Ranap' ? 'Ranap' : effectiveStatusRawat === 'IGD' ? 'IGD' : 'Ralan'
     );
-  }, [statusRawat]);
+  }, [effectiveStatusRawat]);
 
   useEffect(() => {
     if (!pacsPreviewModal.open || !isPacsPlaying || !isCtPacsPreview || pacsPreviewModal.images.length <= 1) {
@@ -5005,7 +5064,7 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
   };
 
   const resetMedicationForm = () => {
-    setMedications(getDefaultMedicationForm(statusRawat === 'Ranap' ? 'Ranap' : 'Ralan'));
+    setMedications(getDefaultMedicationForm(effectiveStatusRawat === 'Ranap' ? 'Ranap' : 'Ralan'));
     setMedicineOptions({});
     setMedicineSearchOpen({});
     setMedicineSearchQuery({});
@@ -5023,7 +5082,7 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
   };
 
   const addMedication = () => {
-    setMedications([...medications, ...getDefaultMedicationForm(statusRawat === 'Ranap' ? 'Ranap' : 'Ralan')]);
+    setMedications([...medications, ...getDefaultMedicationForm(effectiveStatusRawat === 'Ranap' ? 'Ranap' : 'Ralan')]);
   };
 
   const removeMedication = (index: number) => {
@@ -5038,7 +5097,7 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
 
     const newMedication: Medication = {
       tanggal: getCurrentPrescriptionDate(),
-      status: med.status || (statusRawat === 'Ranap' ? 'Ranap' : 'Ralan'),
+      status: med.status || (effectiveStatusRawat === 'Ranap' ? 'Ranap' : 'Ralan'),
       obat: (Array.isArray(med?.obat) ? med.obat : []).map((o: any) => ({
         kode_brng: o.kode_brng || '',
         nama: o.nama,
@@ -5362,7 +5421,7 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
 
   const fetchMedicineOptions = useCallback(async (medIndex: number, obatIndex: number, searchText = '') => {
     const key = getMedicineFieldKey(medIndex, obatIndex);
-    const selectedPrescriptionStatus = medications[medIndex]?.status || (statusRawat === 'Ranap' ? 'Ranap' : 'Ralan');
+    const selectedPrescriptionStatus = medications[medIndex]?.status || (effectiveStatusRawat === 'Ranap' ? 'Ranap' : 'Ralan');
 
     try {
       setMedicineSearchLoading((previous) => ({ ...previous, [key]: true }));
@@ -5397,11 +5456,164 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
     } finally {
       setMedicineSearchLoading((previous) => ({ ...previous, [key]: false }));
     }
-  }, [formattedNoRawat, medications, statusRawat]);
+  }, [effectiveStatusRawat, formattedNoRawat, medications]);
+
+  const findMedicineStockByCode = useCallback(async (
+    kodeBrng: string,
+    prescriptionStatus: PrescriptionStatus
+  ): Promise<MedicineOption | null> => {
+    const normalizedCode = String(kodeBrng || '').trim();
+
+    if (!formattedNoRawat || !normalizedCode) {
+      return null;
+    }
+
+    const params = new URLSearchParams({
+      action: 'search_medicines',
+      search: normalizedCode,
+      limit: '20',
+      no_rawat: formattedNoRawat,
+      prescription_status: prescriptionStatus
+    });
+
+    const response = await fetch(`${API_URLS.PRESCRIPTION_DATA}?${params.toString()}`);
+    const responseJson = await response.json().catch(() => null);
+
+    if (!response.ok || !responseJson?.success) {
+      throw new Error(
+        responseJson?.error || `HTTP error! status: ${response.status}`
+      );
+    }
+
+    const options = Array.isArray(responseJson.data) ? responseJson.data : [];
+    return options.find((option: MedicineOption) => String(option.kode_brng || '').trim() === normalizedCode) || null;
+  }, [formattedNoRawat]);
+
+  const refreshMedicationStocksForStatus = useCallback(async (
+    medIndex: number,
+    prescriptionStatus: PrescriptionStatus
+  ) => {
+    const medication = medications[medIndex];
+    if (!medication) {
+      return;
+    }
+
+    const selectedItems = medication.obat
+      .map((item, obatIndex) => ({
+        obatIndex,
+        kode_brng: String(item.kode_brng || '').trim()
+      }))
+      .filter((item) => item.kode_brng);
+
+    if (!selectedItems.length) {
+      return;
+    }
+
+    try {
+      const refreshedItems = await Promise.all(
+        selectedItems.map(async (item) => ({
+          obatIndex: item.obatIndex,
+          option: await findMedicineStockByCode(item.kode_brng, prescriptionStatus)
+        }))
+      );
+
+      setMedications((previous) => previous.map((entry, entryIndex) => (
+        entryIndex === medIndex
+          ? {
+              ...entry,
+              obat: entry.obat.map((item, itemIndex) => {
+                const refreshedItem = refreshedItems.find((candidate) => candidate.obatIndex === itemIndex);
+                if (!refreshedItem) {
+                  return item;
+                }
+
+                return {
+                  ...item,
+                  satuan: refreshedItem.option?.satuan || item.satuan || '',
+                  stok: typeof refreshedItem.option?.stok === 'number'
+                    ? Number(refreshedItem.option.stok) || 0
+                    : 0
+                };
+              })
+            }
+          : entry
+      )));
+    } catch (error) {
+      console.error('Error refreshing selected medicine stock:', error);
+    }
+  }, [findMedicineStockByCode, medications]);
+
+  const refreshCompoundMedicineStocksForStatus = useCallback(async (
+    prescriptionStatus: PrescriptionStatus
+  ) => {
+    const selectedItems = compoundPrescriptions.flatMap((compound, compoundIndex) => (
+      compound.komposisi
+        .map((item, racikanIndex) => ({
+          compoundIndex,
+          racikanIndex,
+          kode_brng: String(item.kode_brng || '').trim()
+        }))
+        .filter((item) => item.kode_brng)
+    ));
+
+    if (!selectedItems.length) {
+      return;
+    }
+
+    try {
+      const refreshedItems = await Promise.all(
+        selectedItems.map(async (item) => ({
+          compoundIndex: item.compoundIndex,
+          racikanIndex: item.racikanIndex,
+          option: await findMedicineStockByCode(item.kode_brng, prescriptionStatus)
+        }))
+      );
+
+      setCompoundPrescriptions((previous) => previous.map((compound, compoundIndex) => ({
+        ...compound,
+        komposisi: compound.komposisi.map((item, racikanIndex) => {
+          const refreshedItem = refreshedItems.find((candidate) => (
+            candidate.compoundIndex === compoundIndex && candidate.racikanIndex === racikanIndex
+          ));
+
+          if (!refreshedItem) {
+            return item;
+          }
+
+          return {
+            ...item,
+            satuan: refreshedItem.option?.satuan || item.satuan || '',
+            stok: typeof refreshedItem.option?.stok === 'number'
+              ? Number(refreshedItem.option.stok) || 0
+              : 0
+          };
+        })
+      })));
+    } catch (error) {
+      console.error('Error refreshing compound medicine stock:', error);
+    }
+  }, [compoundPrescriptions, findMedicineStockByCode]);
+
+  const handleMedicationPrescriptionStatusChange = useCallback((
+    medIndex: number,
+    prescriptionStatus: PrescriptionStatus
+  ) => {
+    setMedications((previous) => previous.map((item, index) => (
+      index === medIndex
+        ? { ...item, status: prescriptionStatus }
+        : item
+    )));
+
+    void refreshMedicationStocksForStatus(medIndex, prescriptionStatus);
+
+    if (medIndex === 0) {
+      void refreshCompoundMedicineStocksForStatus(prescriptionStatus);
+    }
+  }, [refreshCompoundMedicineStocksForStatus, refreshMedicationStocksForStatus]);
 
   const fetchCompoundMedicineOptions = useCallback(async (compoundIndex: number, racikanIndex: number, searchText = '') => {
     const key = getCompoundMedicineFieldKey(compoundIndex, racikanIndex);
-    const selectedPrescriptionStatus = medications[0]?.status || (statusRawat === 'Ranap' ? 'Ranap' : 'Ralan');
+    const selectedPrescriptionStatus = medications[0]?.status || (effectiveStatusRawat === 'Ranap' ? 'Ranap' : 'Ralan');
 
     try {
       setCompoundMedicineSearchLoading((previous) => ({ ...previous, [key]: true }));
@@ -5436,7 +5648,7 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
     } finally {
       setCompoundMedicineSearchLoading((previous) => ({ ...previous, [key]: false }));
     }
-  }, [formattedNoRawat, medications, statusRawat]);
+  }, [effectiveStatusRawat, formattedNoRawat, medications]);
 
   const fetchCompoundMethods = useCallback(async () => {
     try {
@@ -6413,7 +6625,7 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
         action: 'get_package_items',
         package_id: selectedPackageId,
         no_rawat: formattedNoRawat,
-        prescription_status: packageIsIbs ? 'IBS' : (statusRawat === 'Ranap' ? 'Ranap' : 'Ralan')
+        prescription_status: packageIsIbs ? 'IBS' : (effectiveStatusRawat === 'Ranap' ? 'Ranap' : 'Ralan')
       });
 
       const response = await fetch(`${API_URLS.PRESCRIPTION_DATA}?${params.toString()}`);
@@ -6452,7 +6664,7 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
 
     const currentPrescriptionStatus: PrescriptionStatus = packageIsIbs
       ? 'IBS'
-      : (statusRawat === 'Ranap' ? 'Ranap' : 'Ralan');
+      : (effectiveStatusRawat === 'Ranap' ? 'Ranap' : 'Ralan');
     const obatItems = packageItems.map((item) => ({
       kode_brng: String(item.kode_brng || '').trim(),
       nama: String(item.nama_brng || '').trim(),
@@ -7053,7 +7265,7 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
   }, [currentUsername]);
 
   const resetExaminationFormToDoctorDefault = useCallback(() => {
-    const rawatType = defaultDoctorExaminationItem?.rawatType || defaultExaminationStatusRawat;
+    const rawatType = defaultExaminationStatusRawat;
 
     setExaminationForm(
       buildExaminationFormFromRecord(defaultDoctorExaminationItem?.exam, rawatType as 'Ralan' | 'Ranap')
@@ -8095,7 +8307,7 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
             kd_dokter: user.username,
             prescription_date: referenceDate,
             prescription_time: getCurrentPrescriptionTime(),
-            prescription_status: statusRawat === 'Ranap' ? 'Ranap' : 'Ralan',
+            prescription_status: effectiveStatusRawat === 'Ranap' ? 'Ranap' : 'Ralan',
             medicines: [],
             compounds: validCompounds
           })
@@ -9781,7 +9993,7 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
                    </div>
                    <div>
                      <Label htmlFor="status-rawat">Status Rawat</Label>
-                     <Select value={statusRawat} onValueChange={setStatusRawat}>
+                    <Select value={effectiveStatusRawat} onValueChange={setStatusRawat}>
                        <SelectTrigger>
                          <SelectValue placeholder="Pilih status rawat" />
                        </SelectTrigger>
@@ -9874,7 +10086,7 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
                            onChange={(e) => setExaminationForm({...examinationForm, berat: e.target.value})}
                          />
                        </div>
-                      {statusRawat === 'Ranap' && (
+                      {effectiveStatusRawat === 'Ranap' && (
                          <div>
                            <Label htmlFor="spo2">SpO2 (%)</Label>
                            <Input 
@@ -9931,7 +10143,7 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
                             onChange={(e) => setExaminationForm({...examinationForm, rtl: e.target.value})}
                           />
                         </div>
-                        {statusRawat === 'Ranap' && (
+                        {effectiveStatusRawat === 'Ranap' && (
                           <div>
                             <Label htmlFor="instruksi">I (Implementation/Instruksi)</Label>
                             <Textarea 
@@ -9942,7 +10154,7 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
                             />
                           </div>
                         )}
-                        {statusRawat === 'Ranap' && (
+                        {effectiveStatusRawat === 'Ranap' && (
                           <div>
                             <Label htmlFor="evaluasi">E (Evaluation/Evaluasi)</Label>
                             <Textarea 
@@ -10609,11 +10821,7 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
                         <Select
                           value={medication.status}
                           onValueChange={(value: PrescriptionStatus) => {
-                            setMedications((previous) => previous.map((item, index) => (
-                              index === medIndex
-                                ? { ...item, status: value }
-                                : item
-                            )));
+                            handleMedicationPrescriptionStatusChange(medIndex, value);
                           }}
                         >
                           <SelectTrigger id={`med-status-${medIndex}`} disabled={!!editingPrescriptionNo}>
@@ -11076,7 +11284,7 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
                 </div>
               </Collapsible>
 
-              {statusRawat === 'Ralan' || statusRawat === 'Ranap' ? (
+              {effectiveStatusRawat === 'Ralan' || effectiveStatusRawat === 'Ranap' ? (
                 <Collapsible open={isPackageFormOpen} onOpenChange={setIsPackageFormOpen}>
                   <div className="border rounded-lg p-4 mb-6 bg-emerald-50/40">
                     <CollapsibleTrigger asChild>
