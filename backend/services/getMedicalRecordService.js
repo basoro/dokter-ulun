@@ -2402,6 +2402,12 @@ class GetMedicalRecordService {
         inpatientDetails.map(detail => [detail.no_rawat, detail])
       );
 
+      const focusedVisitStatusLanjut = String(
+        outpatientVisits.find((visit) => String(visit?.no_rawat || '').trim() === String(focusNoRawat || '').trim())?.status_lanjut
+        || inpatientVisitRefs.find((visit) => String(visit?.no_rawat || '').trim() === String(focusNoRawat || '').trim())?.status_lanjut
+        || ''
+      ).trim();
+
       const [finalOutpatientVisits, finalInpatientVisits] = await Promise.all([
         includeVisitDetails
           ? Promise.all(outpatientVisits.map((visit) => this.buildOutpatientVisit(visit)))
@@ -2439,7 +2445,7 @@ class GetMedicalRecordService {
           alergi: allergySummary,
           prb: prbLabel,
           prb_program: prbProgram,
-          status_lanjut: latestVisits[0]?.status_lanjut || 'Ralan'
+          status_lanjut: focusedVisitStatusLanjut || latestVisits[0]?.status_lanjut || 'Ralan'
         },
         readmisi: readmisiNoRawats.length > 0,
         readmisi_no_rawats: readmisiNoRawats,
