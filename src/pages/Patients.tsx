@@ -1747,6 +1747,348 @@ const RawatInapTabs = ({ viewMode = 'utama' }: RawatInapTabsProps) => {
   );
 };
 
+const rawatJagaTabOptions = [
+  { value: 'belum-pulang', countKey: 'belumPulang', label: 'Belum Pulang', requestTab: 'rawat-jaga-ranap', statusPulang: 'belum-pulang' },
+  { value: 'sudah-pulang', countKey: 'sudahPulang', label: 'Sudah Pulang', requestTab: 'rawat-jaga-ranap', statusPulang: 'sudah-pulang' },
+  { value: 'sudah-resume', countKey: 'sudahResume', label: 'Sudah Pulang & Diresume', requestTab: 'rawat-jaga-ranap', statusPulang: 'sudah-resume' },
+  { value: 'rawat-gabung', countKey: 'rawatGabung', label: 'Rawat Gabung', requestTab: 'rawat-jaga-gabung', statusPulang: 'belum-pulang' },
+  { value: 'rawat-gabung-pulang', countKey: 'rawatGabungPulang', label: 'Rawat Gabung Pulang', requestTab: 'rawat-jaga-gabung', statusPulang: 'sudah-pulang' },
+  { value: 'rawat-gabung-sudah-resume', countKey: 'rawatGabungSudahResume', label: 'Rawat Gabung Pulang & Diresume', requestTab: 'rawat-jaga-gabung', statusPulang: 'sudah-resume' }
+] as const;
+
+type RawatJagaTab = typeof rawatJagaTabOptions[number]['value'];
+type RawatJagaCountKey = typeof rawatJagaTabOptions[number]['countKey'];
+
+const RawatJagaTabs = () => {
+  const { user } = useAuth();
+  const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
+  const defaultRawatJagaFrom = addDays(new Date(), -30);
+  const defaultRawatJagaTo = new Date();
+  const initialRawatJagaTab = rawatJagaTabOptions.find((item) => item.value === searchParams.get('tab'))?.value || 'belum-pulang';
+  const emptyRawatJagaCounts: Record<RawatJagaCountKey, number> = {
+    belumPulang: 0,
+    sudahPulang: 0,
+    sudahResume: 0,
+    rawatGabung: 0,
+    rawatGabungPulang: 0,
+    rawatGabungSudahResume: 0
+  };
+  const [rawatJagaData, setRawatJagaData] = useState<any[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [activeTab, setActiveTab] = useState<RawatJagaTab>(initialRawatJagaTab);
+  const [searchQuery, setSearchQuery] = useState(searchParams.get('search') || '');
+  const [dateRange, setDateRange] = useState<DateRange | undefined>({
+    from: parseDateParam(searchParams.get('from'), defaultRawatJagaFrom),
+    to: parseDateParam(searchParams.get('to'), defaultRawatJagaTo)
+  });
+  const [currentPage, setCurrentPage] = useState(parsePositiveInt(searchParams.get('page'), 1));
+  const [itemsPerPage, setItemsPerPage] = useState(parsePositiveInt(searchParams.get('itemsPerPage'), 10));
+  const [total, setTotal] = useState(0);
+  const [tabCounts, setTabCounts] = useState<Record<RawatJagaCountKey, number>>(emptyRawatJagaCounts);
+  const activeConfig = rawatJagaTabOptions.find((item) => item.value === activeTab) || rawatJagaTabOptions[0];
+  const showDateRange = activeConfig.statusPulang !== 'belum-pulang';
+
+  const buildRawatJagaRequestBody = (
+    config: typeof rawatJagaTabOptions[number],
+    overrides: Partial<Record<'page' | 'itemsPerPage' | 'search' | 'startDate' | 'endDate', string>> = {}
+  ) => ({
+    page: overrides.page ?? currentPage.toString(),
+    itemsPerPage: overrides.itemsPerPage ?? itemsPerPage.toString(),
+    search: overrides.search ?? searchQuery,
+    statusPulang: config.statusPulang,
+    username: user?.username || '',
+    tab: config.requestTab,
+    startDate: overrides.startDate ?? (config.statusPulang !== 'belum-pulang' && dateRange?.from ? format(dateRange.from, 'yyyy-MM-dd') : ''),
+    endDate: overrides.endDate ?? (config.statusPulang !== 'belum-pulang' && dateRange?.to ? format(dateRange.to, 'yyyy-MM-dd') : ''),
+    includeTabCounts: false
+  });
+
+  const fetchRawatJagaCounts = async () => {
+    try {
+      const countEntries = await Promise.all(
+        rawatJagaTabOptions.map(async (option) => {
+          const response = await fetch(API_URLS.RAWAT_INAP_DATA, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json'
+            },
+            body: JSON.stringify(buildRawatJagaRequestBody(option, {
+              page: '1',
+              itemsPerPage: '1'
+            }))
+          });
+
+          if (!response.ok) {
+            const errorText = await response.text();
+            throw new Error(`HTTP ${response.status}: ${errorText}`);
+          }
+
+          const data = await response.json();
+          if (!data.success) {
+            throw new Error(data.error);
+          }
+
+          return [option.countKey, Number(data?.total || 0)] as const;
+        })
+      );
+
+      setTabCounts({
+        belumPulang: countEntries.find(([key]) => key === 'belumPulang')?.[1] || 0,
+        sudahPulang: countEntries.find(([key]) => key === 'sudahPulang')?.[1] || 0,
+        sudahResume: countEntries.find(([key]) => key === 'sudahResume')?.[1] || 0,
+        rawatGabung: countEntries.find(([key]) => key === 'rawatGabung')?.[1] || 0,
+        rawatGabungPulang: countEntries.find(([key]) => key === 'rawatGabungPulang')?.[1] || 0,
+        rawatGabungSudahResume: countEntries.find(([key]) => key === 'rawatGabungSudahResume')?.[1] || 0
+      });
+    } catch (error) {
+      console.error('Error fetching Rawat Jaga counts:', error);
+      setTabCounts(emptyRawatJagaCounts);
+    }
+  };
+
+  const fetchRawatJagaData = async (tabValue: RawatJagaTab = activeTab) => {
+    const selectedConfig = rawatJagaTabOptions.find((item) => item.value === tabValue) || rawatJagaTabOptions[0];
+
+    setLoading(true);
+    try {
+      const response = await fetch(API_URLS.RAWAT_INAP_DATA, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify(buildRawatJagaRequestBody(selectedConfig))
+      });
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        throw new Error(`HTTP ${response.status}: ${errorText}`);
+      }
+
+      const data = await response.json();
+      if (!data.success) {
+        throw new Error(data.error);
+      }
+
+      setRawatJagaData(Array.isArray(data?.data) ? data.data : []);
+      setTotal(Number(data?.total || 0));
+      void fetchRawatJagaCounts();
+    } catch (error) {
+      console.error('Error fetching Rawat Jaga data:', error);
+      setRawatJagaData([]);
+      setTotal(0);
+      setTabCounts(emptyRawatJagaCounts);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    const params = new URLSearchParams(searchParams);
+
+    params.set('tab', activeTab);
+    params.set('page', String(currentPage));
+    params.set('itemsPerPage', String(itemsPerPage));
+
+    if (searchQuery.trim()) {
+      params.set('search', searchQuery.trim());
+    } else {
+      params.delete('search');
+    }
+
+    if (showDateRange) {
+      if (dateRange?.from) {
+        params.set('from', format(dateRange.from, 'yyyy-MM-dd'));
+      } else {
+        params.delete('from');
+      }
+
+      if (dateRange?.to) {
+        params.set('to', format(dateRange.to, 'yyyy-MM-dd'));
+      } else {
+        params.delete('to');
+      }
+    } else {
+      params.delete('from');
+      params.delete('to');
+    }
+
+    if (params.toString() !== searchParams.toString()) {
+      setSearchParams(params, { replace: true });
+    }
+  }, [
+    activeTab,
+    currentPage,
+    itemsPerPage,
+    searchQuery,
+    showDateRange,
+    dateRange?.from,
+    dateRange?.to,
+    searchParams,
+    setSearchParams
+  ]);
+
+  useEffect(() => {
+    fetchRawatJagaData(activeTab);
+  }, [activeTab, currentPage, itemsPerPage, searchQuery, dateRange?.from, dateRange?.to]);
+
+  useEffect(() => {
+    if (!showDateRange) {
+      return;
+    }
+
+    if (currentPage !== 1) {
+      setCurrentPage(1);
+    }
+  }, [dateRange?.from, dateRange?.to, showDateRange]);
+
+  const handleClearFilters = () => {
+    setSearchQuery('');
+    setDateRange({
+      from: defaultRawatJagaFrom,
+      to: defaultRawatJagaTo
+    });
+    setCurrentPage(1);
+  };
+
+  const rawatJagaColumns = [
+    { accessor: 'no_rkm_medis', header: 'No. RM' },
+    { accessor: 'nm_pasien', header: 'Nama Pasien' },
+    { accessor: 'jenis_kelamin', header: 'JK' },
+    { accessor: 'tgl_masuk', header: 'Tgl Masuk' },
+    ...(activeConfig.statusPulang !== 'belum-pulang' ? [{ accessor: 'tgl_keluar', header: 'Tgl Keluar' }] : []),
+    { accessor: 'kd_kamar', header: 'Kamar' },
+    { accessor: 'nm_bangsal', header: 'Bangsal' },
+    {
+      accessor: 'dokter_dpjp',
+      header: 'DPJP',
+      render: (row: any) => <DokterDPJPCell dokterDpjp={row.dokter_dpjp} caraBayar={row.cara_bayar} />
+    },
+    { accessor: 'stts_pulang', header: 'Status Pulang' },
+    {
+      accessor: 'lama',
+      header: 'Lama Rawat',
+      render: (row: any) => <span className="text-sm">{row.lama ? `${row.lama} hari` : '-'}</span>
+    },
+    {
+      accessor: 'clinical_pathway',
+      header: 'Clinical Pathway',
+      render: (row: any) => (
+        <Button
+          size="sm"
+          variant="outline"
+          onClick={(e) => {
+            e.stopPropagation();
+            if (row.no_rkm_medis && row.no_rawat) {
+              const formattedNoRawat = formatNoRawat(row.no_rawat);
+              const compactNoRawat = String(formattedNoRawat).replace(/\//g, '');
+              navigate(`/clinical-pathway/${row.no_rkm_medis}/${compactNoRawat}?mode=monitoring&source=rawat-inap`);
+            }
+          }}
+          className="flex items-center gap-1"
+        >
+          <FileText size={14} />
+          CP
+        </Button>
+      )
+    }
+  ];
+
+  return (
+    <Tabs
+      value={activeTab}
+      onValueChange={(value) => {
+        setCurrentPage(1);
+        setActiveTab(value as RawatJagaTab);
+      }}
+    >
+      <TabsList className="mb-4 flex h-auto flex-wrap justify-start gap-2 bg-transparent p-0">
+        {rawatJagaTabOptions.map((option) => (
+          <TabsTrigger key={option.value} value={option.value}>
+            <span>{option.label} ({tabCounts[option.countKey]})</span>
+          </TabsTrigger>
+        ))}
+      </TabsList>
+
+      {rawatJagaTabOptions.map((option) => (
+        <TabsContent key={option.value} value={option.value} className="space-y-4">
+          <Card>
+            <CardHeader className="pb-2">
+              <CardTitle>
+                {option.requestTab === 'rawat-jaga-gabung' ? 'Data Pasien Rawat Jaga Rawat Gabung' : 'Data Pasien Rawat Jaga'}
+              </CardTitle>
+              <div className="mb-4 flex w-full flex-col items-start gap-2 lg:flex-row lg:flex-nowrap lg:items-center">
+                <div className="relative w-full lg:min-w-0 lg:flex-[1.8_1_0%]">
+                  <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+                  <Input
+                    type="search"
+                    placeholder="Cari pasien..."
+                    className="w-full pl-8"
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                  />
+                </div>
+
+                {option.statusPulang !== 'belum-pulang' ? (
+                  <div className="flex w-full flex-col gap-2 sm:flex-row lg:w-auto lg:flex-none">
+                    <DatePickerPopover
+                      mode="range"
+                      defaultMonth={dateRange?.from}
+                      selected={dateRange}
+                      onSelect={setDateRange}
+                      numberOfMonths={2}
+                      locale={indonesianLocale}
+                      calendarClassName="min-w-[600px]"
+                      buttonClassName="w-[350px]"
+                      placeholder="Pilih rentang tanggal pulang"
+                      displayValue={dateRange?.from ? (
+                        dateRange.to ? (
+                          <>
+                            {formatUIDate(dateRange.from)} - {formatUIDate(dateRange.to)}
+                          </>
+                        ) : (
+                          formatUIDate(dateRange.from)
+                        )
+                      ) : undefined}
+                    />
+                  </div>
+                ) : null}
+
+                <div className="flex w-full flex-col gap-2 sm:flex-row sm:items-center lg:w-auto lg:flex-none lg:shrink-0">
+                  <Button variant="outline" onClick={handleClearFilters} className="w-full sm:w-auto">
+                    <X className="mr-2 h-4 w-4" />
+                    Reset
+                  </Button>
+                </div>
+              </div>
+            </CardHeader>
+            <CardContent>
+              <PatientTable
+                patients={rawatJagaData}
+                columns={rawatJagaColumns}
+                loading={loading}
+                pagination={{
+                  currentPage,
+                  totalPages: Math.ceil(total / itemsPerPage),
+                  totalItems: total,
+                  itemsPerPage,
+                  onPageChange: (page) => {
+                    setCurrentPage(page);
+                  },
+                  onItemsPerPageChange: (newItemsPerPage) => {
+                    setItemsPerPage(newItemsPerPage);
+                    setCurrentPage(1);
+                  }
+                }}
+              />
+            </CardContent>
+          </Card>
+        </TabsContent>
+      ))}
+    </Tabs>
+  );
+};
+
 const IGDTabs = () => {
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
@@ -2394,6 +2736,10 @@ const Patients = () => {
     title = "Rawat Gabung";
     description = "Pasien rawat gabung yang ditangani user.";
     tabs = <RawatInapTabs key="rawat-gabung" viewMode="rawat-gabung" />;
+  } else if (path.includes('rawat-jaga')) {
+    title = "Rawat Jaga";
+    description = "Pasien rawat inap dan rawat gabung yang ditangani sebagai Dokter Jaga.";
+    tabs = <RawatJagaTabs />;
   } else if (path.includes('rawat-inap')) {
     title = "Rawat Inap";
     description = "Pasien yang mendapatkan perawatan medis yang intensif, meliputi observasi, diagnosis, pengobatan, keperawatan, dan rehabilitasi. ";

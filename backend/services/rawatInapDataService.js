@@ -63,7 +63,7 @@ class RawatInapDataService {
   }
 
   static getResumePendingFilter(normalizedTab = 'rawat-inap') {
-    if (normalizedTab === 'rawat-gabung') {
+    if (normalizedTab === 'rawat-gabung' || normalizedTab === 'rawat-jaga-gabung') {
       return 'NOT EXISTS (SELECT 1 FROM resume_pasien_ranap rpr WHERE rpr.no_rawat = rp.no_rawat)';
     }
 
@@ -162,7 +162,12 @@ class RawatInapDataService {
     const normalizedTab = String(tab || 'rawat-inap').trim();
     const normalizedStatusPulang = this.normalizeStatusPulang(statusPulang);
 
-    if (accessibleDoctorCodes.length > 0 && normalizedTab !== 'rawat-gabung') {
+    if (
+      accessibleDoctorCodes.length > 0
+      && normalizedTab !== 'rawat-gabung'
+      && normalizedTab !== 'rawat-jaga-gabung'
+      && normalizedTab !== 'rawat-jaga-ranap'
+    ) {
       const doctorPlaceholders = this.buildInClausePlaceholders(accessibleDoctorCodes);
       whereConditions.push(`EXISTS (
         SELECT 1
@@ -324,6 +329,70 @@ class RawatInapDataService {
           AND COALESCE(dr.jenis_dpjp, 'Utama') IN ('Utama', 'PPDS', 'Internship')
           ${extraConditions.length > 0 ? `AND ${extraConditions.join(' AND ')}` : ''}`,
         params: [...accessibleDoctorCodes, ...extraParams]
+      };
+    }
+
+    if (normalizedTab === 'rawat-jaga-ranap') {
+      const exactDoctorCode = String(normalizedUsername || '').trim();
+
+      if (!exactDoctorCode) {
+        return { condition: '1 = 0', params: [] };
+      }
+      const extraConditions = [];
+
+      if (String(statusPulang || '').trim() === 'sudah-pulang') {
+        extraConditions.push(this.getResumePendingFilter(normalizedTab));
+      }
+
+      if (String(statusPulang || '').trim() === 'sudah-resume') {
+        extraConditions.push(`EXISTS (
+          SELECT 1
+          FROM resume_pasien_ranap rpr_done
+          WHERE rpr_done.no_rawat = ki.no_rawat
+        )`);
+      }
+
+      return {
+        condition: `EXISTS (
+          SELECT 1
+          FROM dpjp_ranap dr_jaga
+          WHERE dr_jaga.no_rawat = ki.no_rawat
+            AND dr_jaga.kd_dokter = ?
+            AND dr_jaga.jenis_dpjp IN ('Dokter Jaga')
+        )${extraConditions.length > 0 ? ` AND ${extraConditions.join(' AND ')}` : ''}`,
+        params: [exactDoctorCode]
+      };
+    }
+
+    if (normalizedTab === 'rawat-jaga-gabung') {
+      const exactDoctorCode = String(normalizedUsername || '').trim();
+
+      if (!exactDoctorCode) {
+        return { condition: '1 = 0', params: [] };
+      }
+      const extraConditions = [];
+
+      if (String(statusPulang || '').trim() === 'sudah-pulang') {
+        extraConditions.push(this.getResumePendingFilter(normalizedTab));
+      }
+
+      if (String(statusPulang || '').trim() === 'sudah-resume') {
+        extraConditions.push(`EXISTS (
+          SELECT 1
+          FROM resume_pasien_ranap rpr_done
+          WHERE rpr_done.no_rawat = rp.no_rawat
+        )`);
+      }
+
+      return {
+        condition: `EXISTS (
+          SELECT 1
+          FROM dpjp_ranap dr_jaga
+          WHERE dr_jaga.no_rawat = rp.no_rawat
+            AND dr_jaga.kd_dokter = ?
+            AND dr_jaga.jenis_dpjp IN ('Dokter Jaga')
+        )${extraConditions.length > 0 ? ` AND ${extraConditions.join(' AND ')}` : ''}`,
+        params: [exactDoctorCode]
       };
     }
 
@@ -701,16 +770,18 @@ class RawatInapDataService {
       const whereConditions = [...baseWhereConditions, tabFilter.condition];
       const params = [...baseParams, ...tabFilter.params];
       const whereClause = whereConditions.length > 0 ? `WHERE ${whereConditions.join(' AND ')}` : '';
-      const fromClause = normalizedTab === 'rawat-gabung'
+      const fromClause = normalizedTab === 'rawat-gabung' || normalizedTab === 'rawat-jaga-gabung'
         ? this.getRawatGabungFromClause()
         : this.getFromClause();
       const rawatBersamaResumeSelect = this.getRawatBersamaResumeSelect(normalizedTab, accessibleDoctorCodes);
       const keepMovementRows = this.shouldKeepMovementRows(normalizedStatusPulang);
-      const orderDirection = normalizedTab === 'rawat-inap' || normalizedTab === 'rawat-bersama' ? 'ASC' : 'DESC';
+      const orderDirection = normalizedTab === 'rawat-inap' || normalizedTab === 'rawat-bersama' || normalizedTab === 'rawat-jaga-ranap'
+        ? 'ASC'
+        : 'DESC';
       console.log('WHERE clause:', whereClause);
       console.log('Parameters:', params);
 
-      const query = normalizedTab === 'rawat-gabung'
+      const query = normalizedTab === 'rawat-gabung' || normalizedTab === 'rawat-jaga-gabung'
         ? this.getRawatGabungQuery(whereClause, limit, offset)
         : keepMovementRows
         ? `
@@ -837,7 +908,7 @@ class RawatInapDataService {
       let tabCounts = null;
 
       if (!shouldReturnCountsOnly) {
-        const countQuery = normalizedTab === 'rawat-gabung'
+        const countQuery = normalizedTab === 'rawat-gabung' || normalizedTab === 'rawat-jaga-gabung'
           ? this.getRawatGabungCountQuery(whereClause)
           : this.getGroupedCountQuery(fromClause, whereClause, keepMovementRows);
 

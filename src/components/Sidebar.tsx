@@ -55,7 +55,11 @@ const Sidebar: React.FC<SidebarProps> = ({
   const location = useLocation();
   const [pasienOpen, setPasienOpen] = useState(true);
   const [statistikOpen, setStatistikOpen] = useState(true);
-  const [rawatInapOpen, setRawatInapOpen] = useState(location.pathname.startsWith('/pasien/rawat-inap'));
+  const [rawatInapOpen, setRawatInapOpen] = useState(
+    location.pathname.startsWith('/pasien/rawat-inap')
+    || location.pathname.startsWith('/pasien/rawat-gabung')
+    || location.pathname.startsWith('/pasien/rawat-jaga')
+  );
   
   const [aboutOpen, setAboutOpen] = useState(false);
 
@@ -101,7 +105,8 @@ const Sidebar: React.FC<SidebarProps> = ({
   const rawatInapSubmenuItems: SubmenuItem[] = [
     { name: 'Rawat Utama', path: '/pasien/rawat-inap/utama' },
     { name: 'Rawat Bersama', path: '/pasien/rawat-inap/raber' },
-    { name: 'Rawat Gabung', path: '/pasien/rawat-gabung' }
+    { name: 'Rawat Gabung', path: '/pasien/rawat-gabung' },
+    { name: 'Rawat Jaga', path: '/pasien/rawat-jaga' }
   ];
 
   const statistikSubmenuItems: SubmenuItem[] = [
@@ -127,7 +132,11 @@ const Sidebar: React.FC<SidebarProps> = ({
   };
 
   useEffect(() => {
-    if (location.pathname.startsWith('/pasien/rawat-inap') || location.pathname.startsWith('/pasien/rawat-gabung')) {
+    if (
+      location.pathname.startsWith('/pasien/rawat-inap')
+      || location.pathname.startsWith('/pasien/rawat-gabung')
+      || location.pathname.startsWith('/pasien/rawat-jaga')
+    ) {
       setRawatInapOpen(true);
     }
   }, [location.pathname]);
@@ -229,7 +238,11 @@ const Sidebar: React.FC<SidebarProps> = ({
                 >
                   <CollapsibleTrigger
                     className={`flex w-full items-center justify-between rounded-md px-3 py-2 text-sm font-medium transition-colors ${
-                      (location.pathname.startsWith('/pasien/rawat-inap') || location.pathname.startsWith('/pasien/rawat-gabung'))
+                      (
+                        location.pathname.startsWith('/pasien/rawat-inap')
+                        || location.pathname.startsWith('/pasien/rawat-gabung')
+                        || location.pathname.startsWith('/pasien/rawat-jaga')
+                      )
                         ? activeItemClass
                         : inactiveItemClass
                     }`}
