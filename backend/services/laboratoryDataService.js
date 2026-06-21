@@ -201,7 +201,61 @@ class LaboratoryDataService {
       `;
       
       const [rows] = await connection.execute(query, params);
-      return rows;
+      if (!rows.length) {
+        return [];
+      }
+
+      const serviceCodes = rows
+        .map((row) => String(row.kd_jenis_prw || '').trim())
+        .filter(Boolean);
+
+      if (!serviceCodes.length) {
+        return rows;
+      }
+
+      const templateQuery = `
+        SELECT
+          kd_jenis_prw,
+          id_template,
+          Pemeriksaan,
+          satuan,
+          nilai_rujukan_ld,
+          nilai_rujukan_la,
+          nilai_rujukan_pd,
+          nilai_rujukan_pa
+        FROM template_laboratorium
+        WHERE kd_jenis_prw IN (${serviceCodes.map(() => '?').join(', ')})
+        ORDER BY kd_jenis_prw, Pemeriksaan
+      `;
+
+      const [templateRows] = await connection.execute(templateQuery, serviceCodes);
+      const templatesByServiceCode = templateRows.reduce((result, row) => {
+        const serviceCode = String(row.kd_jenis_prw || '').trim();
+        if (!serviceCode) {
+          return result;
+        }
+
+        if (!result.has(serviceCode)) {
+          result.set(serviceCode, []);
+        }
+
+        result.get(serviceCode).push({
+          id_template: row.id_template,
+          Pemeriksaan: row.Pemeriksaan,
+          satuan: row.satuan,
+          nilai_rujukan_ld: row.nilai_rujukan_ld,
+          nilai_rujukan_la: row.nilai_rujukan_la,
+          nilai_rujukan_pd: row.nilai_rujukan_pd,
+          nilai_rujukan_pa: row.nilai_rujukan_pa
+        });
+
+        return result;
+      }, new Map());
+
+      return rows.map((row) => ({
+        ...row,
+        templates: templatesByServiceCode.get(String(row.kd_jenis_prw || '').trim()) || []
+      }));
     } finally {
       await connection.end();
     }

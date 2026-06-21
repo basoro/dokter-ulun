@@ -1375,7 +1375,7 @@ class GetMedicalRecordService {
         dpk.klinis,
         ppl.kd_jenis_prw,
         jpl.nm_perawatan,
-        pdpl.id_template,
+        tl.id_template,
         tl.Pemeriksaan AS template_name,
         tl.satuan,
         tl.nilai_rujukan_ld,
@@ -1386,10 +1386,7 @@ class GetMedicalRecordService {
       LEFT JOIN permintaan_pemeriksaan_lab ppl ON ppl.noorder = pl.noorder 
       LEFT JOIN jns_perawatan_lab jpl ON jpl.kd_jenis_prw = ppl.kd_jenis_prw
       LEFT JOIN diagnosa_pasien_klinis dpk ON dpk.noorder = pl.noorder
-      LEFT JOIN permintaan_detail_permintaan_lab pdpl
-        ON pdpl.noorder = pl.noorder
-        AND pdpl.kd_jenis_prw = ppl.kd_jenis_prw
-      LEFT JOIN template_laboratorium tl ON tl.id_template = pdpl.id_template
+      LEFT JOIN template_laboratorium tl ON tl.kd_jenis_prw = ppl.kd_jenis_prw
       WHERE pl.no_rawat = ? AND pl.status = ? 
       ORDER BY pl.tgl_permintaan, pl.jam_permintaan, ppl.kd_jenis_prw, tl.Pemeriksaan
     `;

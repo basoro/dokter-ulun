@@ -110,6 +110,7 @@ interface LabServiceOption {
   kd_jenis_prw: string;
   nm_perawatan: string;
   total_byr?: number;
+  templates?: LabTemplateOption[];
 }
 
 interface LabTemplateOption {
@@ -121,6 +122,86 @@ interface LabTemplateOption {
   nilai_rujukan_pd?: string;
   nilai_rujukan_pa?: string;
 }
+
+const normalizeLabTemplateOptions = (templates: any[]): LabTemplateOption[] => {
+  if (!Array.isArray(templates)) {
+    return [];
+  }
+
+  const normalizedTemplates = new Map<string, LabTemplateOption>();
+
+  templates.forEach((template) => {
+    const idTemplate = String(template?.id_template || '').trim();
+    const pemeriksaan = String(
+      template?.Pemeriksaan ||
+      template?.nama ||
+      template?.template_name ||
+      ''
+    ).trim();
+
+    if (!idTemplate && !pemeriksaan) {
+      return;
+    }
+
+    const templateKey = `${idTemplate}::${pemeriksaan}`;
+    if (normalizedTemplates.has(templateKey)) {
+      return;
+    }
+
+    normalizedTemplates.set(templateKey, {
+      id_template: idTemplate,
+      Pemeriksaan: pemeriksaan,
+      satuan: String(template?.satuan || '').trim(),
+      nilai_rujukan_ld: String(template?.nilai_rujukan_ld || '').trim(),
+      nilai_rujukan_la: String(template?.nilai_rujukan_la || '').trim(),
+      nilai_rujukan_pd: String(template?.nilai_rujukan_pd || '').trim(),
+      nilai_rujukan_pa: String(template?.nilai_rujukan_pa || '').trim()
+    });
+  });
+
+  return Array.from(normalizedTemplates.values());
+};
+
+const formatLabTemplateReference = (template: any) => {
+  const referenceParts = [
+    { label: 'LD', value: String(template?.nilai_rujukan_ld || '').trim() },
+    { label: 'LA', value: String(template?.nilai_rujukan_la || '').trim() },
+    { label: 'PD', value: String(template?.nilai_rujukan_pd || '').trim() },
+    { label: 'PA', value: String(template?.nilai_rujukan_pa || '').trim() }
+  ].filter((item) => item.value);
+
+  if (!referenceParts.length) {
+    return '-';
+  }
+
+  return referenceParts.map((item) => `${item.label}: ${item.value}`).join(' | ');
+};
+
+const buildLaboratoryRequestRows = (tests: any[] = []) => (
+  tests.flatMap((test: any) => {
+    const templates = Array.isArray(test?.templates) ? test.templates : [];
+
+    if (!templates.length) {
+      return [{
+        key: `${String(test?.kode || '').trim()}-empty`,
+        pemeriksaan: String(test?.nama || '-').trim() || '-',
+        kode: String(test?.kode || '').trim(),
+        idTemplate: '',
+        rujukan: '-',
+        satuan: '-'
+      }];
+    }
+
+    return templates.map((template: any, templateIndex: number) => ({
+      key: `${String(test?.kode || '').trim()}-${String(template?.id_template || '').trim()}-${templateIndex}`,
+      pemeriksaan: String(template?.nama || template?.Pemeriksaan || '-').trim() || '-',
+      kode: String(test?.kode || '').trim(),
+      idTemplate: String(template?.id_template || '').trim(),
+      rujukan: formatLabTemplateReference(template),
+      satuan: String(template?.satuan || '').trim() || '-'
+    }));
+  })
+);
 
 interface LabData {
   tanggal: string;
@@ -3723,6 +3804,14 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
       const deleteLabel = deletingLabRequestNo === lab.noorder
         ? 'Menghapus...'
         : (allowedToDelete ? 'Hapus' : 'Bukan Data Anda');
+      const examinationNames = Array.from(
+        new Set(
+          (lab.pemeriksaan || [])
+            .map((test: any) => String(test?.nama || '').trim())
+            .filter(Boolean)
+        )
+      );
+      const requestRows = buildLaboratoryRequestRows(lab.pemeriksaan || []);
 
       return (
       <div key={`${lab.no_rawat}-${lab.noorder}-${labIndex}`} className="border rounded-lg p-4 hover:shadow-lg transition-shadow">
@@ -3789,43 +3878,40 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
             <p className="font-medium whitespace-pre-line break-words">{lab.klinis}</p>
           </div>
         ) : null}
+        {examinationNames.length ? (
+          <div className="mb-4">
+            <p className="text-sm text-muted-foreground">Nama Pemeriksaan</p>
+            <p className="font-medium whitespace-pre-line break-words">
+              {examinationNames.join(', ')}
+            </p>
+          </div>
+        ) : null}
         <div className="space-y-2">
-          <h4 className="font-medium">Pemeriksaan:</h4>
-          {(lab.pemeriksaan || []).map((test: any, testIndex: number) => (
-            <div key={testIndex} className="grid grid-cols-1 md:grid-cols-1 gap-4 border-l-2 border-primary pl-4">
-              <div>
-                <p className="text-sm text-muted-foreground">Nama</p>
-                <p className="font-medium">{test.nama}</p>
+          <div className="overflow-x-auto">
+            <div className="min-w-[720px] space-y-2">
+              <div className="grid grid-cols-3 gap-4 rounded-md border bg-background/70 px-4 py-2 text-sm font-semibold text-foreground">
+                <div>Pemeriksaan</div>
+                <div>Rujukan</div>
+                <div>Satuan</div>
               </div>
-              {test.kode ? (
-                <div>
-                  <p className="text-sm text-muted-foreground">Kode Pemeriksaan</p>
-                  <p className="font-medium">{test.kode}</p>
-                </div>
-              ) : null}
-              <div>
-                <p className="text-sm text-muted-foreground">Template</p>
-                {Array.isArray(test.templates) && test.templates.length > 0 ? (
-                  <div className="mt-2 space-y-2">
-                    {test.templates.map((template: any, templateIndex: number) => (
-                      <div key={`${template.id_template}-${templateIndex}`} className="rounded border bg-muted/20 p-3">
-                        <p className="font-medium">{template.nama || '-'}</p>
-                        <p className="text-xs text-muted-foreground">
-                          ID Template: {template.id_template || '-'}
-                          {template.satuan ? ` • Satuan: ${template.satuan}` : ''}
-                        </p>
-                        <p className="text-xs text-muted-foreground">
-                          Rujukan LD: {template.nilai_rujukan_ld || '-'} {' • '}LA: {template.nilai_rujukan_la || '-'} {' • '}PD: {template.nilai_rujukan_pd || '-'} {' • '}PA: {template.nilai_rujukan_pa || '-'}
-                        </p>
-                      </div>
-                    ))}
+              {requestRows.map((row) => (
+                <div
+                  key={row.key}
+                  className="grid grid-cols-3 gap-4 border-l-2 border-primary rounded-r bg-background px-4 py-3"
+                >
+                  <div>
+                    <p className="font-medium">{row.pemeriksaan}</p>
+                    <p className="text-xs text-muted-foreground">
+                      {row.idTemplate ? `ID Template: ${row.idTemplate}` : 'Template belum tersedia'}
+                      {row.kode ? ` • Kode: ${row.kode}` : ''}
+                    </p>
                   </div>
-                ) : (
-                  <p className="text-sm italic text-muted-foreground">Tidak ada template tersimpan.</p>
-                )}
-              </div>
+                  <div className="font-medium">{row.rujukan}</div>
+                  <div className="font-medium">{row.satuan}</div>
+                </div>
+              ))}
             </div>
-          ))}
+          </div>
         </div>
       </div>
     )});
@@ -3840,45 +3926,45 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
     return groupedPanels.map(({ groupName, tests }, groupIdx) => (
       <div key={`${groupName}-${groupIdx}`} className="border rounded-lg p-3 space-y-3 bg-muted/20">
         <div>
-          <p className="text-sm text-muted-foreground">Nama</p>
           <p className="font-semibold">{groupName}</p>
         </div>
-        <div className="space-y-2">
-          {(tests as LabTest[]).map((test, testIndex) => (
-            <div
-              key={`${groupName}-${testIndex}`}
-              className={cn(
-                "grid grid-cols-1 md:grid-cols-5 gap-4 border-l-2 border-primary pl-4 rounded-r px-2 py-2 bg-background",
-                test.keterangan === 'H' && "bg-red-100 text-red-900",
-                test.keterangan === 'L' && "bg-yellow-100 text-yellow-900"
-              )}
-            >
-              <div>
-                <p className="text-sm text-muted-foreground">Pemeriksaan</p>
-                <p className="font-medium">{test.pemeriksaan || '-'}</p>
+        <div className="overflow-x-auto">
+          <div className="min-w-[720px] space-y-2">
+            {(tests as LabTest[]).map((test, testIndex) => (
+              <div
+                key={`${groupName}-${testIndex}`}
+                className={cn(
+                  "grid grid-cols-5 gap-4 border-l-2 border-primary rounded-r bg-background px-4 py-3",
+                  test.keterangan === 'H' && "bg-red-100 text-red-900",
+                  test.keterangan === 'L' && "bg-yellow-100 text-yellow-900"
+                )}
+              >
+                <div className="font-medium">{test.pemeriksaan || '-'}</div>
+                <div className="font-medium">{test.hasil || '-'}</div>
+                <div className="font-medium">{test.rujukan || '-'}</div>
+                <div className="font-medium">{test.satuan || '-'}</div>
+                <div className="font-medium">{test.keterangan || '-'}</div>
               </div>
-              <div>
-                <p className="text-sm text-muted-foreground">Hasil</p>
-                <p className="font-medium">{test.hasil || '-'}</p>
-              </div>
-              <div>
-                <p className="text-sm text-muted-foreground">Rujukan</p>
-                <p className="font-medium">{test.rujukan || '-'}</p>
-              </div>
-              <div>
-                <p className="text-sm text-muted-foreground">Satuan</p>
-                <p className="font-medium">{test.satuan || '-'}</p>
-              </div>
-              <div>
-                <p className="text-sm text-muted-foreground">Keterangan</p>
-                <p className="font-medium">{test.keterangan || '-'}</p>
-              </div>
-            </div>
-          ))}
+            ))}
+          </div>
         </div>
       </div>
     ));
   };
+
+  const renderLaboratoryHistoryHeader = () => (
+    <div className="overflow-x-auto">
+      <div className="min-w-[720px]">
+        <div className="grid grid-cols-5 gap-4 rounded-md border bg-background/70 px-4 py-2 text-sm font-semibold text-foreground">
+          <div>Pemeriksaan</div>
+          <div>Hasil</div>
+          <div>Rujukan</div>
+          <div>Satuan</div>
+          <div>Keterangan</div>
+        </div>
+      </div>
+    </div>
+  );
 
   const renderLaboratoryHistoryCards = (items: any[]) => {
     if (items.length === 0) {
@@ -3953,6 +4039,7 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
         </div>
         <div className="space-y-2">
           <h4 className="font-medium">Pemeriksaan:</h4>
+          {renderLaboratoryHistoryHeader()}
           {renderLaboratoryHistoryDetails(labGroup)}
         </div>
       </div>
@@ -6821,7 +6908,7 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
 
       setLabTemplatesByIndex((previous) => ({
         ...previous,
-        [index]: Array.isArray(responseJson) ? responseJson : []
+        [index]: normalizeLabTemplateOptions(Array.isArray(responseJson) ? responseJson : [])
       }));
     } catch (error) {
       console.error('Error fetching laboratory templates:', error);
@@ -6931,7 +7018,7 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
     })));
     const copiedTemplatesByIndex: Record<number, any[]> = {};
     tests.forEach((test: any, index: number) => {
-      copiedTemplatesByIndex[index] = Array.isArray(test.templates) ? test.templates : [];
+      copiedTemplatesByIndex[index] = normalizeLabTemplateOptions(test.templates);
     });
     setLabTemplatesByIndex(copiedTemplatesByIndex);
     setLabServiceSearchOpen({});
@@ -6947,6 +7034,15 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
     setLabFormNoRawat(lab.no_rawat || '');
     setIsLabFormOpen(true);
     setActiveTab('laboratory');
+
+    tests.forEach((test: any, index: number) => {
+      const kodePemeriksaan = String(test?.kode || '').trim();
+      if (!kodePemeriksaan || copiedTemplatesByIndex[index]?.length) {
+        return;
+      }
+
+      void fetchLabTemplates(index, kodePemeriksaan);
+    });
 
     toast({
       title: "Permintaan Lab Disalin",
@@ -6993,7 +7089,7 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
     })));
     const editTemplatesByIndex: Record<number, any[]> = {};
     tests.forEach((test: any, index: number) => {
-      editTemplatesByIndex[index] = Array.isArray(test.templates) ? test.templates : [];
+      editTemplatesByIndex[index] = normalizeLabTemplateOptions(test.templates);
     });
     setLabTemplatesByIndex(editTemplatesByIndex);
     setLabServiceSearchOpen({});
@@ -7009,6 +7105,15 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
     setLabFormNoRawat(lab.no_rawat || '');
     setIsLabFormOpen(true);
     setActiveTab('laboratory');
+
+    tests.forEach((test: any, index: number) => {
+      const kodePemeriksaan = String(test?.kode || '').trim();
+      if (!kodePemeriksaan || editTemplatesByIndex[index]?.length) {
+        return;
+      }
+
+      void fetchLabTemplates(index, kodePemeriksaan);
+    });
 
     toast({
       title: "Mode Edit Aktif",
@@ -11711,6 +11816,7 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
                                         key={option.kd_jenis_prw}
                                         value={`${option.kd_jenis_prw} ${option.nm_perawatan}`}
                                         onSelect={() => {
+                                          const selectedTemplates = normalizeLabTemplateOptions(option.templates || []);
                                           setLabTests((previous) => previous.map((item, itemIndex) => (
                                             itemIndex === index
                                               ? {
@@ -11723,7 +11829,13 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
                                                 }
                                               : item
                                           )));
-                                          void fetchLabTemplates(index, option.kd_jenis_prw);
+                                          setLabTemplatesByIndex((previous) => ({
+                                            ...previous,
+                                            [index]: selectedTemplates
+                                          }));
+                                          if (selectedTemplates.length === 0) {
+                                            void fetchLabTemplates(index, option.kd_jenis_prw);
+                                          }
                                           setLabServiceSearchQuery((previous) => ({
                                             ...previous,
                                             [index]: option.nm_perawatan
@@ -11781,7 +11893,7 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
                                   key={`${template.id_template}-${template.Pemeriksaan}`}
                                   className="rounded border bg-background p-3"
                                 >
-                                  <p className="font-medium">{template.Pemeriksaan}</p>
+                                  <p className="font-medium">{template.Pemeriksaan || '-'}</p>
                                   {/* <p className="text-xs text-muted-foreground">
                                     ID Template: {template.id_template}
                                     {template.satuan ? ` • Satuan: ${template.satuan}` : ''}
