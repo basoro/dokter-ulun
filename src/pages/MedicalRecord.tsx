@@ -11952,12 +11952,12 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
               </Collapsible>
 
               {/* Drag & Drop Canvas */}
-              <div className="border-2 border-dashed border-gray-300 rounded-lg p-6 mb-6 bg-gray-50/50">
-                <h4 className="text-lg font-semibold mb-4 text-center">
+              <div className="mb-6 rounded-lg border-2 border-dashed border-gray-300 bg-gray-50/50 p-6 dark:border-slate-700 dark:bg-slate-900/50">
+                <h4 className="mb-4 text-center text-lg font-semibold dark:text-slate-100">
                   🧪 Drag & Drop Lab Results Canvas
                 </h4>
                 <div 
-                  className="min-h-[200px] bg-white border rounded-lg p-4"
+                  className="min-h-[200px] rounded-lg border bg-white p-4 dark:border-slate-700 dark:bg-slate-950/80"
                   onDrop={(e) => {
                     e.preventDefault();
                     if (draggingLab) {
@@ -11967,7 +11967,7 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
                   onDragOver={(e) => e.preventDefault()}
                 >
                   {canvasItems.length === 0 ? (
-                    <div className="text-center text-gray-500 py-8">
+                    <div className="py-8 text-center text-gray-500 dark:text-slate-400">
                       Drop lab results here...
                     </div>
                   ) : (
@@ -12394,12 +12394,12 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
               </Collapsible>
 
               {/* Drag & Drop Canvas */}
-              <div className="border-2 border-dashed border-gray-300 rounded-lg p-6 mb-6 bg-gray-50/50">
-                <h4 className="text-lg font-semibold mb-4 text-center">
+              <div className="mb-6 rounded-lg border-2 border-dashed border-gray-300 bg-gray-50/50 p-6 dark:border-slate-700 dark:bg-slate-900/50">
+                <h4 className="mb-4 text-center text-lg font-semibold dark:text-slate-100">
                   🏥 Drag & Drop Radiology Results Canvas
                 </h4>
                 <div 
-                  className="min-h-[200px] bg-white border rounded-lg p-4"
+                  className="min-h-[200px] rounded-lg border bg-white p-4 dark:border-slate-700 dark:bg-slate-950/80"
                   onDrop={(e) => {
                     e.preventDefault();
                     if (draggingRad) {
@@ -12409,7 +12409,7 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
                   onDragOver={(e) => e.preventDefault()}
                 >
                   {canvasItems.filter(item => item.type === 'radiology').length === 0 ? (
-                    <div className="text-center text-gray-500 py-8">
+                    <div className="py-8 text-center text-gray-500 dark:text-slate-400">
                       Drop radiology results here...
                     </div>
                   ) : (
