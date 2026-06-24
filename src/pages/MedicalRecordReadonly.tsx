@@ -118,15 +118,6 @@ const getVisitSubtitle = (visit: any, tab: VisitTab) => {
   return [visit.poliklinik, visit.status].filter(Boolean).join(' • ') || 'Rawat jalan';
 };
 
-const getMedicationRequests = (visit: any) => {
-  return [
-    ...(Array.isArray(visit.medicationsRequest) ? visit.medicationsRequest : []),
-    ...(Array.isArray(visit.medicationsRequestRanap) ? visit.medicationsRequestRanap : []),
-    ...(Array.isArray(visit.medicationsRequestPulang) ? visit.medicationsRequestPulang : []),
-    ...(Array.isArray(visit.medicationsRequestIbs) ? visit.medicationsRequestIbs : [])
-  ];
-};
-
 const SectionCard = ({
   title,
   icon,
@@ -379,11 +370,10 @@ const MedicalRecordReadonly: React.FC<MedicalRecordReadonlyProps> = ({
           const examinations = Array.isArray(visit.examinations) ? visit.examinations : [];
           const procedures = Array.isArray(visit.procedures) ? visit.procedures : [];
           const medications = Array.isArray(visit.medications) ? visit.medications : [];
-          const medicationRequests = getMedicationRequests(visit);
+          const medicationDischargeRequests = Array.isArray(visit.medicationsRequestPulang) ? visit.medicationsRequestPulang : [];
+          const medicationIbsRequests = Array.isArray(visit.medicationsRequestIbs) ? visit.medicationsRequestIbs : [];
           const laboratories = Array.isArray(visit.laboratory) ? visit.laboratory : [];
-          const laboratoryRequests = Array.isArray(visit.laboratoryRequest) ? visit.laboratoryRequest : [];
           const radiologies = Array.isArray(visit.radiology) ? visit.radiology : [];
-          const radiologyRequests = Array.isArray(visit.radiologyRequest) ? visit.radiologyRequest : [];
           const operationReports = Array.isArray(visit.operationReports) ? visit.operationReports : [];
 
           return (
@@ -445,11 +435,37 @@ const MedicalRecordReadonly: React.FC<MedicalRecordReadonlyProps> = ({
                       <div key={`${visit.no_rawat}-exam-${index}`} className="rounded-md border px-3 py-3">
                         <p className="text-sm font-medium">{formatDateTime(exam.tanggal)}</p>
                         <p className="mt-1 text-xs text-muted-foreground">{exam.pegawai || '-'}</p>
-                        <div className="mt-2 grid gap-2 text-sm md:grid-cols-2">
-                          {exam.s ? <p><span className="font-medium">S:</span> {exam.s}</p> : null}
-                          {exam.o ? <p><span className="font-medium">O:</span> {exam.o}</p> : null}
-                          {exam.a ? <p><span className="font-medium">A:</span> {exam.a}</p> : null}
-                          {exam.p ? <p><span className="font-medium">P:</span> {exam.p}</p> : null}
+                        <div className="mt-2 space-y-2 text-sm">
+                          {exam.s ? (
+                            <p className="whitespace-pre-wrap">
+                              <span className="font-medium">S:</span>{'\n'}{exam.s}
+                            </p>
+                          ) : null}
+                          {exam.o ? (
+                            <p className="whitespace-pre-wrap">
+                              <span className="font-medium">O:</span>{'\n'}{exam.o}
+                            </p>
+                          ) : null}
+                          {exam.a ? (
+                            <p className="whitespace-pre-wrap">
+                              <span className="font-medium">A:</span>{'\n'}{exam.a}
+                            </p>
+                          ) : null}
+                          {exam.p ? (
+                            <p className="whitespace-pre-wrap">
+                              <span className="font-medium">P:</span>{'\n'}{exam.p}
+                            </p>
+                          ) : null}
+                          {tab === 'inpatient' && (exam.i || exam.instruksi) ? (
+                            <p className="whitespace-pre-wrap">
+                              <span className="font-medium">I (Instruksi):</span>{'\n'}{exam.i || exam.instruksi}
+                            </p>
+                          ) : null}
+                          {tab === 'inpatient' && (exam.e || exam.evaluasi) ? (
+                            <p className="whitespace-pre-wrap">
+                              <span className="font-medium">E (Evaluasi):</span>{'\n'}{exam.e || exam.evaluasi}
+                            </p>
+                          ) : null}
                         </div>
                       </div>
                     ))}
@@ -473,31 +489,12 @@ const MedicalRecordReadonly: React.FC<MedicalRecordReadonlyProps> = ({
                   <SectionCard
                     title="Resep"
                     icon={<Pill className="h-4 w-4 text-primary" />}
-                    emptyMessage="Belum ada data resep atau permintaan obat."
-                    hasData={medications.length > 0 || medicationRequests.length > 0}
+                    emptyMessage="Belum ada riwayat pemberian obat, obat pulang, atau obat IBS."
+                    hasData={medications.length > 0 || medicationDischargeRequests.length > 0 || medicationIbsRequests.length > 0}
                   >
-                    {medicationRequests.map((request: any, index: number) => (
-                      <div key={`${visit.no_rawat}-medreq-${index}`} className="rounded-md border px-3 py-3">
-                        <p className="text-sm font-medium">Permintaan {request.no_resep || '-'}</p>
-                        <p className="mt-1 text-xs text-muted-foreground">{formatDateTime(request.tanggal)}</p>
-                        <div className="mt-2 space-y-1 text-sm">
-                          {(request.obat || []).map((item: any, itemIndex: number) => (
-                            <p key={`${request.no_resep || index}-obat-${itemIndex}`}>
-                              {item.nama} • {item.jumlah} • {item.aturan_pakai || '-'}
-                            </p>
-                          ))}
-                          {(request.compounds || []).map((compound: any, compoundIndex: number) => (
-                            <p key={`${request.no_resep || index}-racik-${compoundIndex}`}>
-                              Racikan {compound.nama_racik || compound.nm_racik || compound.no_racik}
-                            </p>
-                          ))}
-                        </div>
-                      </div>
-                    ))}
-
                     {medications.map((medication: any, index: number) => (
-                      <div key={`${visit.no_rawat}-med-${index}`} className="rounded-md border px-3 py-3">
-                        <p className="text-sm font-medium">Pemberian obat {medication.no_resep || '-'}</p>
+                      <div key={`${visit.no_rawat}-medreq-${index}`} className="rounded-md border px-3 py-3">
+                        <p className="text-sm font-medium">Riwayat pemberian obat {medication.no_resep || '-'}</p>
                         <p className="mt-1 text-xs text-muted-foreground">{formatDateTime(medication.tanggal)}</p>
                         <div className="mt-2 space-y-1 text-sm">
                           {(medication.obat || []).map((item: any, itemIndex: number) => (
@@ -508,21 +505,52 @@ const MedicalRecordReadonly: React.FC<MedicalRecordReadonlyProps> = ({
                         </div>
                       </div>
                     ))}
+
+                    {medicationDischargeRequests.map((request: any, index: number) => (
+                      <div key={`${visit.no_rawat}-med-pulang-${index}`} className="rounded-md border px-3 py-3">
+                        <p className="text-sm font-medium">Obat pulang {request.no_resep || '-'}</p>
+                        <p className="mt-1 text-xs text-muted-foreground">{formatDateTime(request.tanggal)}</p>
+                        <div className="mt-2 space-y-1 text-sm">
+                          {(request.obat || []).map((item: any, itemIndex: number) => (
+                            <p key={`${request.no_resep || index}-pulang-obat-${itemIndex}`}>
+                              {item.nama} • {item.jumlah} • {item.aturan_pakai || '-'}
+                            </p>
+                          ))}
+                          {(request.compounds || []).map((compound: any, compoundIndex: number) => (
+                            <p key={`${request.no_resep || index}-pulang-racik-${compoundIndex}`}>
+                              Racikan {compound.nama_racik || compound.nm_racik || compound.no_racik}
+                            </p>
+                          ))}
+                        </div>
+                      </div>
+                    ))}
+
+                    {medicationIbsRequests.map((request: any, index: number) => (
+                      <div key={`${visit.no_rawat}-med-ibs-${index}`} className="rounded-md border px-3 py-3">
+                        <p className="text-sm font-medium">Obat IBS {request.no_resep || '-'}</p>
+                        <p className="mt-1 text-xs text-muted-foreground">{formatDateTime(request.tanggal)}</p>
+                        <div className="mt-2 space-y-1 text-sm">
+                          {(request.obat || []).map((item: any, itemIndex: number) => (
+                            <p key={`${request.no_resep || index}-ibs-obat-${itemIndex}`}>
+                              {item.nama} • {item.jumlah} • {item.aturan_pakai || '-'}
+                            </p>
+                          ))}
+                          {(request.compounds || []).map((compound: any, compoundIndex: number) => (
+                            <p key={`${request.no_resep || index}-ibs-racik-${compoundIndex}`}>
+                              Racikan {compound.nama_racik || compound.nm_racik || compound.no_racik}
+                            </p>
+                          ))}
+                        </div>
+                      </div>
+                    ))}
                   </SectionCard>
 
                   <SectionCard
                     title="Laboratorium"
                     icon={<Activity className="h-4 w-4 text-primary" />}
-                    emptyMessage="Belum ada data laboratorium."
-                    hasData={laboratories.length > 0 || laboratoryRequests.length > 0}
+                    emptyMessage="Belum ada hasil laboratorium."
+                    hasData={laboratories.length > 0}
                   >
-                    {laboratoryRequests.map((request: any, index: number) => (
-                      <div key={`${visit.no_rawat}-labreq-${index}`} className="rounded-md border px-3 py-3 text-sm">
-                        <p className="font-medium">Permintaan Lab {request.noorder || '-'}</p>
-                        <p className="mt-1 text-xs text-muted-foreground">{formatDateTime(request.tanggal)}</p>
-                        <p className="mt-2">{(request.pemeriksaan || []).map((item: any) => item.nama).filter(Boolean).join(', ') || '-'}</p>
-                      </div>
-                    ))}
                     {laboratories.map((lab: any, index: number) => (
                       <div key={`${visit.no_rawat}-lab-${index}`} className="rounded-md border px-3 py-3 text-sm">
                         <p className="font-medium">{formatDateTime(lab.tanggal)}</p>
@@ -540,16 +568,9 @@ const MedicalRecordReadonly: React.FC<MedicalRecordReadonlyProps> = ({
                   <SectionCard
                     title="Radiologi"
                     icon={<Radio className="h-4 w-4 text-primary" />}
-                    emptyMessage="Belum ada data radiologi."
-                    hasData={radiologies.length > 0 || radiologyRequests.length > 0}
+                    emptyMessage="Belum ada hasil radiologi."
+                    hasData={radiologies.length > 0}
                   >
-                    {radiologyRequests.map((request: any, index: number) => (
-                      <div key={`${visit.no_rawat}-radreq-${index}`} className="rounded-md border px-3 py-3 text-sm">
-                        <p className="font-medium">Permintaan Radiologi {request.noorder || '-'}</p>
-                        <p className="mt-1 text-xs text-muted-foreground">{formatDateTime(request.tanggal)}</p>
-                        <p className="mt-2">{(request.pemeriksaan || []).map((item: any) => item.nama).filter(Boolean).join(', ') || '-'}</p>
-                      </div>
-                    ))}
                     {radiologies.map((radiology: any, index: number) => (
                       <div key={`${visit.no_rawat}-rad-${index}`} className="rounded-md border px-3 py-3 text-sm">
                         <p className="font-medium">{radiology.pemeriksaan || '-'}</p>
@@ -601,8 +622,10 @@ const MedicalRecordReadonly: React.FC<MedicalRecordReadonlyProps> = ({
         <div className="flex items-center justify-between gap-3">
           <div>
             <h2 className="text-xl font-semibold">Rekam Medis Pasien</h2>
-            <p className="text-sm text-muted-foreground">
-              Mode baca-saja untuk riwayat kunjungan dan detail rekam medis pasien.
+            <p className="mt-1 text-sm leading-relaxed text-muted-foreground">
+              Mode baca-saja untuk riwayat kunjungan
+              <br />
+              dan detail rekam medis pasien.
             </p>
           </div>
           {!asModal ? (
