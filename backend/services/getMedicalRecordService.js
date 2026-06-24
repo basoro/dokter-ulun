@@ -914,7 +914,12 @@ class GetMedicalRecordService {
           ORDER BY rdp.tgl_peresepan, rdp.jam_peresepan
         `
       : `
-          SELECT DISTINCT ro.no_resep, ro.tgl_peresepan, ro.jam_peresepan, IF(ro.jam_peresepan = ro.jam, 'Belum Terlayani', 'Sudah Terlayani') AS status_layanan, ro.kd_dokter, COALESCE(d.nm_dokter, '') AS nm_dokter
+          SELECT DISTINCT ro.no_resep, ro.tgl_peresepan, ro.jam_peresepan, IF(ro.jam_peresepan = ro.jam, 'Belum Terlayani', 'Sudah Terlayani') AS status_layanan, ro.kd_dokter, COALESCE(d.nm_dokter, '') AS nm_dokter,
+            EXISTS(
+              SELECT 1
+              FROM mlite_veronisa mv
+              WHERE mv.no_rawat = ro.no_rawat
+            ) AS is_kronis
           FROM resep_obat ro
           LEFT JOIN dokter d ON d.kd_dokter = ro.kd_dokter
           WHERE ro.no_rawat = ? AND ro.status = ?
@@ -1046,6 +1051,7 @@ class GetMedicalRecordService {
           status_layanan: String(prescRequestRow.status_layanan || '').trim() || 'Belum Terlayani',
           kd_dokter: prescRequestRow.kd_dokter || '',
           nm_dokter: prescRequestRow.nm_dokter || '',
+          is_kronis: Boolean(Number(prescRequestRow.is_kronis) || prescRequestRow.is_kronis === true),
           obat: obatList,
           compounds,
           is_package: Boolean(packageMatch),
@@ -1173,7 +1179,12 @@ class GetMedicalRecordService {
               ro.jam_peresepan,
               IF(ro.jam_peresepan = ro.jam, 'Belum Terlayani', 'Sudah Terlayani') AS status_layanan,
               ro.kd_dokter,
-              COALESCE(d.nm_dokter, '') AS nm_dokter
+              COALESCE(d.nm_dokter, '') AS nm_dokter,
+              EXISTS(
+                SELECT 1
+                FROM mlite_veronisa mv
+                WHERE mv.no_rawat = ro.no_rawat
+              ) AS is_kronis
             FROM reg_periksa rp
             INNER JOIN resep_obat ro ON ro.no_rawat = rp.no_rawat
             LEFT JOIN dokter d ON d.kd_dokter = ro.kd_dokter
@@ -1191,7 +1202,12 @@ class GetMedicalRecordService {
             ro.jam_peresepan,
             IF(ro.jam_peresepan = ro.jam, 'Belum Terlayani', 'Sudah Terlayani') AS status_layanan,
             ro.kd_dokter,
-            COALESCE(d.nm_dokter, '') AS nm_dokter
+            COALESCE(d.nm_dokter, '') AS nm_dokter,
+            EXISTS(
+              SELECT 1
+              FROM mlite_veronisa mv
+              WHERE mv.no_rawat = ro.no_rawat
+            ) AS is_kronis
           FROM reg_periksa rp
           INNER JOIN resep_obat ro ON ro.no_rawat = rp.no_rawat
           LEFT JOIN dokter d ON d.kd_dokter = ro.kd_dokter
@@ -1347,6 +1363,7 @@ class GetMedicalRecordService {
           status_layanan: String(prescRequestRow.status_layanan || '').trim() || 'Belum Terlayani',
           kd_dokter: prescRequestRow.kd_dokter || '',
           nm_dokter: prescRequestRow.nm_dokter || '',
+          is_kronis: Boolean(Number(prescRequestRow.is_kronis) || prescRequestRow.is_kronis === true),
           obat: obatList,
           compounds,
           is_package: Boolean(packageMatch),

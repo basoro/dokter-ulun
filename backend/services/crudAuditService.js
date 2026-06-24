@@ -214,7 +214,7 @@ const inferActionFromMessage = (message, fallback = 'create') => {
   return fallback;
 };
 
-const parseAccessAliases = () => {
+const parseAuditHistoryAccessUsers = () => {
   const rawValue = String(process.env.AUDIT_HISTORY_ACCESS || '').trim();
 
   if (!rawValue) {
@@ -238,11 +238,33 @@ const parseAccessAliases = () => {
 
 const ensureAccess = (username) => {
   const normalizedUsername = String(username || '').trim();
-  if (!normalizedUsername || !parseAccessAliases().includes(normalizedUsername)) {
+  if (!normalizedUsername) {
     const error = new Error('Anda tidak memiliki akses ke riwayat audit');
     error.statusCode = 403;
     throw error;
   }
+};
+
+const hasFullAuditAccess = (username) => {
+  const normalizedUsername = String(username || '').trim();
+  return Boolean(normalizedUsername) && parseAuditHistoryAccessUsers().includes(normalizedUsername);
+};
+
+const getAuditActorCandidates = (entry = {}) => {
+  const requestPayload = entry?.request_payload && typeof entry.request_payload === 'object' && !Array.isArray(entry.request_payload)
+    ? entry.request_payload
+    : {};
+
+  return [
+    entry?.actor_id,
+    requestPayload.username,
+    requestPayload.userId,
+    requestPayload.id_user,
+    requestPayload.kd_dokter,
+    requestPayload.nip
+  ]
+    .map((value) => String(value || '').trim().toLowerCase())
+    .filter(Boolean);
 };
 
 const ensureStorage = async () => {
@@ -273,10 +295,13 @@ export const initCrudAuditStorage = async () => {
 };
 
 export const getAuditHistoryAccessInfo = async (username) => {
+  const normalizedUsername = String(username || '').trim();
+  const fullAccess = hasFullAuditAccess(normalizedUsername);
   return {
     success: true,
-    can_access: parseAccessAliases().includes(String(username || '').trim()),
-    aliases: parseAccessAliases()
+    can_access: Boolean(normalizedUsername),
+    full_access: fullAccess,
+    actor_scope: fullAccess ? 'all' : normalizedUsername || ''
   };
 };
 
@@ -284,6 +309,7 @@ export const getAuditHistory = async (username, options = {}) => {
   ensureAccess(username);
   await ensureStorage();
 
+  const fullAccess = hasFullAuditAccess(username);
   const page = Math.max(Number.parseInt(options.page, 10) || 1, 1);
   const limit = Math.min(Math.max(Number.parseInt(options.limit, 10) || 50, 1), 200);
   const actionFilter = String(options.action || '').trim().toLowerCase();
@@ -306,12 +332,14 @@ export const getAuditHistory = async (username, options = {}) => {
     .filter(Boolean)
     .reverse()
     .filter((entry) => {
+      const actorCandidates = getAuditActorCandidates(entry);
+      const actorMatch = fullAccess || actorCandidates.includes(String(username || '').trim().toLowerCase());
       const actionMatch = !actionFilter || String(entry?.action || '').toLowerCase() === actionFilter;
       const statusMatch = !statusFilter || String(entry?.status || '').toLowerCase() === statusFilter;
       const entityMatch = !entityFilter || String(entry?.entity || '').toLowerCase().includes(entityFilter);
       const searchBlob = JSON.stringify(entry || {}).toLowerCase();
       const searchMatch = !searchFilter || searchBlob.includes(searchFilter);
-      return actionMatch && statusMatch && entityMatch && searchMatch;
+      return actorMatch && actionMatch && statusMatch && entityMatch && searchMatch;
     });
 
   const total = records.length;
@@ -320,6 +348,8 @@ export const getAuditHistory = async (username, options = {}) => {
 
   return {
     success: true,
+    full_access: fullAccess,
+    actor_scope: fullAccess ? 'all' : String(username || '').trim(),
     data: items,
     pagination: {
       page,

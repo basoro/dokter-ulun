@@ -2266,7 +2266,20 @@ app.get('/api/debug/digital-files-env', async (_req, res) => {
 
 app.post('/api/prescription-data', async (req, res) => {
   try {
-    const { action, no_rawat, kd_dokter, no_resep, medicines, compounds, prescription_date, prescription_time, prescription_status, username } = req.body;
+    const {
+      action,
+      no_rawat,
+      kd_dokter,
+      no_resep,
+      medicines,
+      compounds,
+      prescription_date,
+      prescription_time,
+      prescription_status,
+      username,
+      set_kronis,
+      set_prb
+    } = req.body;
     
     let result;
     
@@ -2285,7 +2298,8 @@ app.post('/api/prescription-data', async (req, res) => {
           compounds,
           prescription_date,
           prescription_status,
-          prescription_time
+          prescription_time,
+          { set_kronis, set_prb }
         );
         break;
         

@@ -29,6 +29,8 @@ interface AuditLogEntry {
 
 interface AuditHistoryResponse {
   success: boolean;
+  full_access?: boolean;
+  actor_scope?: string;
   data?: AuditLogEntry[];
   pagination?: {
     page: number;
@@ -86,10 +88,67 @@ const getAuditActorDisplay = (entry: AuditLogEntry) => {
     : actorName || '-';
 };
 
+const ENTITY_LABELS: Record<string, string> = {
+  allergy: 'Alergi',
+  assesmen_rehab_medik: 'Asesmen Rehab Medik',
+  auth_password: 'Password',
+  balance_cairan: 'Balance Cairan',
+  clinical_pathway: 'Clinical Pathway',
+  clinical_pathway_execution: 'Eksekusi Clinical Pathway',
+  clinical_pathway_patient_status: 'Status Clinical Pathway',
+  digital_file: 'Berkas Digital',
+  echocardiography: 'Ekokardiografi',
+  examination: 'Pemeriksaan',
+  icd_management: 'ICD Management',
+  internal_referral: 'Rujukan Internal',
+  laboratory_request: 'Permintaan Laboratorium',
+  laboratory_review: 'Review Laboratorium',
+  operation_report: 'Laporan Operasi',
+  patient_contact: 'Kontak Pasien',
+  patient_note: 'Catatan Pasien',
+  prescription: 'Resep',
+  procedure: 'Tindakan',
+  radiology_report: 'Laporan Radiologi',
+  radiology_request: 'Permintaan Radiologi',
+  resume_pasien: 'Resume Pasien',
+  resume_verification: 'Verifikasi Resume',
+  triase_igd: 'Triase IGD'
+};
+
+const ACTION_LABELS: Record<string, string> = {
+  create: 'Tambah',
+  update: 'Ubah',
+  delete: 'Hapus',
+  upsert: 'Simpan'
+};
+
+const STATUS_LABELS: Record<string, string> = {
+  success: 'Sukses',
+  error: 'Gagal'
+};
+
+const getEntityLabel = (value: string) => ENTITY_LABELS[String(value || '').trim()] || String(value || '-').trim() || '-';
+const getActionLabel = (value: string) => ACTION_LABELS[String(value || '').trim()] || String(value || '-').trim() || '-';
+const getStatusLabel = (value: string) => STATUS_LABELS[String(value || '').trim()] || String(value || '-').trim() || '-';
+
+const getStatusTone = (value: string) => (
+  String(value || '').trim().toLowerCase() === 'success'
+    ? 'border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-900 dark:bg-emerald-950/60 dark:text-emerald-300'
+    : 'border-rose-200 bg-rose-50 text-rose-700 dark:border-rose-900 dark:bg-rose-950/60 dark:text-rose-300'
+);
+
+const getAuditSummary = (entry: AuditLogEntry) => {
+  const entity = getEntityLabel(entry.entity);
+  const action = getActionLabel(entry.action);
+  const reference = String(entry.reference_id || entry.no_rawat || entry.no_rkm_medis || '').trim();
+  return reference ? `${action} ${entity} untuk ${reference}` : `${action} ${entity}`;
+};
+
 const AuditHistory: React.FC = () => {
   const { user } = useAuth();
   const [checkingAccess, setCheckingAccess] = React.useState(true);
   const [canAccess, setCanAccess] = React.useState(false);
+  const [fullAccess, setFullAccess] = React.useState(false);
   const [loading, setLoading] = React.useState(false);
   const [entries, setEntries] = React.useState<AuditLogEntry[]>([]);
   const [error, setError] = React.useState('');
@@ -111,6 +170,7 @@ const AuditHistory: React.FC = () => {
       const username = String(user?.username || '').trim();
       if (!username) {
         setCanAccess(false);
+        setFullAccess(false);
         setCheckingAccess(false);
         return;
       }
@@ -127,8 +187,10 @@ const AuditHistory: React.FC = () => {
         }
 
         setCanAccess(Boolean(result?.can_access));
+        setFullAccess(Boolean(result?.full_access));
       } catch (accessError) {
         setCanAccess(false);
+        setFullAccess(false);
         setError(accessError instanceof Error ? accessError.message : 'Gagal memeriksa akses riwayat audit');
       } finally {
         setCheckingAccess(false);
@@ -176,6 +238,7 @@ const AuditHistory: React.FC = () => {
           throw new Error(result?.error || 'Gagal memuat riwayat audit');
         }
 
+        setFullAccess(Boolean(result.full_access));
         setEntries(Array.isArray(result.data) ? result.data : []);
         setPagination((previous) => ({
           ...previous,
@@ -231,7 +294,9 @@ const AuditHistory: React.FC = () => {
         <div>
           <h1 className="text-2xl font-bold text-gray-900">Riwayat Audit</h1>
           <p className="text-sm text-muted-foreground">
-            Menampilkan log proses create, update, dan delete dari backend.
+            {fullAccess
+              ? 'Menampilkan seluruh riwayat audit karena username Anda terdaftar pada konfigurasi akses audit.'
+              : 'Menampilkan aktivitas Anda sendiri dari proses simpan, ubah, dan hapus di aplikasi.'}
           </p>
         </div>
         <div className="text-sm text-muted-foreground">
@@ -248,7 +313,7 @@ const AuditHistory: React.FC = () => {
             <Input
               value={searchInput}
               onChange={(event) => setSearchInput(event.target.value)}
-              placeholder="Cari username, endpoint, no rawat, payload"
+              placeholder="Cari no. rawat, endpoint, referensi, atau isi log"
             />
             <Select value={action} onValueChange={(value) => { setAction(value); setPage(1); }}>
               <SelectTrigger>
@@ -278,7 +343,7 @@ const AuditHistory: React.FC = () => {
                 setEntity(event.target.value);
                 setPage(1);
               }}
-              placeholder="Filter entity, mis. prescription"
+              placeholder="Filter modul, mis. prescription"
             />
           </div>
           <div className="flex flex-wrap gap-2">
@@ -326,19 +391,31 @@ const AuditHistory: React.FC = () => {
                 <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
                   <div className="space-y-1">
                     <CardTitle className="text-base">
-                      {entry.entity || '-'} · {entry.action || '-'} · {entry.status || '-'}
+                      {getAuditSummary(entry)}
                     </CardTitle>
                     <p className="text-sm text-muted-foreground">
                       {formatDateTime(entry.created_at)} · {entry.method} {entry.endpoint}
                     </p>
                   </div>
-                  <div className="text-sm text-muted-foreground">
-                    Aktor: <span className="font-medium text-foreground">{getAuditActorDisplay(entry)}</span>
+                  <div className="flex flex-wrap items-center gap-2 text-sm">
+                    <span className="inline-flex items-center rounded-full border px-2.5 py-1 text-xs font-medium border-slate-200 bg-slate-100 text-slate-700 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200">
+                      {getEntityLabel(entry.entity)}
+                    </span>
+                    <span className="inline-flex items-center rounded-full border px-2.5 py-1 text-xs font-medium border-sky-200 bg-sky-100 text-sky-700 dark:border-sky-900 dark:bg-sky-950/60 dark:text-sky-300">
+                      {getActionLabel(entry.action)}
+                    </span>
+                    <span className={`inline-flex items-center rounded-full border px-2.5 py-1 text-xs font-medium ${getStatusTone(entry.status)}`}>
+                      {getStatusLabel(entry.status)}
+                    </span>
                   </div>
                 </div>
               </CardHeader>
               <CardContent className="space-y-4">
-                <div className="grid grid-cols-1 gap-3 text-sm md:grid-cols-3">
+                <div className="grid grid-cols-1 gap-3 text-sm md:grid-cols-2 lg:grid-cols-4">
+                  <div>
+                    <p className="text-muted-foreground">Aktor</p>
+                    <p className="font-medium">{getAuditActorDisplay(entry)}</p>
+                  </div>
                   <div>
                     <p className="text-muted-foreground">No. Rawat</p>
                     <p className="font-medium">{entry.no_rawat || '-'}</p>
@@ -352,24 +429,28 @@ const AuditHistory: React.FC = () => {
                     <p className="font-medium">{entry.reference_id || '-'}</p>
                   </div>
                 </div>
+                <div className="rounded-lg border bg-muted/20 p-3 text-sm">
+                  <p className="text-muted-foreground">Ringkasan</p>
+                  <p className="font-medium text-foreground">{getAuditSummary(entry)}</p>
+                </div>
                 <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
                   <div>
-                    <p className="mb-2 text-sm font-medium text-gray-900">Request Payload</p>
-                    <pre className="max-h-64 overflow-auto rounded-md bg-slate-950 p-3 text-xs text-slate-100">
+                    <p className="mb-2 text-sm font-medium text-foreground">Data yang dikirim</p>
+                    <pre className="max-h-64 overflow-auto rounded-md border bg-slate-950 p-3 text-xs text-slate-100 dark:border-slate-800">
                       {formatJson(entry.request_payload)}
                     </pre>
                   </div>
                   <div>
-                    <p className="mb-2 text-sm font-medium text-gray-900">Response Payload</p>
-                    <pre className="max-h-64 overflow-auto rounded-md bg-slate-950 p-3 text-xs text-slate-100">
+                    <p className="mb-2 text-sm font-medium text-foreground">Hasil proses</p>
+                    <pre className="max-h-64 overflow-auto rounded-md border bg-slate-950 p-3 text-xs text-slate-100 dark:border-slate-800">
                       {formatJson(entry.response_payload)}
                     </pre>
                   </div>
                 </div>
                 {entry.error_message ? (
                   <div>
-                    <p className="mb-2 text-sm font-medium text-red-700">Error</p>
-                    <pre className="overflow-auto rounded-md bg-red-50 p-3 text-xs text-red-700">
+                    <p className="mb-2 text-sm font-medium text-red-700 dark:text-red-300">Pesan error</p>
+                    <pre className="overflow-auto rounded-md border border-red-200 bg-red-50 p-3 text-xs text-red-700 dark:border-red-900 dark:bg-red-950/40 dark:text-red-300">
                       {entry.error_message}
                     </pre>
                   </div>

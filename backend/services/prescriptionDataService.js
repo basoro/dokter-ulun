@@ -34,6 +34,15 @@ class PrescriptionDataService {
     return String(value ?? '').trim();
   }
 
+  normalizeBooleanFlag(value) {
+    if (typeof value === 'boolean') {
+      return value;
+    }
+
+    const normalizedValue = String(value ?? '').trim().toLowerCase();
+    return ['1', 'true', 'ya', 'yes', 'on'].includes(normalizedValue);
+  }
+
   roundToThree(value) {
     return Math.round((Number(value) || 0) * 1000) / 1000;
   }
@@ -425,6 +434,77 @@ class PrescriptionDataService {
     if (shortages.length) {
       const resolvedBangsalName = String(rows?.[0]?.nm_bangsal || '').trim() || namaBangsal;
       throw new Error(`Stok tidak mencukupi di ${resolvedBangsalName} : ${shortages.join('; ')}`);
+    }
+  }
+
+  async getPrescriptionBpjsMeta(connection, no_rawat) {
+    const [rows] = await connection.execute(
+      `
+        SELECT
+          rp.no_rkm_medis,
+          COALESCE(bs.no_sep, '') AS no_sep
+        FROM reg_periksa rp
+        LEFT JOIN bridging_sep bs ON bs.no_rawat = rp.no_rawat
+        WHERE rp.no_rawat = ?
+        LIMIT 1
+      `,
+      [no_rawat]
+    );
+
+    return {
+      no_rkm_medis: String(rows?.[0]?.no_rkm_medis || '').trim(),
+      no_sep: String(rows?.[0]?.no_sep || '').trim()
+    };
+  }
+
+  async insertLegacyPrescriptionFlags(connection, {
+    no_rawat,
+    kd_dokter,
+    prescriptionDate,
+    setKronis = false,
+    setPrb = false
+  }) {
+    if (!setKronis && !setPrb) {
+      return;
+    }
+
+    const bpjsMeta = await this.getPrescriptionBpjsMeta(connection, no_rawat);
+    if (!bpjsMeta.no_rkm_medis) {
+      return;
+    }
+
+    if (setKronis) {
+      await connection.execute(
+        `
+          INSERT INTO mlite_veronisa
+          VALUES (NULL, ?, ?, ?, ?, ?, 'Belum', ?)
+        `,
+        [
+          prescriptionDate,
+          bpjsMeta.no_rkm_medis,
+          no_rawat,
+          prescriptionDate,
+          bpjsMeta.no_sep,
+          kd_dokter
+        ]
+      );
+    }
+
+    if (setPrb) {
+      await connection.execute(
+        `
+          INSERT INTO mlite_srb
+          VALUES (NULL, ?, ?, ?, ?, ?, 'Belum', ?)
+        `,
+        [
+          prescriptionDate,
+          bpjsMeta.no_rkm_medis,
+          no_rawat,
+          prescriptionDate,
+          bpjsMeta.no_sep,
+          kd_dokter
+        ]
+      );
     }
   }
 
@@ -945,7 +1025,7 @@ class PrescriptionDataService {
   }
 
   // Create new prescription
-  async createPrescription(no_rawat, kd_dokter, medicines, compounds, prescriptionDate, prescriptionStatus, prescriptionTime) {
+  async createPrescription(no_rawat, kd_dokter, medicines, compounds, prescriptionDate, prescriptionStatus, prescriptionTime, options = {}) {
     if (!no_rawat || !kd_dokter) {
       throw new Error('no_rawat and kd_dokter are required');
     }
@@ -958,6 +1038,8 @@ class PrescriptionDataService {
       const normalizedPrescriptionDate = this.normalizePrescriptionDate(prescriptionDate) || currentSystemDateTime.date;
       const normalizedPrescriptionTime = this.normalizePrescriptionTime(prescriptionTime) || currentSystemDateTime.time;
       const resolvedPrescriptionStatus = await this.resolvePrescriptionStatus(connection, no_rawat, prescriptionStatus);
+      const setKronis = this.normalizeBooleanFlag(options?.set_kronis);
+      const setPrb = this.normalizeBooleanFlag(options?.set_prb);
       const normalizedMedicines = await this.normalizeMedicines(medicines);
       const normalizedCompounds = await this.normalizeCompounds(connection, compounds);
 
@@ -1123,6 +1205,16 @@ class PrescriptionDataService {
             );
           }
         }
+      }
+
+      if (resolvedPrescriptionStatus === 'ralan') {
+        await this.insertLegacyPrescriptionFlags(connection, {
+          no_rawat,
+          kd_dokter,
+          prescriptionDate: normalizedPrescriptionDate,
+          setKronis,
+          setPrb
+        });
       }
       
       await connection.commit();

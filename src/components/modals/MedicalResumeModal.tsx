@@ -1336,6 +1336,20 @@ export const MedicalResumeModal: React.FC<MedicalResumeModalProps> = ({
     });
   };
 
+  const handlePickerItemClick = (event: React.MouseEvent<HTMLDivElement>, itemId: string) => {
+    const selectionText = window.getSelection?.()?.toString().trim() || '';
+    if (selectionText) {
+      return;
+    }
+
+    const target = event.target as HTMLElement | null;
+    if (target?.closest('[data-picker-checkbox="true"]')) {
+      return;
+    }
+
+    togglePickerItem(itemId);
+  };
+
   const applyPickerSelection = () => {
     if (!pickerConfig || selectedPickerItems.length === 0) {
       return;
@@ -1733,21 +1747,33 @@ export const MedicalResumeModal: React.FC<MedicalResumeModalProps> = ({
                     {filteredPickerItems.map((item) => {
                       const checked = selectedPickerItems.includes(item.id);
                       return (
-                        <button
-                          type="button"
+                        <div
+                          role="button"
+                          tabIndex={0}
                           key={item.id}
-                          onClick={() => togglePickerItem(item.id)}
-                          className={`w-full p-4 text-left transition-colors hover:bg-muted/50 ${checked ? 'bg-muted/60' : ''}`}
+                          onClick={(event) => handlePickerItemClick(event, item.id)}
+                          onKeyDown={(event) => {
+                            if (event.key === 'Enter' || event.key === ' ') {
+                              event.preventDefault();
+                              togglePickerItem(item.id);
+                            }
+                          }}
+                          className={`w-full cursor-pointer p-4 text-left transition-colors hover:bg-muted/50 ${checked ? 'bg-muted/60' : ''}`}
                         >
                           <div className="flex items-start gap-3">
-                            <Checkbox
-                              checked={checked}
-                              onCheckedChange={() => togglePickerItem(item.id)}
-                              className="mt-1"
-                            />
-                            <div className="space-y-1">
+                            <div
+                              data-picker-checkbox="true"
+                              onClick={(event) => event.stopPropagation()}
+                            >
+                              <Checkbox
+                                checked={checked}
+                                onCheckedChange={() => togglePickerItem(item.id)}
+                                className="mt-1"
+                              />
+                            </div>
+                            <div className="space-y-1 select-text">
                               <div className="flex items-center justify-between gap-3">
-                                <p className="font-medium">{item.title}</p>
+                                <p className="cursor-text font-medium select-text">{item.title}</p>
                                 {item.badgeLabel ? (
                                   <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ${item.badgeClassName || 'bg-muted text-foreground'}`}>
                                     {item.badgeLabel}
@@ -1755,14 +1781,14 @@ export const MedicalResumeModal: React.FC<MedicalResumeModalProps> = ({
                                 ) : null}
                               </div>
                               {item.subtitle ? (
-                                <p className="text-xs text-muted-foreground">{item.subtitle}</p>
+                                <p className="cursor-text select-text text-xs text-muted-foreground">{item.subtitle}</p>
                               ) : null}
                               {item.description ? (
-                                <p className="text-sm whitespace-pre-line break-words text-muted-foreground">{item.description}</p>
+                                <p className="cursor-text whitespace-pre-line break-words select-text text-sm text-muted-foreground">{item.description}</p>
                               ) : null}
                             </div>
                           </div>
-                        </button>
+                        </div>
                       );
                     })}
                   </div>

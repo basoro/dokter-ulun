@@ -38,6 +38,8 @@ type PrescriptionStatus = 'Ralan' | 'Ranap' | 'Pulang' | 'IBS';
 interface Medication {
   tanggal: string;
   status: PrescriptionStatus;
+  set_kronis?: boolean;
+  set_prb?: boolean;
   obat: {
     kode_brng: string;
     nama: string;
@@ -598,6 +600,8 @@ const createDefaultCompoundPrescription = (): CompoundPrescription => ({
 const getDefaultMedicationForm = (defaultStatus: PrescriptionStatus = 'Ralan'): Medication[] => ([{
   tanggal: getCurrentPrescriptionDate(),
   status: defaultStatus,
+  set_kronis: false,
+  set_prb: false,
   obat: [{
     kode_brng: '',
     nama: '',
@@ -3731,9 +3735,16 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
             <div>
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <p className="text-sm text-muted-foreground">Sumber</p>
-                <span className={cn('inline-flex items-center rounded-full border px-2.5 py-1 text-xs font-medium', medicationTypeMeta.className)}>
-                  {medicationTypeMeta.label}
-                </span>
+                <div className="flex flex-wrap items-center gap-2">
+                  {med.is_kronis ? (
+                    <span className="inline-flex items-center rounded-full border border-emerald-200 bg-emerald-100 px-2.5 py-1 text-xs font-medium text-emerald-700 dark:border-emerald-700 dark:bg-emerald-900 dark:text-emerald-100">
+                      Kronis
+                    </span>
+                  ) : null}
+                  <span className={cn('inline-flex items-center rounded-full border px-2.5 py-1 text-xs font-medium', medicationTypeMeta.className)}>
+                    {medicationTypeMeta.label}
+                  </span>
+                </div>
               </div>
               <p className="font-medium">{med.source}</p>
               {med.is_package ? (
@@ -5252,6 +5263,8 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
     const newMedication: Medication = {
       tanggal: getCurrentPrescriptionDate(),
       status: med.status || (effectiveStatusRawat === 'Ranap' ? 'Ranap' : 'Ralan'),
+      set_kronis: false,
+      set_prb: false,
       obat: (Array.isArray(med?.obat) ? med.obat : []).map((o: any) => ({
         kode_brng: o.kode_brng || '',
         nama: o.nama,
@@ -5345,6 +5358,8 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
       setMedications([{
         tanggal: getPrescriptionDateOnly(med.tanggal),
         status: med.status || mapPrescriptionSourceToStatus(med.source),
+        set_kronis: false,
+        set_prb: false,
         obat: detailMedicines.map((item: any) => ({
           kode_brng: item.kode_brng || '',
           nama: item.nama_brng || item.nama || '',
@@ -5754,7 +5769,16 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
   ) => {
     setMedications((previous) => previous.map((item, index) => (
       index === medIndex
-        ? { ...item, status: prescriptionStatus }
+        ? {
+            ...item,
+            status: prescriptionStatus,
+            ...(prescriptionStatus === 'Ralan'
+              ? {}
+              : {
+                  set_kronis: false,
+                  set_prb: false
+                })
+          }
         : item
     )));
 
@@ -8535,6 +8559,8 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
           .map((medication) => ({
             tanggal: medication.tanggal,
             status: medication.status,
+            set_kronis: Boolean(medication.set_kronis),
+            set_prb: Boolean(medication.set_prb),
             medicines: medication.obat
               .map((obat) => ({
                 kode_brng: String(obat.kode_brng ?? '').trim(),
@@ -8608,6 +8634,8 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
                 prescription_date: prescription.tanggal,
                 prescription_time: getCurrentPrescriptionTime(),
                 prescription_status: prescription.status,
+                set_kronis: prescription.status === 'Ralan' ? prescription.set_kronis : false,
+                set_prb: prescription.status === 'Ralan' ? prescription.set_prb : false,
                 medicines: prescription.medicines,
                 compounds: []
               })
@@ -10985,7 +11013,12 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
                         </Button>
                       )}
                     </div>
-                    <div className="grid grid-cols-1 gap-4 mb-4 md:max-w-xl md:grid-cols-2">
+                    <div className={cn(
+                      "grid grid-cols-1 gap-4 mb-4",
+                      preferredCareSectionTab === 'outpatient' && medication.status === 'Ralan'
+                        ? "md:grid-cols-3"
+                        : "md:max-w-xl md:grid-cols-2"
+                    )}>
                       <div>
                         <Label htmlFor={`med-date-${medIndex}`}>Tanggal Resep</Label>
                         <DatePickerPopover
@@ -11023,6 +11056,41 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
                           </SelectContent>
                         </Select>
                       </div>
+                      {preferredCareSectionTab === 'outpatient' && medication.status === 'Ralan' ? (
+                        <div>
+                          <Label>Set</Label>
+                          <div className="flex h-10 items-center gap-4 rounded-md border border-emerald-200 bg-emerald-50/70 px-3 dark:border-emerald-900 dark:bg-emerald-950/30">
+                            <label className="flex items-center gap-2 text-sm font-medium text-emerald-900 dark:text-emerald-200">
+                              <Checkbox
+                                checked={Boolean(medication.set_kronis)}
+                                onCheckedChange={(checked) => {
+                                  setMedications((previous) => previous.map((item, index) => (
+                                    index === medIndex
+                                      ? { ...item, set_kronis: checked === true }
+                                      : item
+                                  )));
+                                }}
+                                disabled={!!editingPrescriptionNo}
+                              />
+                              Kronis
+                            </label>
+                            <label className="flex items-center gap-2 text-sm font-medium text-emerald-900 dark:text-emerald-200">
+                              <Checkbox
+                                checked={Boolean(medication.set_prb)}
+                                onCheckedChange={(checked) => {
+                                  setMedications((previous) => previous.map((item, index) => (
+                                    index === medIndex
+                                      ? { ...item, set_prb: checked === true }
+                                      : item
+                                  )));
+                                }}
+                                disabled={!!editingPrescriptionNo}
+                              />
+                              PRB
+                            </label>
+                          </div>
+                        </div>
+                      ) : null}
                     </div>
                     
                     <div className="space-y-4">
