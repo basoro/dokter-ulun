@@ -17,7 +17,7 @@ import {
   User
 } from 'lucide-react';
 import { API_URLS } from '@/config/api';
-import { formatUIDate, formatUIDateTime } from '@/lib/date-utils';
+import { formatUIDate, formatUIDateTime, parseDateLike } from '@/lib/date-utils';
 import {
   Dialog,
   DialogContent,
@@ -96,6 +96,43 @@ const formatDateTime = (value?: string) => {
 
 const formatDate = (value?: string) => {
   return formatUIDate(value);
+};
+
+const formatAge = (birthDateValue?: string) => {
+  const birthDate = parseDateLike(String(birthDateValue || '').trim());
+  const referenceDate = new Date();
+
+  if (!birthDate) {
+    return '-';
+  }
+
+  let years = referenceDate.getFullYear() - birthDate.getFullYear();
+  let months = referenceDate.getMonth() - birthDate.getMonth();
+  let days = referenceDate.getDate() - birthDate.getDate();
+
+  if (days < 0) {
+    const previousMonth = new Date(referenceDate.getFullYear(), referenceDate.getMonth(), 0);
+    days += previousMonth.getDate();
+    months -= 1;
+  }
+
+  if (months < 0) {
+    months += 12;
+    years -= 1;
+  }
+
+  const parts: string[] = [];
+  if (years > 0) {
+    parts.push(`${years} th`);
+  }
+  if (months > 0) {
+    parts.push(`${months} bln`);
+  }
+  if (days > 0 || parts.length === 0) {
+    parts.push(`${Math.max(days, 0)} hr`);
+  }
+
+  return parts.join(' ');
 };
 
 const formatLongDate = (value?: string) => {
@@ -672,7 +709,10 @@ const MedicalRecordReadonly: React.FC<MedicalRecordReadonlyProps> = ({
                   </div>
                   <div>
                     <p className="text-sm text-muted-foreground">Tanggal Lahir</p>
-                    <p className="font-medium">{formatDate(currentPatient.tanggal_lahir)}</p>
+                    <p className="font-medium">
+                      {formatDate(currentPatient.tanggal_lahir)}
+                      {currentPatient.tanggal_lahir ? ` (${formatAge(currentPatient.tanggal_lahir)})` : ''}
+                    </p>
                   </div>
                   <div>
                     <p className="text-sm text-muted-foreground">Jenis Kelamin</p>

@@ -9146,7 +9146,10 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
                 <Calendar className="h-5 w-5 text-muted-foreground shrink-0 mt-0.5" />
                 <div>
                   <p className="text-sm text-muted-foreground">Tanggal Lahir</p>
-                  <p className="font-medium">{formatUIDate(currentPatient.tanggal_lahir)}</p>
+                  <p className="font-medium">
+                    {formatUIDate(currentPatient.tanggal_lahir)}
+                    {currentPatient.tanggal_lahir ? ` (${formatLabSheetAge(currentPatient.tanggal_lahir)})` : ''}
+                  </p>
                 </div>
               </div>
               <div className="flex items-start space-x-4">
