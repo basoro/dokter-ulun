@@ -4,6 +4,9 @@ class GetMedicalRecordService {
   static DEFAULT_LIMIT = 5;
   static ORTHANC_CACHE_TTL_MS = 5 * 60 * 1000;
   static ORTHANC_PAYLOAD_CACHE_TTL_MS = 2 * 60 * 1000;
+  static ORTHANC_REQUEST_TIMEOUT_MS = 15000;
+  static ORTHANC_REQUEST_RETRY_COUNT = 1;
+  static ORTHANC_INSTANCE_SORT_CONCURRENCY = 8;
   static orthancStudyCache = new Map();
   static orthancStudyInFlight = new Map();
   static radiologyPacsPayloadCache = new Map();
@@ -55,6 +58,48 @@ class GetMedicalRecordService {
 
     inFlightStore.set(cacheKey, nextPromise);
     return nextPromise;
+  }
+
+  static getPositiveIntegerEnvValue(key, fallbackValue) {
+    const rawValue = Number.parseInt(String(process.env[key] || '').trim(), 10);
+    return Number.isFinite(rawValue) && rawValue > 0 ? rawValue : fallbackValue;
+  }
+
+  static wait(ms) {
+    return new Promise((resolve) => setTimeout(resolve, ms));
+  }
+
+  static isOrthancRetriableError(error) {
+    if (!error) {
+      return false;
+    }
+
+    if (error.name === 'AbortError') {
+      return true;
+    }
+
+    const errorCode = String(error.code || error.cause?.code || '').trim().toUpperCase();
+    return ['ETIMEDOUT', 'ECONNRESET', 'ECONNREFUSED', 'EHOSTUNREACH', 'ENETUNREACH'].includes(errorCode);
+  }
+
+  static async mapWithConcurrency(items, concurrency, mapper) {
+    const normalizedItems = Array.isArray(items) ? items : [];
+    const normalizedConcurrency = Math.max(1, Number(concurrency) || 1);
+    const results = new Array(normalizedItems.length);
+    let currentIndex = 0;
+
+    const worker = async () => {
+      while (currentIndex < normalizedItems.length) {
+        const index = currentIndex++;
+        results[index] = await mapper(normalizedItems[index], index);
+      }
+    };
+
+    await Promise.all(
+      Array.from({ length: Math.min(normalizedConcurrency, normalizedItems.length) }, () => worker())
+    );
+
+    return results;
   }
 
   static buildRadiologyPacsPayloadCacheKey(noRawat, examDate, examName, mode) {
@@ -460,19 +505,52 @@ class GetMedicalRecordService {
 
     const baseUrl = orthancConfig.server.replace(/\/+$/, '');
     const authToken = Buffer.from(`${orthancConfig.username}:${orthancConfig.password}`).toString('base64');
-    const response = await fetch(`${baseUrl}${pathname}`, {
-      ...init,
-      headers: {
-        Authorization: `Basic ${authToken}`,
-        ...(init.headers || {})
-      }
-    });
+    const timeoutMs = this.getPositiveIntegerEnvValue('ORTHANC_REQUEST_TIMEOUT_MS', this.ORTHANC_REQUEST_TIMEOUT_MS);
+    const retryCount = this.getPositiveIntegerEnvValue('ORTHANC_REQUEST_RETRY_COUNT', this.ORTHANC_REQUEST_RETRY_COUNT);
+    let lastError = null;
 
-    if (!response.ok) {
-      throw new Error(`Orthanc request failed with status ${response.status}`);
+    for (let attempt = 0; attempt <= retryCount; attempt += 1) {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+
+      try {
+        const response = await fetch(`${baseUrl}${pathname}`, {
+          ...init,
+          signal: controller.signal,
+          headers: {
+            Authorization: `Basic ${authToken}`,
+            ...(init.headers || {})
+          }
+        });
+
+        if (!response.ok) {
+          const orthancError = new Error(`Orthanc request failed with status ${response.status}`);
+          orthancError.status = response.status;
+
+          if (attempt < retryCount && response.status >= 500) {
+            lastError = orthancError;
+            await this.wait(250 * (attempt + 1));
+            continue;
+          }
+
+          throw orthancError;
+        }
+
+        return response;
+      } catch (error) {
+        lastError = error;
+        if (attempt < retryCount && this.isOrthancRetriableError(error)) {
+          await this.wait(250 * (attempt + 1));
+          continue;
+        }
+
+        throw error;
+      } finally {
+        clearTimeout(timeoutId);
+      }
     }
 
-    return response;
+    throw lastError || new Error('Orthanc request failed');
   }
 
   static async fetchRadiologyPacsSeries(noRawat) {
@@ -681,6 +759,10 @@ class GetMedicalRecordService {
 
   static async sortMatchedRadiologySeries(matchedSeries) {
     const normalizedSeries = Array.isArray(matchedSeries) ? matchedSeries.filter(Boolean) : [];
+    const instanceSortConcurrency = this.getPositiveIntegerEnvValue(
+      'ORTHANC_INSTANCE_SORT_CONCURRENCY',
+      this.ORTHANC_INSTANCE_SORT_CONCURRENCY
+    );
 
     const sortedSeries = await Promise.all(
       normalizedSeries.map(async (series) => {
@@ -689,15 +771,29 @@ class GetMedicalRecordService {
           return series;
         }
 
-        const enrichedImages = await Promise.all(
-          images.map(async (image, index) => {
-            const sortMetadata = await this.getOrthancInstanceSortMetadata(image?.instance_id);
-            return {
-              ...image,
-              ...sortMetadata,
-              original_index: index
-            };
-          })
+        const enrichedImages = await this.mapWithConcurrency(
+          images,
+          instanceSortConcurrency,
+          async (image, index) => {
+            try {
+              const sortMetadata = await this.getOrthancInstanceSortMetadata(image?.instance_id);
+              return {
+                ...image,
+                ...sortMetadata,
+                original_index: index
+              };
+            } catch (error) {
+              console.error(`Error loading Orthanc instance sort metadata ${image?.instance_id || ''}:`, error);
+              return {
+                ...image,
+                instance_number: null,
+                acquisition_number: null,
+                slice_location: null,
+                image_position_z: null,
+                original_index: index
+              };
+            }
+          }
         );
 
         enrichedImages.sort((left, right) => this.compareRadiologyPacsImageOrder(left, right));
