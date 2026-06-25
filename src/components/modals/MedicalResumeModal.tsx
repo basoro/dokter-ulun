@@ -1,5 +1,15 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle
+} from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -151,12 +161,61 @@ interface ResumePickerConfig {
   items: ResumePickerItem[];
 }
 
+const RESUME_PAYLOAD_LABELS: Record<string, string> = {
+  no_rawat: 'No. Rawat',
+  status_rawat: 'Status Rawat',
+  kd_dokter: 'Kode Dokter',
+  actor_username: 'Username Aktor',
+  actor_name: 'Nama Aktor',
+  diagnosa_awal: 'Diagnosa Masuk',
+  alasan: 'Alasan Masuk',
+  keluhan_utama: 'Ringkasan Riwayat Penyakit',
+  pemeriksaan_fisik: 'Pemeriksaan Fisik',
+  jalannya_penyakit: 'Jalannya Penyakit',
+  pemeriksaan_penunjang: 'Pemeriksaan Penunjang',
+  hasil_laborat: 'Pemeriksaan Laboratorium',
+  tindakan_dan_operasi: 'Tindakan dan Operasi',
+  obat_di_rs: 'Obat di RS',
+  diagnosa_utama: 'Diagnosa Utama',
+  kd_diagnosa_utama: 'Kode Diagnosa Utama',
+  diagnosa_sekunder: 'Diagnosa Sekunder 1',
+  kd_diagnosa_sekunder: 'Kode Diagnosa Sekunder 1',
+  diagnosa_sekunder2: 'Diagnosa Sekunder 2',
+  kd_diagnosa_sekunder2: 'Kode Diagnosa Sekunder 2',
+  diagnosa_sekunder3: 'Diagnosa Sekunder 3',
+  kd_diagnosa_sekunder3: 'Kode Diagnosa Sekunder 3',
+  diagnosa_sekunder4: 'Diagnosa Sekunder 4',
+  kd_diagnosa_sekunder4: 'Kode Diagnosa Sekunder 4',
+  prosedur_utama: 'Prosedur Utama',
+  kd_prosedur_utama: 'Kode Prosedur Utama',
+  prosedur_sekunder: 'Prosedur Sekunder 1',
+  kd_prosedur_sekunder: 'Kode Prosedur Sekunder 1',
+  prosedur_sekunder2: 'Prosedur Sekunder 2',
+  kd_prosedur_sekunder2: 'Kode Prosedur Sekunder 2',
+  prosedur_sekunder3: 'Prosedur Sekunder 3',
+  kd_prosedur_sekunder3: 'Kode Prosedur Sekunder 3',
+  alergi: 'Alergi',
+  diet: 'Diet',
+  lab_belum: 'Lab Belum',
+  edukasi: 'Edukasi',
+  cara_keluar: 'Cara Keluar',
+  ket_keluar: 'Keterangan Keluar',
+  keadaan: 'Keadaan',
+  ket_keadaan: 'Keterangan Keadaan',
+  dilanjutkan: 'Dilanjutkan',
+  ket_dilanjutkan: 'Keterangan Dilanjutkan',
+  kontrol: 'Kontrol',
+  obat_pulang: 'Obat Pulang',
+  verified: 'Status Verifikasi'
+};
+
 interface ResumeHistoryLogEntry {
   no_rawat: string;
   timestamp: string;
   action: 'create' | 'update' | 'delete' | 'verify' | 'unverify' | string;
   status_rawat?: 'Ralan' | 'Ranap' | string;
   message?: string;
+  request_payload?: Record<string, unknown>;
   actor?: {
     username?: string;
     doctor_code?: string;
@@ -450,6 +509,7 @@ export const MedicalResumeModal: React.FC<MedicalResumeModalProps> = ({
   const [historyOpen, setHistoryOpen] = useState(false);
   const [historyLoading, setHistoryLoading] = useState(false);
   const [historyEntries, setHistoryEntries] = useState<ResumeHistoryLogEntry[]>([]);
+  const [saveConfirmOpen, setSaveConfirmOpen] = useState(false);
   const isRanapVerified = !isRalan && String(formData?.ket_dilanjutkan || '').trim() === 'Selesai';
   const canVerifyRanap = !isRalan && Number(formData?.is_dpjp_utama || 0) === 1;
 
@@ -621,7 +681,7 @@ export const MedicalResumeModal: React.FC<MedicalResumeModalProps> = ({
     }
   };
 
-  const handleSave = async () => {
+  const executeSave = async () => {
     if (!noRawat) {
       toast({
         title: "Error",
@@ -635,15 +695,6 @@ export const MedicalResumeModal: React.FC<MedicalResumeModalProps> = ({
       toast({
         title: "Error",
         description: "Identitas dokter login tidak ditemukan",
-        variant: "destructive",
-      });
-      return;
-    }
-
-    if (!isRalan && isRanapVerified) {
-      toast({
-        title: "Error",
-        description: "Resume sudah diverifikasi. Batal verifikasi terlebih dahulu sebelum mengubah resume medis.",
         variant: "destructive",
       });
       return;
@@ -673,9 +724,10 @@ export const MedicalResumeModal: React.FC<MedicalResumeModalProps> = ({
       }
 
       await fetchResume();
+      setSaveConfirmOpen(false);
       toast({
         title: "Berhasil",
-        description: "Resume medis berhasil disimpan",
+        description: formData.has_resume ? "Resume medis berhasil diperbarui" : "Resume medis berhasil disimpan",
       });
     } catch (error) {
       toast({
@@ -686,6 +738,15 @@ export const MedicalResumeModal: React.FC<MedicalResumeModalProps> = ({
     } finally {
       setSaving(false);
     }
+  };
+
+  const handleSave = () => {
+    if (formData.has_resume) {
+      setSaveConfirmOpen(true);
+      return;
+    }
+
+    void executeSave();
   };
 
   const handleDelete = async () => {
@@ -1528,6 +1589,71 @@ export const MedicalResumeModal: React.FC<MedicalResumeModalProps> = ({
     }
   };
 
+  const formatResumePayloadLabel = (key: string) => (
+    RESUME_PAYLOAD_LABELS[key] ||
+    key
+      .split('_')
+      .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+      .join(' ')
+  );
+
+  const isMeaningfulResumePayloadValue = (value: unknown): boolean => {
+    if (value === null || value === undefined) {
+      return false;
+    }
+
+    if (typeof value === 'string') {
+      return String(value).trim() !== '';
+    }
+
+    if (Array.isArray(value)) {
+      return value.length > 0;
+    }
+
+    if (typeof value === 'object') {
+      return Object.keys(value as Record<string, unknown>).length > 0;
+    }
+
+    return true;
+  };
+
+  const formatResumePayloadValue = (value: unknown): string => {
+    if (value === null || value === undefined) {
+      return '-';
+    }
+
+    if (typeof value === 'boolean') {
+      return value ? 'Ya' : 'Tidak';
+    }
+
+    if (Array.isArray(value)) {
+      return value.map((item) => formatResumePayloadValue(item)).filter(Boolean).join(', ');
+    }
+
+    if (typeof value === 'object') {
+      return Object.entries(value as Record<string, unknown>)
+        .filter(([, nestedValue]) => isMeaningfulResumePayloadValue(nestedValue))
+        .map(([nestedKey, nestedValue]) => `${formatResumePayloadLabel(nestedKey)}: ${formatResumePayloadValue(nestedValue)}`)
+        .join('\n');
+    }
+
+    return String(value);
+  };
+
+  const getReadableResumePayloadEntries = (payload?: Record<string, unknown>) => {
+    if (!payload || typeof payload !== 'object') {
+      return [];
+    }
+
+    return Object.entries(payload)
+      .filter(([, value]) => isMeaningfulResumePayloadValue(value))
+      .map(([key, value]) => ({
+        key,
+        label: formatResumePayloadLabel(key),
+        value: formatResumePayloadValue(value)
+      }));
+  };
+
   return (
     <Dialog open={isOpen} onOpenChange={onClose}>
       <DialogContent className="max-w-6xl max-h-[90vh] overflow-y-auto">
@@ -1608,7 +1734,7 @@ export const MedicalResumeModal: React.FC<MedicalResumeModalProps> = ({
                         Hapus
                       </Button>
                     ) : null}
-                    <Button onClick={handleSave} disabled={saving || deleting || verifying || isRanapVerified}>
+                    <Button onClick={handleSave} disabled={saving || deleting || verifying}>
                       {saving ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : null}
                       {formData.has_resume ? 'Update' : 'Simpan'}
                     </Button>
@@ -1622,7 +1748,7 @@ export const MedicalResumeModal: React.FC<MedicalResumeModalProps> = ({
                       disabled={saving || deleting || verifying || !noRawat}
                     >
                       <History className="h-4 w-4 mr-2" />
-                      Log Resume
+                      Riwayat Resume
                     </Button>
                     {canVerifyRanap ? (
                       <Button
@@ -2020,6 +2146,23 @@ export const MedicalResumeModal: React.FC<MedicalResumeModalProps> = ({
                       {entry.message ? (
                         <p className="mt-3 text-sm text-muted-foreground">{entry.message}</p>
                       ) : null}
+                      {getReadableResumePayloadEntries(entry.request_payload).length > 0 ? (
+                        <div className="mt-4 rounded-md border bg-muted/20 p-3">
+                          <p className="mb-3 text-sm font-semibold">Request Payload</p>
+                          <div className="space-y-3">
+                            {getReadableResumePayloadEntries(entry.request_payload).map((payloadEntry) => (
+                              <div key={payloadEntry.key} className="grid gap-1 md:grid-cols-[220px_1fr] md:gap-3">
+                                <p className="text-sm font-medium text-muted-foreground">
+                                  {payloadEntry.label}
+                                </p>
+                                <p className="whitespace-pre-wrap break-words text-sm">
+                                  {payloadEntry.value}
+                                </p>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      ) : null}
                     </div>
                   ))}
                 </div>
@@ -2027,6 +2170,29 @@ export const MedicalResumeModal: React.FC<MedicalResumeModalProps> = ({
             </div>
           </DialogContent>
         </Dialog>
+        <AlertDialog open={saveConfirmOpen} onOpenChange={setSaveConfirmOpen}>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>Konfirmasi Update Resume</AlertDialogTitle>
+              <AlertDialogDescription>
+                Apakah perubahan resume pasien akan disimpan sekarang?
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel disabled={saving}>Batal</AlertDialogCancel>
+              <AlertDialogAction
+                disabled={saving}
+                onClick={(event) => {
+                  event.preventDefault();
+                  void executeSave();
+                }}
+              >
+                {saving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+                Simpan
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
       </DialogContent>
     </Dialog>
   );

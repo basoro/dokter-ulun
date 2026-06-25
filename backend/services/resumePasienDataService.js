@@ -1292,10 +1292,6 @@ class ResumePasienDataService {
         this.getRanapVerificationContext(normalized.no_rawat, normalized.kd_dokter)
       ]);
 
-      if (verificationContext.isVerified) {
-        throw new Error('Resume sudah diverifikasi. Batal verifikasi terlebih dahulu sebelum mengubah resume.');
-      }
-
       const doctorTrace = this.mergeDoctorCodeTrace(
         existingRows?.[0]?.ket_keadaan || '',
         normalized.kd_dokter

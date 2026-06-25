@@ -2463,6 +2463,7 @@ app.post('/api/resume-pasien-data/:no_rawat', async (req, res) => {
     await ResumePasienDataService.appendResumeHistoryLog(no_rawat, {
       action: result?.action_type || 'update',
       status_rawat: result?.status_rawat || statusRawat,
+      request_payload: req.body && typeof req.body === 'object' ? { ...req.body } : {},
       actor: ResumePasienDataService.normalizeResumeHistoryActor({
         username: req.body?.actor_username || req.body?.username || '',
         doctor_code: req.body?.kd_dokter || '',
@@ -2500,6 +2501,7 @@ app.post('/api/resume-pasien-data/:no_rawat/verification', async (req, res) => {
     await ResumePasienDataService.appendResumeHistoryLog(no_rawat, {
       action: result?.action_type || (Boolean(verified) ? 'verify' : 'unverify'),
       status_rawat: result?.status_rawat || 'Ranap',
+      request_payload: req.body && typeof req.body === 'object' ? { ...req.body } : {},
       actor: ResumePasienDataService.normalizeResumeHistoryActor({
         username: req.body?.actor_username || req.body?.username || '',
         doctor_code: kd_dokter,
@@ -2537,6 +2539,7 @@ app.delete('/api/resume-pasien-data/:no_rawat', async (req, res) => {
     await ResumePasienDataService.appendResumeHistoryLog(no_rawat, {
       action: result?.action_type || 'delete',
       status_rawat: result?.status_rawat || status_rawat,
+      request_payload: req.query && typeof req.query === 'object' ? { ...req.query } : {},
       actor: ResumePasienDataService.normalizeResumeHistoryActor({
         username: req.query?.actor_username || req.query?.username || '',
         doctor_code: kd_dokter,
