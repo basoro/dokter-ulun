@@ -4609,6 +4609,62 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
     showAllInpatientMedicationRequests
   ]);
 
+  useEffect(() => {
+    if (activeTab !== 'medications' || medicationDataTab !== 'current' || medicationCurrentCareTab !== 'outpatient') {
+      return;
+    }
+
+    if (
+      !isFocusedMedicationsLoaded ||
+      showAllOutpatientMedicationRequests ||
+      loadingAllOutpatientMedicationRequests ||
+      displayedOutpatientMedicationRequests.length > 0 ||
+      !hasMoreOutpatientMedicationRequests
+    ) {
+      return;
+    }
+
+    void handleLoadAllOutpatientMedicationRequests();
+  }, [
+    activeTab,
+    displayedOutpatientMedicationRequests.length,
+    handleLoadAllOutpatientMedicationRequests,
+    hasMoreOutpatientMedicationRequests,
+    isFocusedMedicationsLoaded,
+    loadingAllOutpatientMedicationRequests,
+    medicationCurrentCareTab,
+    medicationDataTab,
+    showAllOutpatientMedicationRequests
+  ]);
+
+  useEffect(() => {
+    if (activeTab !== 'medications' || medicationDataTab !== 'current' || medicationCurrentCareTab !== 'inpatient') {
+      return;
+    }
+
+    if (
+      !isFocusedMedicationsLoaded ||
+      showAllInpatientMedicationRequests ||
+      loadingAllInpatientMedicationRequests ||
+      displayedInpatientMedicationRequests.length > 0 ||
+      !hasMoreInpatientMedicationRequests
+    ) {
+      return;
+    }
+
+    void handleLoadAllInpatientMedicationRequests();
+  }, [
+    activeTab,
+    displayedInpatientMedicationRequests.length,
+    handleLoadAllInpatientMedicationRequests,
+    hasMoreInpatientMedicationRequests,
+    isFocusedMedicationsLoaded,
+    loadingAllInpatientMedicationRequests,
+    medicationCurrentCareTab,
+    medicationDataTab,
+    showAllInpatientMedicationRequests
+  ]);
+
   const fetchVisitDetails = useCallback(async (noRawat: string) => {
     if (!noRawat) {
       return;
