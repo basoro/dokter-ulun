@@ -106,6 +106,17 @@ const formatIcd9ProcedureCode = (value: string) => {
   return `${normalizedValue.slice(0, 2)}.${normalizedValue.slice(2)}`;
 };
 
+const handleScrollableCommandWheel = (event: React.WheelEvent<HTMLElement>) => {
+  const element = event.currentTarget;
+  if (element.scrollHeight <= element.clientHeight) {
+    return;
+  }
+
+  event.preventDefault();
+  event.stopPropagation();
+  element.scrollTop += event.deltaY;
+};
+
 export const ICDModal: React.FC<ICDModalProps> = ({
   isOpen,
   onClose,
@@ -602,7 +613,7 @@ export const ICDModal: React.FC<ICDModalProps> = ({
                     <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
                   </Button>
                 </PopoverTrigger>
-                <PopoverContent className="w-[350px] p-0 md:w-[520px]" align="start">
+                <PopoverContent disablePortal className="w-[350px] p-0 md:w-[520px]" align="start">
                   <Command shouldFilter={false}>
                     <CommandInput
                       placeholder={tab === 'icd10' ? 'Cari kode atau nama penyakit...' : 'Cari kode atau deskripsi tindakan...'}
@@ -611,7 +622,10 @@ export const ICDModal: React.FC<ICDModalProps> = ({
                         handleIcdQueryChange(tab, index, value);
                       }}
                     />
-                    <CommandList>
+                    <CommandList
+                      className="max-h-[320px] overscroll-contain"
+                      onWheelCapture={handleScrollableCommandWheel}
+                    >
                       <CommandEmpty>
                         {isIcdLoading ? 'Memuat data ICD...' : 'Tidak ada data ICD ditemukan.'}
                       </CommandEmpty>
@@ -699,7 +713,7 @@ export const ICDModal: React.FC<ICDModalProps> = ({
                     <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
                   </Button>
                 </PopoverTrigger>
-                <PopoverContent className="w-[350px] p-0 md:w-[520px]" align="start">
+                <PopoverContent disablePortal className="w-[350px] p-0 md:w-[520px]" align="start">
                   <Command shouldFilter={false}>
                     <CommandInput
                       placeholder="Cari concept id atau istilah SNOMED-CT..."
@@ -708,7 +722,10 @@ export const ICDModal: React.FC<ICDModalProps> = ({
                         handleSnomedQueryChange(tab, index, selectedIcdCode, value);
                       }}
                     />
-                    <CommandList>
+                    <CommandList
+                      className="max-h-[320px]"
+                      onWheelCapture={handleScrollableCommandWheel}
+                    >
                       <CommandEmpty>
                         {isSnomedLoading ? 'Memuat data SNOMED-CT...' : 'Tidak ada data SNOMED-CT ditemukan.'}
                       </CommandEmpty>
