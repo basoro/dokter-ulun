@@ -856,7 +856,7 @@ class PrescriptionDataService {
           db.kode_brng,
           db.nama_brng,
           db.kode_sat AS satuan,
-          db.kelas1 AS harga,
+          db.ralan AS harga,
           SUM(COALESCE(gb.stok, 0)) AS stok
         FROM gudangbarang gb
         INNER JOIN databarang db ON db.kode_brng = gb.kode_brng
@@ -867,7 +867,7 @@ class PrescriptionDataService {
             OR db.kode_brng LIKE ?
             OR db.nama_brng LIKE ?
           )
-        GROUP BY db.kode_brng, db.nama_brng, db.kode_sat, db.kelas1
+        GROUP BY db.kode_brng, db.nama_brng, db.kode_sat, db.ralan
         HAVING stok > 0
         ORDER BY
           CASE

@@ -48,6 +48,7 @@ interface Medication {
     jumlah: string;
     aturan_pakai: string;
     satuan?: string;
+    harga?: number;
     stok?: number;
   }[];
 }
@@ -80,6 +81,7 @@ interface RacikanMedicine {
   nama: string;
   jumlah: string;
   satuan?: string;
+  harga?: number;
   stok?: number;
 }
 
@@ -11361,6 +11363,7 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
                                                 kode_brng: option.kode_brng,
                                                 nama: option.nama_brng,
                                                 satuan: option.satuan || '',
+                                                harga: typeof option.harga === 'number' ? Number(option.harga) || 0 : undefined,
                                                 stok: Number(option.stok) || 0
                                               });
                                               setMedicineSearchQuery((previous) => ({
@@ -11384,6 +11387,7 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
                                               <span className="text-xs text-muted-foreground">
                                                 {option.kode_brng}
                                                 {option.satuan ? ` • ${option.satuan}` : ''}
+                                                {typeof option.harga === 'number' ? ` • Rp ${Number(option.harga).toLocaleString('id-ID')}` : ''}
                                                 {typeof option.stok === 'number' ? ` • Stok ${option.stok}` : ''}
                                               </span>
                                             </div>
@@ -11398,6 +11402,7 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
                                 <p className="mt-1 text-xs text-muted-foreground">
                                   {obat.kode_brng || '-'}
                                   {obat.satuan ? ` • ${obat.satuan}` : ''}
+                                  {typeof obat.harga === 'number' ? ` • Rp ${Number(obat.harga).toLocaleString('id-ID')}` : ''}
                                   {typeof obat.stok === 'number' ? ` • Stok ${obat.stok}` : ''}
                                 </p>
                               ) : null}
@@ -11667,6 +11672,7 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
                                           kode_brng: option.kode_brng,
                                           nama: option.nama_brng,
                                           satuan: option.satuan || '',
+                                          harga: typeof option.harga === 'number' ? Number(option.harga) || 0 : undefined,
                                           stok: Number(option.stok) || 0
                                         });
                                         setCompoundMedicineSearchQuery((previous) => ({
@@ -11690,6 +11696,7 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
                                         <span className="text-xs text-muted-foreground">
                                           {option.kode_brng}
                                           {option.satuan ? ` • ${option.satuan}` : ''}
+                                          {typeof option.harga === 'number' ? ` • Rp ${Number(option.harga).toLocaleString('id-ID')}` : ''}
                                           {typeof option.stok === 'number' ? ` • Stok ${option.stok}` : ''}
                                         </span>
                                       </div>
@@ -11704,6 +11711,7 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
                           <p className="mt-1 text-xs text-muted-foreground">
                             {racikan.kode_brng || '-'}
                             {racikan.satuan ? ` • ${racikan.satuan}` : ''}
+                            {typeof racikan.harga === 'number' ? ` • Rp ${Number(racikan.harga).toLocaleString('id-ID')}` : ''}
                             {typeof racikan.stok === 'number' ? ` • Stok ${racikan.stok}` : ''}
                           </p>
                         ) : null}
