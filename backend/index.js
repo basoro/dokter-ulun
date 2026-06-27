@@ -29,6 +29,7 @@ import InacbgSimulationService from './services/inacbgSimulationService.js';
 import InternalReferralService from './services/internalReferralService.js';
 import LaboratoryDataService from './services/laboratoryDataService.js';
 import MedicalScribeService from './services/medicalScribeService.js';
+import VoiceToSoapService from './services/voiceToSoapService.js';
 import { MedicalService } from './services/medicalService.js';
 import OperationReportService from './services/operationReportService.js';
 import PatientNotesService from './services/patientNotesService.js';
@@ -1815,6 +1816,23 @@ app.post('/api/medical-scribe', async (req, res) => {
     res.json(result);
   } catch (error) {
     console.error('Medical scribe error:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message
+    });
+  }
+});
+
+app.post('/api/voice-to-soap', async (req, res) => {
+  try {
+    const { transcript, context } = req.body || {};
+    const data = await VoiceToSoapService.generateSoap({ transcript, context });
+    res.json({
+      success: true,
+      data
+    });
+  } catch (error) {
+    console.error('Voice-to-SOAP error:', error);
     res.status(500).json({
       success: false,
       error: error.message

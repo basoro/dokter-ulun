@@ -376,7 +376,7 @@ class ResumePasienDataService {
       lab_belum: value('lab_belum'),
       edukasi: value('edukasi'),
       cara_keluar: mappedKondisiPulang.cara_keluar,
-      ket_keluar: value('ket_keluar'),
+      ket_keluar: null,
       keadaan: mappedKondisiPulang.keadaan,
       ket_keadaan: value('ket_keadaan'),
       dilanjutkan: mappedKondisiPulang.dilanjutkan,
