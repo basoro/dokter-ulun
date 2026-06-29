@@ -1,11 +1,13 @@
 import React from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { useAuth } from '@/contexts/AuthContext';
 import { API_URLS } from '@/config/api';
 import { formatUIDateTime } from '@/lib/date-utils';
+import { Bar, BarChart, CartesianGrid, Cell, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
 
 interface AuditLogEntry {
   log_id: string;
@@ -130,6 +132,16 @@ const STATUS_LABELS: Record<string, string> = {
 const getEntityLabel = (value: string) => ENTITY_LABELS[String(value || '').trim()] || String(value || '-').trim() || '-';
 const getActionLabel = (value: string) => ACTION_LABELS[String(value || '').trim()] || String(value || '-').trim() || '-';
 const getStatusLabel = (value: string) => STATUS_LABELS[String(value || '').trim()] || String(value || '-').trim() || '-';
+const getStatusChartColor = (value: string) => {
+  const normalizedValue = String(value || '').trim().toLowerCase();
+  if (normalizedValue === 'success') {
+    return '#16a34a';
+  }
+  if (normalizedValue === 'error' || normalizedValue === 'failed' || normalizedValue === 'gagal') {
+    return '#dc2626';
+  }
+  return '#f59e0b';
+};
 
 const getStatusTone = (value: string) => (
   String(value || '').trim().toLowerCase() === 'success'
@@ -143,6 +155,8 @@ const getAuditSummary = (entry: AuditLogEntry) => {
   const reference = String(entry.reference_id || entry.no_rawat || entry.no_rkm_medis || '').trim();
   return reference ? `${action} ${entity} untuk ${reference}` : `${action} ${entity}`;
 };
+
+const AUDIT_CHART_COLORS = ['#0ea5e9', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#14b8a6'];
 
 const AuditHistory: React.FC = () => {
   const { user } = useAuth();
@@ -164,6 +178,98 @@ const AuditHistory: React.FC = () => {
   const [action, setAction] = React.useState('all');
   const [status, setStatus] = React.useState('all');
   const [entity, setEntity] = React.useState('');
+  const [selectedInsightView, setSelectedInsightView] = React.useState<'action' | 'actor' | 'module' | 'status'>('action');
+
+  const auditInsights = React.useMemo(() => {
+    const actionMap = new Map<string, number>();
+    const actorMap = new Map<string, number>();
+    const moduleMap = new Map<string, number>();
+    const statusMap = new Map<string, number>();
+
+    entries.forEach((entry) => {
+      const actionKey = String(entry.action || '').trim() || '-';
+      actionMap.set(actionKey, (actionMap.get(actionKey) || 0) + 1);
+
+      const actorKey = getAuditActorDisplay(entry);
+      actorMap.set(actorKey, (actorMap.get(actorKey) || 0) + 1);
+
+      const moduleKey = getEntityLabel(entry.entity);
+      moduleMap.set(moduleKey, (moduleMap.get(moduleKey) || 0) + 1);
+
+      const statusKey = String(entry.status || '').trim() || '-';
+      statusMap.set(statusKey, (statusMap.get(statusKey) || 0) + 1);
+    });
+
+    const toSortedArray = (map: Map<string, number>, labelFormatter?: (label: string) => string) => (
+      Array.from(map.entries())
+        .map(([name, total]) => ({
+          name,
+          label: labelFormatter ? labelFormatter(name) : name,
+          total
+        }))
+        .sort((a, b) => b.total - a.total || a.label.localeCompare(b.label))
+    );
+
+    const actionData = toSortedArray(actionMap, getActionLabel);
+    const actorData = toSortedArray(actorMap).slice(0, 5);
+    const moduleData = toSortedArray(moduleMap).slice(0, 5);
+    const statusData = toSortedArray(statusMap, getStatusLabel);
+
+    return {
+      actionData,
+      actorData,
+      moduleData,
+      statusData,
+      topAction: actionData[0] || null,
+      topActor: actorData[0] || null,
+      topModule: moduleData[0] || null,
+      topStatus: statusData[0] || null
+    };
+  }, [entries]);
+
+  const selectedInsight = React.useMemo(() => {
+    if (selectedInsightView === 'status') {
+      return {
+        title: 'Status Hasil Aksi',
+        description: 'Lihat distribusi hasil aksi audit seperti sukses dan error.',
+        topLabel: auditInsights.topStatus?.label || '-',
+        topCount: auditInsights.topStatus?.total || 0,
+        data: auditInsights.statusData,
+        color: '#f59e0b'
+      };
+    }
+
+    if (selectedInsightView === 'actor') {
+      return {
+        title: 'Aktor Teraktif',
+        description: 'Lihat aktor dengan aktivitas terbanyak pada data audit yang sedang tampil.',
+        topLabel: auditInsights.topActor?.label || '-',
+        topCount: auditInsights.topActor?.total || 0,
+        data: auditInsights.actorData,
+        color: '#0ea5e9'
+      };
+    }
+
+    if (selectedInsightView === 'module') {
+      return {
+        title: 'Modul Teraktif',
+        description: 'Lihat modul yang paling sering dipakai pada data audit yang sedang tampil.',
+        topLabel: auditInsights.topModule?.label || '-',
+        topCount: auditInsights.topModule?.total || 0,
+        data: auditInsights.moduleData,
+        color: '#10b981'
+      };
+    }
+
+    return {
+      title: 'Aksi Terbanyak',
+      description: 'Lihat distribusi aksi seperti create, update, delete, dan aksi lainnya.',
+      topLabel: auditInsights.topAction?.label || '-',
+      topCount: auditInsights.topAction?.total || 0,
+      data: auditInsights.actionData,
+      color: '#8b5cf6'
+    };
+  }, [auditInsights, selectedInsightView]);
 
   React.useEffect(() => {
     const checkAccess = async () => {
@@ -294,9 +400,7 @@ const AuditHistory: React.FC = () => {
         <div>
           <h1 className="text-2xl font-bold text-gray-900">Riwayat Audit</h1>
           <p className="text-sm text-muted-foreground">
-            {fullAccess
-              ? 'Menampilkan seluruh riwayat audit karena username Anda terdaftar pada konfigurasi akses audit.'
-              : 'Menampilkan aktivitas Anda sendiri dari proses simpan, ubah, dan hapus di aplikasi.'}
+            Menampilkan seluruh riwayat audit karena kode dokter Anda terdaftar pada konfigurasi akses audit.
           </p>
         </div>
         <div className="text-sm text-muted-foreground">
@@ -364,6 +468,102 @@ const AuditHistory: React.FC = () => {
           </div>
         </CardContent>
       </Card>
+
+      {!loading && entries.length > 0 ? (
+        <Card>
+          <CardContent className="p-4 space-y-4">
+            <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+              <div>
+                <h4 className="font-medium">Ringkasan Aktivitas Audit</h4>
+                <p className="text-xs text-muted-foreground">
+                  Pilih tampilan ringkasan sesuai kebutuhan: aksi, aktor, modul, atau status hasil aksi.
+                </p>
+              </div>
+              <div className="flex flex-wrap gap-2">
+                {[
+                  { key: 'action', label: 'Aksi', color: '#8b5cf6' },
+                  { key: 'actor', label: 'Aktor', color: '#0ea5e9' },
+                  { key: 'module', label: 'Modul', color: '#10b981' },
+                  { key: 'status', label: 'Status', color: '#f59e0b' }
+                ].map((item) => (
+                  <Button
+                    key={item.key}
+                    type="button"
+                    variant={selectedInsightView === item.key ? 'default' : 'outline'}
+                    size="sm"
+                    onClick={() => setSelectedInsightView(item.key as 'action' | 'actor' | 'module' | 'status')}
+                    className="gap-2"
+                  >
+                    <span
+                      className="h-2.5 w-2.5 rounded-full"
+                      style={{ backgroundColor: item.color }}
+                    />
+                    {item.label}
+                  </Button>
+                ))}
+              </div>
+            </div>
+
+            <div className="flex flex-wrap items-center gap-2">
+              <Badge variant="secondary" className="w-fit">
+                Berdasarkan data yang tampil
+              </Badge>
+              <Badge variant="outline" className="w-fit">
+                Teratas: {selectedInsight.topLabel}
+              </Badge>
+              <Badge variant="outline" className="w-fit">
+                {selectedInsight.topCount} aktivitas
+              </Badge>
+            </div>
+
+            <div className="rounded-lg border bg-muted/20 p-4">
+              <div className="mb-4">
+                <h5 className="font-medium">{selectedInsight.title}</h5>
+                <p className="text-sm text-muted-foreground">
+                  {selectedInsight.description}
+                </p>
+              </div>
+
+              <ResponsiveContainer width="100%" height={320}>
+                <BarChart
+                  data={selectedInsight.data}
+                  margin={{ left: 8, right: 12, top: 8, bottom: 24 }}
+                >
+                  <CartesianGrid strokeDasharray="3 3" />
+                  <XAxis
+                    dataKey="label"
+                    interval={0}
+                    angle={selectedInsight.data.length > 4 ? -18 : 0}
+                    textAnchor={selectedInsight.data.length > 4 ? 'end' : 'middle'}
+                    height={selectedInsight.data.length > 4 ? 72 : 40}
+                    tick={{ fontSize: 12 }}
+                  />
+                  <YAxis
+                    allowDecimals={false}
+                    width={40}
+                    tick={{ fontSize: 12 }}
+                  />
+                  <Tooltip formatter={(value: number) => [`${value} aktivitas`, 'Total']} />
+                  <Bar dataKey="total" radius={[8, 8, 0, 0]}>
+                    {selectedInsight.data.map((item, index) => (
+                      <Cell
+                        key={`${selectedInsightView}-bar-${item.name}`}
+                        fill={
+                          selectedInsightView === 'action'
+                            ? AUDIT_CHART_COLORS[index % AUDIT_CHART_COLORS.length]
+                            : selectedInsightView === 'status'
+                              ? getStatusChartColor(item.name)
+                              : selectedInsight.color
+                        }
+                      />
+                    ))}
+                  </Bar>
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
+          </CardContent>
+        </Card>
+      ) : null}
 
       {error ? (
         <Card>

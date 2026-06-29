@@ -236,9 +236,47 @@ const parseAuditHistoryAccessUsers = () => {
   }
 };
 
+const parseDoctorAccessAliases = () => {
+  const rawValue = String(process.env.DOCTOR_ACCESS_ALIASES || '').trim();
+
+  if (!rawValue) {
+    return {};
+  }
+
+  try {
+    const parsedValue = JSON.parse(rawValue);
+    if (!parsedValue || Array.isArray(parsedValue) || typeof parsedValue !== 'object') {
+      return {};
+    }
+
+    return Object.fromEntries(
+      Object.entries(parsedValue).map(([doctorCode, aliases]) => [
+        String(doctorCode || '').trim(),
+        Array.isArray(aliases)
+          ? aliases.map((alias) => String(alias || '').trim()).filter(Boolean)
+          : []
+      ])
+    );
+  } catch (error) {
+    console.error('Failed to parse DOCTOR_ACCESS_ALIASES:', error);
+    return {};
+  }
+};
+
+const getAllowedAuditUsers = () => {
+  const accessUsers = parseAuditHistoryAccessUsers();
+  const aliasMap = parseDoctorAccessAliases();
+  return Array.from(new Set([
+    ...accessUsers,
+    ...Object.keys(aliasMap),
+    ...Object.values(aliasMap).flat()
+  ].map((item) => String(item || '').trim()).filter(Boolean)));
+};
+
 const ensureAccess = (username) => {
   const normalizedUsername = String(username || '').trim();
-  if (!normalizedUsername) {
+  const hasAccess = Boolean(normalizedUsername) && getAllowedAuditUsers().includes(normalizedUsername);
+  if (!hasAccess) {
     const error = new Error('Anda tidak memiliki akses ke riwayat audit');
     error.statusCode = 403;
     throw error;
@@ -247,24 +285,7 @@ const ensureAccess = (username) => {
 
 const hasFullAuditAccess = (username) => {
   const normalizedUsername = String(username || '').trim();
-  return Boolean(normalizedUsername) && parseAuditHistoryAccessUsers().includes(normalizedUsername);
-};
-
-const getAuditActorCandidates = (entry = {}) => {
-  const requestPayload = entry?.request_payload && typeof entry.request_payload === 'object' && !Array.isArray(entry.request_payload)
-    ? entry.request_payload
-    : {};
-
-  return [
-    entry?.actor_id,
-    requestPayload.username,
-    requestPayload.userId,
-    requestPayload.id_user,
-    requestPayload.kd_dokter,
-    requestPayload.nip
-  ]
-    .map((value) => String(value || '').trim().toLowerCase())
-    .filter(Boolean);
+  return Boolean(normalizedUsername) && getAllowedAuditUsers().includes(normalizedUsername);
 };
 
 const ensureStorage = async () => {
@@ -299,9 +320,9 @@ export const getAuditHistoryAccessInfo = async (username) => {
   const fullAccess = hasFullAuditAccess(normalizedUsername);
   return {
     success: true,
-    can_access: Boolean(normalizedUsername),
+    can_access: fullAccess,
     full_access: fullAccess,
-    actor_scope: fullAccess ? 'all' : normalizedUsername || ''
+    actor_scope: fullAccess ? 'all' : ''
   };
 };
 
@@ -332,14 +353,12 @@ export const getAuditHistory = async (username, options = {}) => {
     .filter(Boolean)
     .reverse()
     .filter((entry) => {
-      const actorCandidates = getAuditActorCandidates(entry);
-      const actorMatch = fullAccess || actorCandidates.includes(String(username || '').trim().toLowerCase());
       const actionMatch = !actionFilter || String(entry?.action || '').toLowerCase() === actionFilter;
       const statusMatch = !statusFilter || String(entry?.status || '').toLowerCase() === statusFilter;
       const entityMatch = !entityFilter || String(entry?.entity || '').toLowerCase().includes(entityFilter);
       const searchBlob = JSON.stringify(entry || {}).toLowerCase();
       const searchMatch = !searchFilter || searchBlob.includes(searchFilter);
-      return actorMatch && actionMatch && statusMatch && entityMatch && searchMatch;
+      return actionMatch && statusMatch && entityMatch && searchMatch;
     });
 
   const total = records.length;
@@ -349,7 +368,7 @@ export const getAuditHistory = async (username, options = {}) => {
   return {
     success: true,
     full_access: fullAccess,
-    actor_scope: fullAccess ? 'all' : String(username || '').trim(),
+    actor_scope: 'all',
     data: items,
     pagination: {
       page,

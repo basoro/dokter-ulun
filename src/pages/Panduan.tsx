@@ -106,7 +106,7 @@ const guideSections = [
       'Notifikasi membantu memantau proses resep, laboratorium, dan radiologi yang menunggu, diproses, atau selesai.',
       'Berkas Digital dan PACS digunakan untuk membuka file pendukung, melihat gambar, zoom, dan download jika tersedia.',
       'Pengaturan digunakan untuk melihat profil dokter, mengubah password, mengatur notifikasi, dan keamanan login.',
-      'Riwayat Audit dapat dibuka oleh semua user login. User biasa hanya melihat aktivitas miliknya sendiri, sedangkan username yang didaftarkan pada konfigurasi audit dapat melihat seluruh riwayat audit.'
+      'Riwayat Audit hanya dapat dibuka oleh kode dokter yang didaftarkan pada konfigurasi audit, dan akses tersebut menampilkan seluruh riwayat audit.'
     ]
   }
 ];
