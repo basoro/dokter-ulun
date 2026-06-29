@@ -97,8 +97,8 @@ class SaveExaminationService {
         const query = `
           INSERT INTO pemeriksaan_ralan (
             no_rawat, tgl_perawatan, jam_rawat, suhu_tubuh, tensi, nadi, respirasi,
-            tinggi, berat, gcs, keluhan, pemeriksaan, rtl, penilaian, nip
-          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            tinggi, berat, gcs, keluhan, pemeriksaan, alergi, imun_ke, rtl, penilaian, nip, created_at
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())
           ON DUPLICATE KEY UPDATE
           suhu_tubuh = VALUES(suhu_tubuh),
           tensi = VALUES(tensi),
@@ -109,14 +109,17 @@ class SaveExaminationService {
           gcs = VALUES(gcs),
           keluhan = VALUES(keluhan),
           pemeriksaan = VALUES(pemeriksaan),
+          alergi = VALUES(alergi),
+          imun_ke = VALUES(imun_ke),
           rtl = VALUES(rtl),
           penilaian = VALUES(penilaian),
-          nip = VALUES(nip)
+          nip = VALUES(nip),
+          created_at = NOW()
         `;
         
         const values = [
           no_rawat, tgl_perawatan, jam_rawat, suhu, tensi, nadi, respirasi,
-          tinggi, berat, gcs, keluhan, pemeriksaan, rtl, penilaian, nip
+          tinggi, berat, gcs, keluhan, pemeriksaan, 'tidak ada', '-', rtl, penilaian, nip
         ];
         // #region debug-point C:save-exam-before-ralan-query
         reportSaveExaminationDebug('C', 'backend/services/saveExaminationService.js:saveExamination', '[DEBUG] executing ralan save examination query', {

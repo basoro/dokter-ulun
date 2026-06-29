@@ -49,14 +49,17 @@ export const updateExaminationData = async (examinationData) => {
           gcs = ?,
           keluhan = ?,
           pemeriksaan = ?,
+          alergi = ?,
+          imun_ke = ?,
           rtl = ?,
           penilaian = ?,
-          nip = ?
+          nip = ?,
+          created_at = NOW()
         WHERE no_rawat = ? AND tgl_perawatan = ? AND jam_rawat = ?
       `;
       params = [
         tgl_perawatan || null, jam_rawat || null, suhu || null, tensi || null, nadi || null, respirasi || null,
-        tinggi || null, berat || null, gcs || null, keluhan || null, pemeriksaan || null, rtl || null, penilaian || null, nip || null,
+        tinggi || null, berat || null, gcs || null, keluhan || null, pemeriksaan || null, 'tidak ada', '-', rtl || null, penilaian || null, nip || null,
         no_rawat, original_date, original_time
       ];
     } else {
