@@ -4,6 +4,7 @@ import { Calendar as CalendarIcon } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Calendar, type CalendarProps } from "@/components/ui/calendar";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { useIsMobile } from "@/hooks/use-mobile";
 import { cn } from "@/lib/utils";
 
 interface DatePickerPopoverProps {
@@ -39,8 +40,12 @@ export const DatePickerPopover: React.FC<DatePickerPopoverProps> = ({
   initialFocus = true,
   ...calendarProps
 }) => {
+  const isMobile = useIsMobile();
   const hasValue = Boolean(displayValue);
-  const isRangeCalendar = calendarProps.mode === "range" && Number(calendarProps.numberOfMonths || 1) > 1;
+  const effectiveNumberOfMonths = isMobile && calendarProps.mode === "range"
+    ? 1
+    : Number(calendarProps.numberOfMonths || 1);
+  const isRangeCalendar = calendarProps.mode === "range" && effectiveNumberOfMonths > 1;
 
   return (
     <Popover>
@@ -61,20 +66,23 @@ export const DatePickerPopover: React.FC<DatePickerPopoverProps> = ({
       <PopoverContent
         className={cn(
           isRangeCalendar
-            ? "w-auto max-w-[calc(100vw-2rem)] overflow-x-auto p-0"
-            : "w-96 p-0",
+            ? "max-h-[calc(100dvh-1rem)] w-[calc(100vw-1rem)] max-w-[calc(100vw-1rem)] overflow-auto p-0 sm:max-h-none sm:w-auto sm:max-w-[calc(100vw-2rem)] sm:overflow-x-auto sm:overflow-y-visible"
+            : "max-h-[calc(100dvh-1rem)] w-[calc(100vw-1rem)] max-w-[calc(100vw-1rem)] overflow-auto p-0 sm:max-h-none sm:w-96 sm:max-w-[calc(100vw-2rem)] sm:overflow-visible",
           popoverContentClassName
         )}
-        align={align}
+        align={isMobile ? "center" : align}
+        collisionPadding={8}
       >
         <Calendar
           initialFocus={initialFocus}
+          {...calendarProps}
+          numberOfMonths={effectiveNumberOfMonths}
           className={cn(
             "pointer-events-auto",
-            isRangeCalendar && "min-w-[640px]",
-            calendarClassName
+            isRangeCalendar && "sm:min-w-[640px]",
+            calendarClassName,
+            isMobile && "!min-w-0 w-full"
           )}
-          {...calendarProps}
         />
         {contentAfterCalendar}
       </PopoverContent>

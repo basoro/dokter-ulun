@@ -166,7 +166,7 @@ const BookingOperasi = () => {
                     selected={dateRange}
                     onSelect={setDateRange}
                     numberOfMonths={2}
-                    calendarClassName="min-w-[600px]"
+                    calendarClassName="sm:min-w-[600px]"
                     buttonClassName="w-full sm:w-[300px]"
                     placeholder="Pilih rentang tanggal"
                     displayValue={dateRange?.from ? (

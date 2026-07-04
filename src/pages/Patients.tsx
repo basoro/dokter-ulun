@@ -370,8 +370,8 @@ const BookingTabs = () => {
             onSelect={setDateRange}
             numberOfMonths={2}
             locale={indonesianLocale}
-            calendarClassName="min-w-[600px]"
-            buttonClassName="w-[350px]"
+            calendarClassName="sm:min-w-[600px]"
+            buttonClassName="w-full sm:w-[350px]"
             placeholder="Pilih rentang tanggal"
             displayValue={dateRange?.from ? (
               dateRange.to ? (
@@ -1608,8 +1608,8 @@ const RawatInapTabs = ({ viewMode = 'utama' }: RawatInapTabsProps) => {
               onSelect={setDateRange}
               numberOfMonths={2}
               locale={indonesianLocale}
-              calendarClassName="min-w-[600px]"
-              buttonClassName="w-[350px]"
+              calendarClassName="sm:min-w-[600px]"
+              buttonClassName="w-full sm:w-[350px]"
               placeholder="Pilih rentang tanggal"
               displayValue={dateRange?.from ? (
                 dateRange.to ? (
@@ -2046,8 +2046,8 @@ const RawatJagaTabs = () => {
                       onSelect={setDateRange}
                       numberOfMonths={2}
                       locale={indonesianLocale}
-                      calendarClassName="min-w-[600px]"
-                      buttonClassName="w-[350px]"
+                      calendarClassName="sm:min-w-[600px]"
+                      buttonClassName="w-full sm:w-[350px]"
                       placeholder="Pilih rentang tanggal pulang"
                       displayValue={dateRange?.from ? (
                         dateRange.to ? (
@@ -2471,8 +2471,8 @@ const IGDTabs = () => {
             onSelect={setDateRange}
             numberOfMonths={2}
             locale={indonesianLocale}
-            calendarClassName="min-w-[600px]"
-            buttonClassName="w-[350px]"
+            calendarClassName="sm:min-w-[600px]"
+            buttonClassName="w-full sm:w-[350px]"
             placeholder="Pilih rentang tanggal"
             displayValue={dateRange?.from ? (
               dateRange.to ? (

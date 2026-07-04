@@ -561,7 +561,7 @@ const RawatJalanTabs = () => {
                     selected={date}
                     onSelect={setDate}
                     numberOfMonths={2}
-                    calendarClassName="min-w-[600px]"
+                    calendarClassName="sm:min-w-[600px]"
                     buttonClassName="w-full sm:w-[280px]"
                     placeholder="Pilih rentang tanggal"
                     displayValue={date?.from ? (
