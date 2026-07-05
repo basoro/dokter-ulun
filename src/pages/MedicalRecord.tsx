@@ -13921,6 +13921,7 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
       {formattedNoRawat && (
         <FloatingButtonsModal
           noRawat={formattedNoRawat}
+          noRkmMedis={String(no_rkm_medis || '').trim()}
           defaultStatusRawat={defaultExaminationStatusRawat as 'Ralan' | 'Ranap'}
         />
       )}

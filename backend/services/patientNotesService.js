@@ -27,6 +27,47 @@ class PatientNotesService {
     };
   }
 
+  static async getPreviousVisitNotes(noRkmMedis, excludeNoRawat = '') {
+    const normalizedNoRkmMedis = String(noRkmMedis || '').trim();
+    const normalizedExcludeNoRawat = String(excludeNoRawat || '').trim();
+
+    if (!normalizedNoRkmMedis) {
+      throw new Error('no_rkm_medis wajib diisi');
+    }
+
+    const sql = `
+      SELECT
+        DATE_FORMAT(cp.tanggal, '%Y-%m-%d') AS tanggal,
+        TIME_FORMAT(cp.jam, '%H:%i') AS jam,
+        cp.no_rawat,
+        rp.no_rkm_medis,
+        cp.kd_dokter,
+        cp.catatan,
+        DATE_FORMAT(rp.tgl_registrasi, '%Y-%m-%d') AS tgl_registrasi,
+        COALESCE(rp.status_lanjut, '') AS status_lanjut,
+        COALESCE(pol.nm_poli, '') AS nm_poli,
+        COALESCE(d.nm_dokter, cp.kd_dokter) AS petugas
+      FROM reg_periksa rp
+      INNER JOIN catatan_perawatan cp ON cp.no_rawat = rp.no_rawat
+      LEFT JOIN dokter d ON cp.kd_dokter = d.kd_dokter
+      LEFT JOIN poliklinik pol ON rp.kd_poli = pol.kd_poli
+      WHERE rp.no_rkm_medis = ?
+        AND (? = '' OR rp.no_rawat <> ?)
+      ORDER BY rp.tgl_registrasi DESC, cp.tanggal DESC, cp.jam DESC
+    `;
+
+    const rows = await executeQuery(sql, [
+      normalizedNoRkmMedis,
+      normalizedExcludeNoRawat,
+      normalizedExcludeNoRawat,
+    ]);
+
+    return {
+      success: true,
+      data: rows,
+    };
+  }
+
   static async createNote(payload) {
     const { no_rawat, tanggal, jam, kd_dokter, catatan } = payload || {};
 

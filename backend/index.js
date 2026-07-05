@@ -1124,6 +1124,29 @@ app.get('/api/patient-notes/:no_rawat', async (req, res) => {
   }
 });
 
+app.get('/api/patient-notes-history/:no_rkm_medis', async (req, res) => {
+  try {
+    const { no_rkm_medis } = req.params;
+    const { exclude_no_rawat = '' } = req.query;
+
+    if (!no_rkm_medis) {
+      return res.status(400).json({
+        success: false,
+        error: 'no_rkm_medis wajib diisi'
+      });
+    }
+
+    const result = await PatientNotesService.getPreviousVisitNotes(no_rkm_medis, exclude_no_rawat);
+    res.json(result);
+  } catch (error) {
+    console.error('Error in patient-notes-history GET endpoint:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message
+    });
+  }
+});
+
 app.post('/api/patient-notes', async (req, res) => {
   try {
     const result = await PatientNotesService.createNote(req.body);
