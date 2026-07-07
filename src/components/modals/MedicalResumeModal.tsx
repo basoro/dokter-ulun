@@ -20,7 +20,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
 import { cn } from '@/lib/utils';
-import { BadgeCheck, Check, ChevronsUpDown, FileText, History, Loader2, Paperclip, Search, Trash2 } from 'lucide-react';
+import { BadgeCheck, Check, ChevronsUpDown, FileText, History, Loader2, Paperclip, Plus, Search, Trash2 } from 'lucide-react';
 import { useToast } from "@/hooks/use-toast";
 import { API_URLS } from '@/config/api';
 import { useAuth } from '@/contexts/AuthContext';
@@ -243,7 +243,8 @@ interface SearchableMedicalCodeFieldProps {
   selectedName: string;
   selectedCode: string;
   type: 'icd10' | 'icd9';
-  onSelect: (name: string, code: string) => void;
+  onManualChange: (name: string) => void;
+  onAppend: (name: string, code: string) => void;
   onClear: () => void;
 }
 
@@ -254,7 +255,8 @@ const SearchableMedicalCodeField: React.FC<SearchableMedicalCodeFieldProps> = ({
   selectedName,
   selectedCode,
   type,
-  onSelect,
+  onManualChange,
+  onAppend,
   onClear,
 }) => {
   const [open, setOpen] = useState(false);
@@ -323,24 +325,30 @@ const SearchableMedicalCodeField: React.FC<SearchableMedicalCodeFieldProps> = ({
     };
   }, [open, search, type]);
 
-  const displayValue = selectedName
-    ? `${selectedCode ? `${selectedCode} - ` : ''}${selectedName}`
-    : '';
+  const buttonLabel = type === 'icd10' ? 'ICD-10' : 'ICD-9';
 
   return (
     <div className="space-y-2">
       <Label>{label}</Label>
-      <div className="flex gap-2">
+      <div className="flex flex-col gap-2 sm:flex-row">
+        <Input
+          value={selectedName}
+          onChange={(e) => onManualChange(e.target.value)}
+          placeholder={`${placeholder} atau ketik manual`}
+          className="flex-1"
+        />
         <Popover open={open} onOpenChange={setOpen}>
           <PopoverTrigger asChild>
             <Button
+              type="button"
               variant="outline"
               role="combobox"
               aria-expanded={open}
-              className="flex-1 justify-between"
+              className="justify-between sm:w-[220px]"
             >
-              <span className="truncate text-left">
-                {displayValue || placeholder}
+              <span className="flex items-center gap-2 truncate text-left">
+                <Plus className="h-4 w-4 shrink-0" />
+                <span>{buttonLabel}</span>
               </span>
               <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
             </Button>
@@ -366,8 +374,9 @@ const SearchableMedicalCodeField: React.FC<SearchableMedicalCodeFieldProps> = ({
                       key={`${type}-${option.code}`}
                       value={`${option.code} ${option.label}`}
                       onSelect={() => {
-                        onSelect(option.label, option.code);
+                        onAppend(option.label, option.code);
                         setOpen(false);
+                        setSearch('');
                       }}
                     >
                       <Check
@@ -398,6 +407,11 @@ const SearchableMedicalCodeField: React.FC<SearchableMedicalCodeFieldProps> = ({
           Hapus
         </Button>
       </div>
+      {selectedCode ? (
+        <p className="text-xs text-muted-foreground">
+          Kode terpilih: {selectedCode}
+        </p>
+      ) : null}
     </div>
   );
 };
@@ -890,6 +904,50 @@ export const MedicalResumeModal: React.FC<MedicalResumeModalProps> = ({
       ...previous,
       [nameField]: name,
       [codeField]: code,
+    }));
+  };
+
+  const appendCommaSeparatedText = (currentValue: string, nextValue: string) => {
+    const currentItems = String(currentValue || '')
+      .split(',')
+      .map((item) => item.trim())
+      .filter(Boolean);
+    const normalizedNextValue = String(nextValue || '').trim();
+
+    if (!normalizedNextValue) {
+      return currentItems.join(', ');
+    }
+
+    if (!currentItems.some((item) => item.toLowerCase() === normalizedNextValue.toLowerCase())) {
+      currentItems.push(normalizedNextValue);
+    }
+
+    return currentItems.join(', ');
+  };
+
+  const appendDiagnosisFields = (
+    nameField: keyof Pick<MedicalResume, 'diagnosa_utama' | 'diagnosa_sekunder' | 'diagnosa_sekunder2' | 'diagnosa_sekunder3' | 'diagnosa_sekunder4'>,
+    codeField: keyof Pick<MedicalResume, 'kd_diagnosa_utama' | 'kd_diagnosa_sekunder' | 'kd_diagnosa_sekunder2' | 'kd_diagnosa_sekunder3' | 'kd_diagnosa_sekunder4'>,
+    name: string,
+    code: string
+  ) => {
+    setFormData((previous) => ({
+      ...previous,
+      [nameField]: appendCommaSeparatedText(String(previous[nameField] || ''), name),
+      [codeField]: appendCommaSeparatedText(String(previous[codeField] || ''), code),
+    }));
+  };
+
+  const appendProcedureFields = (
+    nameField: keyof Pick<MedicalResume, 'prosedur_utama' | 'prosedur_sekunder' | 'prosedur_sekunder2' | 'prosedur_sekunder3'>,
+    codeField: keyof Pick<MedicalResume, 'kd_prosedur_utama' | 'kd_prosedur_sekunder' | 'kd_prosedur_sekunder2' | 'kd_prosedur_sekunder3'>,
+    name: string,
+    code: string
+  ) => {
+    setFormData((previous) => ({
+      ...previous,
+      [nameField]: appendCommaSeparatedText(String(previous[nameField] || ''), name),
+      [codeField]: appendCommaSeparatedText(String(previous[codeField] || ''), code),
     }));
   };
 
@@ -1845,7 +1903,8 @@ export const MedicalResumeModal: React.FC<MedicalResumeModalProps> = ({
                       selectedName={formData.diagnosa_utama}
                       selectedCode={formData.kd_diagnosa_utama}
                       type="icd10"
-                      onSelect={(name, code) => updateDiagnosisFields('diagnosa_utama', 'kd_diagnosa_utama', name, code)}
+                      onManualChange={(name) => updateDiagnosisFields('diagnosa_utama', 'kd_diagnosa_utama', name, formData.kd_diagnosa_utama)}
+                      onAppend={(name, code) => appendDiagnosisFields('diagnosa_utama', 'kd_diagnosa_utama', name, code)}
                       onClear={() => updateDiagnosisFields('diagnosa_utama', 'kd_diagnosa_utama', '', '')}
                     />
                     {!isRalan ? (
@@ -1857,7 +1916,8 @@ export const MedicalResumeModal: React.FC<MedicalResumeModalProps> = ({
                           selectedName={formData.diagnosa_sekunder}
                           selectedCode={formData.kd_diagnosa_sekunder}
                           type="icd10"
-                          onSelect={(name, code) => updateDiagnosisFields('diagnosa_sekunder', 'kd_diagnosa_sekunder', name, code)}
+                          onManualChange={(name) => updateDiagnosisFields('diagnosa_sekunder', 'kd_diagnosa_sekunder', name, formData.kd_diagnosa_sekunder)}
+                          onAppend={(name, code) => appendDiagnosisFields('diagnosa_sekunder', 'kd_diagnosa_sekunder', name, code)}
                           onClear={() => updateDiagnosisFields('diagnosa_sekunder', 'kd_diagnosa_sekunder', '', '')}
                         />
                         <SearchableMedicalCodeField
@@ -1867,7 +1927,8 @@ export const MedicalResumeModal: React.FC<MedicalResumeModalProps> = ({
                           selectedName={formData.diagnosa_sekunder2}
                           selectedCode={formData.kd_diagnosa_sekunder2}
                           type="icd10"
-                          onSelect={(name, code) => updateDiagnosisFields('diagnosa_sekunder2', 'kd_diagnosa_sekunder2', name, code)}
+                          onManualChange={(name) => updateDiagnosisFields('diagnosa_sekunder2', 'kd_diagnosa_sekunder2', name, formData.kd_diagnosa_sekunder2)}
+                          onAppend={(name, code) => appendDiagnosisFields('diagnosa_sekunder2', 'kd_diagnosa_sekunder2', name, code)}
                           onClear={() => updateDiagnosisFields('diagnosa_sekunder2', 'kd_diagnosa_sekunder2', '', '')}
                         />
                         <SearchableMedicalCodeField
@@ -1877,7 +1938,8 @@ export const MedicalResumeModal: React.FC<MedicalResumeModalProps> = ({
                           selectedName={formData.diagnosa_sekunder3}
                           selectedCode={formData.kd_diagnosa_sekunder3}
                           type="icd10"
-                          onSelect={(name, code) => updateDiagnosisFields('diagnosa_sekunder3', 'kd_diagnosa_sekunder3', name, code)}
+                          onManualChange={(name) => updateDiagnosisFields('diagnosa_sekunder3', 'kd_diagnosa_sekunder3', name, formData.kd_diagnosa_sekunder3)}
+                          onAppend={(name, code) => appendDiagnosisFields('diagnosa_sekunder3', 'kd_diagnosa_sekunder3', name, code)}
                           onClear={() => updateDiagnosisFields('diagnosa_sekunder3', 'kd_diagnosa_sekunder3', '', '')}
                         />
                         <SearchableMedicalCodeField
@@ -1887,7 +1949,8 @@ export const MedicalResumeModal: React.FC<MedicalResumeModalProps> = ({
                           selectedName={formData.diagnosa_sekunder4}
                           selectedCode={formData.kd_diagnosa_sekunder4}
                           type="icd10"
-                          onSelect={(name, code) => updateDiagnosisFields('diagnosa_sekunder4', 'kd_diagnosa_sekunder4', name, code)}
+                          onManualChange={(name) => updateDiagnosisFields('diagnosa_sekunder4', 'kd_diagnosa_sekunder4', name, formData.kd_diagnosa_sekunder4)}
+                          onAppend={(name, code) => appendDiagnosisFields('diagnosa_sekunder4', 'kd_diagnosa_sekunder4', name, code)}
                           onClear={() => updateDiagnosisFields('diagnosa_sekunder4', 'kd_diagnosa_sekunder4', '', '')}
                         />
                       </>
@@ -1905,7 +1968,8 @@ export const MedicalResumeModal: React.FC<MedicalResumeModalProps> = ({
                       selectedName={formData.prosedur_utama}
                       selectedCode={formData.kd_prosedur_utama}
                       type="icd9"
-                      onSelect={(name, code) => updateProcedureFields('prosedur_utama', 'kd_prosedur_utama', name, code)}
+                      onManualChange={(name) => updateProcedureFields('prosedur_utama', 'kd_prosedur_utama', name, formData.kd_prosedur_utama)}
+                      onAppend={(name, code) => appendProcedureFields('prosedur_utama', 'kd_prosedur_utama', name, code)}
                       onClear={() => updateProcedureFields('prosedur_utama', 'kd_prosedur_utama', '', '')}
                     />
                     {!isRalan ? (
@@ -1917,7 +1981,8 @@ export const MedicalResumeModal: React.FC<MedicalResumeModalProps> = ({
                           selectedName={formData.prosedur_sekunder}
                           selectedCode={formData.kd_prosedur_sekunder}
                           type="icd9"
-                          onSelect={(name, code) => updateProcedureFields('prosedur_sekunder', 'kd_prosedur_sekunder', name, code)}
+                          onManualChange={(name) => updateProcedureFields('prosedur_sekunder', 'kd_prosedur_sekunder', name, formData.kd_prosedur_sekunder)}
+                          onAppend={(name, code) => appendProcedureFields('prosedur_sekunder', 'kd_prosedur_sekunder', name, code)}
                           onClear={() => updateProcedureFields('prosedur_sekunder', 'kd_prosedur_sekunder', '', '')}
                         />
                         <SearchableMedicalCodeField
@@ -1927,7 +1992,8 @@ export const MedicalResumeModal: React.FC<MedicalResumeModalProps> = ({
                           selectedName={formData.prosedur_sekunder2}
                           selectedCode={formData.kd_prosedur_sekunder2}
                           type="icd9"
-                          onSelect={(name, code) => updateProcedureFields('prosedur_sekunder2', 'kd_prosedur_sekunder2', name, code)}
+                          onManualChange={(name) => updateProcedureFields('prosedur_sekunder2', 'kd_prosedur_sekunder2', name, formData.kd_prosedur_sekunder2)}
+                          onAppend={(name, code) => appendProcedureFields('prosedur_sekunder2', 'kd_prosedur_sekunder2', name, code)}
                           onClear={() => updateProcedureFields('prosedur_sekunder2', 'kd_prosedur_sekunder2', '', '')}
                         />
                         <SearchableMedicalCodeField
@@ -1937,7 +2003,8 @@ export const MedicalResumeModal: React.FC<MedicalResumeModalProps> = ({
                           selectedName={formData.prosedur_sekunder3}
                           selectedCode={formData.kd_prosedur_sekunder3}
                           type="icd9"
-                          onSelect={(name, code) => updateProcedureFields('prosedur_sekunder3', 'kd_prosedur_sekunder3', name, code)}
+                          onManualChange={(name) => updateProcedureFields('prosedur_sekunder3', 'kd_prosedur_sekunder3', name, formData.kd_prosedur_sekunder3)}
+                          onAppend={(name, code) => appendProcedureFields('prosedur_sekunder3', 'kd_prosedur_sekunder3', name, code)}
                           onClear={() => updateProcedureFields('prosedur_sekunder3', 'kd_prosedur_sekunder3', '', '')}
                         />
                       </>
