@@ -52,21 +52,51 @@ class OperationReportService {
 
     const sql = `
       SELECT
-        id,
-        no_rawat,
-        kd_dokter,
-        tanggal_op,
-        hasil_op,
-        pre_op,
-        post_op,
-        implan,
-        kirim_pa,
-        nm_op,
-        DATE_FORMAT(created_at, '%Y-%m-%d %H:%i:%s') AS created_at
-      FROM mlite_lap_op
-      WHERE no_rawat = ?
-        AND deleted_at IS NULL
-      ORDER BY created_at DESC, id DESC
+        lo.id,
+        lo.no_rawat,
+        lo.kd_dokter,
+        lo.tanggal_op,
+        lo.hasil_op,
+        lo.pre_op,
+        lo.post_op,
+        lo.implan,
+        lo.kirim_pa,
+        lo.nm_op,
+        DATE_FORMAT(lo.created_at, '%Y-%m-%d %H:%i:%s') AS created_at,
+        COALESCE(dl.nm_dokter, '') AS dokter_laporan,
+        COALESCE((
+          SELECT dop.nm_dokter
+          FROM operasi o
+          INNER JOIN dokter dop ON dop.kd_dokter = o.operator1
+          WHERE o.no_rawat = lo.no_rawat
+            AND (
+              o.tgl_operasi = lo.tanggal_op
+              OR DATE(o.tgl_operasi) = DATE(lo.tanggal_op)
+            )
+          ORDER BY
+            CASE WHEN o.tgl_operasi = lo.tanggal_op THEN 0 ELSE 1 END,
+            o.tgl_operasi DESC
+          LIMIT 1
+        ), '') AS dokter_operator,
+        COALESCE((
+          SELECT dans.nm_dokter
+          FROM operasi o
+          INNER JOIN dokter dans ON dans.kd_dokter = o.dokter_anestesi
+          WHERE o.no_rawat = lo.no_rawat
+            AND (
+              o.tgl_operasi = lo.tanggal_op
+              OR DATE(o.tgl_operasi) = DATE(lo.tanggal_op)
+            )
+          ORDER BY
+            CASE WHEN o.tgl_operasi = lo.tanggal_op THEN 0 ELSE 1 END,
+            o.tgl_operasi DESC
+          LIMIT 1
+        ), '') AS dokter_anestesi
+      FROM mlite_lap_op lo
+      LEFT JOIN dokter dl ON dl.kd_dokter = lo.kd_dokter
+      WHERE lo.no_rawat = ?
+        AND lo.deleted_at IS NULL
+      ORDER BY lo.created_at DESC, lo.id DESC
     `;
 
     const rows = await executeQuery(sql, [noRawat]);
@@ -85,6 +115,9 @@ class OperationReportService {
         kirim_pa: row.kirim_pa === 'Ya' ? 'Ya' : 'Tidak',
         nm_op: row.nm_op || '',
         created_at: this.formatDateTimeLocal(row.created_at) || row.created_at || '',
+        dokter_laporan: row.dokter_laporan || '',
+        dokter_operator: row.dokter_operator || '',
+        dokter_anestesi: row.dokter_anestesi || '',
       })),
     };
   }

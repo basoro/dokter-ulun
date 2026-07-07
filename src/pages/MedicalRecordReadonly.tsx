@@ -628,6 +628,8 @@ const MedicalRecordReadonly: React.FC<MedicalRecordReadonlyProps> = ({
                         <div key={`${visit.no_rawat}-op-${index}`} className="rounded-md border px-3 py-3 text-sm">
                           <p className="font-medium">{report.nm_op || 'Laporan Operasi'}</p>
                           <p className="mt-1 text-xs text-muted-foreground">{formatDate(report.tanggal_op)}</p>
+                          {report.dokter_operator ? <p className="mt-2"><span className="font-medium">Operator:</span> {report.dokter_operator}</p> : null}
+                          {report.dokter_anestesi ? <p className="mt-1"><span className="font-medium">Anestesi:</span> {report.dokter_anestesi}</p> : null}
                           {report.pre_op ? <p className="mt-2"><span className="font-medium">Pre-op:</span> {report.pre_op}</p> : null}
                           {report.post_op ? <p className="mt-1"><span className="font-medium">Post-op:</span> {report.post_op}</p> : null}
                           {report.hasil_op ? <p className="mt-1 whitespace-pre-wrap"><span className="font-medium">Hasil:</span> {report.hasil_op}</p> : null}

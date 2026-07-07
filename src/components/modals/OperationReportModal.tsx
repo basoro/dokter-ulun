@@ -27,6 +27,9 @@ interface OperationReport {
   kirim_pa: 'Ya' | 'Tidak';
   nm_op: string;
   created_at?: string;
+  dokter_laporan?: string;
+  dokter_operator?: string;
+  dokter_anestesi?: string;
 }
 
 interface OperationReportModalProps {
@@ -421,8 +424,16 @@ export const OperationReportModal: React.FC<OperationReportModalProps> = ({ isOp
                       <p className="text-sm">{report.nm_op || '-'}</p>
                     </div>
                     <div>
+                      <p className="text-sm font-medium text-muted-foreground">Dokter Operator</p>
+                      <p className="text-sm">{report.dokter_operator || '-'}</p>
+                    </div>
+                    <div>
                       <p className="text-sm font-medium text-muted-foreground">Kirim PA</p>
                       <p className="text-sm">{report.kirim_pa}</p>
+                    </div>
+                    <div>
+                      <p className="text-sm font-medium text-muted-foreground">Dokter Anestesi</p>
+                      <p className="text-sm">{report.dokter_anestesi || '-'}</p>
                     </div>
                     <div>
                       <p className="text-sm font-medium text-muted-foreground">Diagnosa Pre-Operasi</p>
@@ -435,6 +446,10 @@ export const OperationReportModal: React.FC<OperationReportModalProps> = ({ isOp
                     <div>
                       <p className="text-sm font-medium text-muted-foreground">Implan</p>
                       <p className="text-sm">{report.implan || '-'}</p>
+                    </div>
+                    <div>
+                      <p className="text-sm font-medium text-muted-foreground">Dokter Laporan</p>
+                      <p className="text-sm">{report.dokter_laporan || '-'}</p>
                     </div>
                     <div className="md:col-span-3">
                       <p className="text-sm font-medium text-muted-foreground">Diagnosa</p>

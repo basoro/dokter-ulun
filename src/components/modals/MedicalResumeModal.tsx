@@ -1008,6 +1008,9 @@ export const MedicalResumeModal: React.FC<MedicalResumeModalProps> = ({
     return [
       formattedDate ? `Tanggal Operasi: ${formattedDate}` : '',
       item.nm_op ? `Nama Operasi: ${item.nm_op}` : '',
+      item.dokter_operator ? `Dokter Operator: ${item.dokter_operator}` : '',
+      item.dokter_anestesi ? `Dokter Anestesi: ${item.dokter_anestesi}` : '',
+      item.dokter_laporan ? `Dokter Laporan: ${item.dokter_laporan}` : '',
       item.pre_op ? `Pre Operasi: ${item.pre_op}` : '',
       item.post_op ? `Post Operasi: ${item.post_op}` : '',
       item.implan ? `Implan: ${item.implan}` : '',
