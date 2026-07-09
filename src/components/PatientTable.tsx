@@ -1,8 +1,8 @@
 
-import React, { useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { formatNoRawat } from '@/App';
-import { User, CircleCheck, Clock } from 'lucide-react';
+import { ArrowDown, ArrowUp, ArrowUpDown, CircleCheck, Clock, User } from 'lucide-react';
 import { Table, TableHeader, TableBody, TableHead, TableRow, TableCell } from '@/components/ui/table';
 import { PaginationControls } from '@/components/PaginationControls';
 import { StatusPill } from '@/components/StatusPill';
@@ -43,6 +43,8 @@ interface PatientTableProps {
   };
 }
 
+type SortDirection = 'asc' | 'desc';
+
 const PatientTable: React.FC<PatientTableProps> = ({ 
   title, 
   patients, 
@@ -55,6 +57,8 @@ const PatientTable: React.FC<PatientTableProps> = ({
   const isMobile = useIsMobile();
   const navigate = useNavigate();
   const location = useLocation();
+  const [sortKey, setSortKey] = useState<string>('');
+  const [sortDirection, setSortDirection] = useState<SortDirection>('asc');
   
   // Helper function to decode no_rawat from encoded format
   const decodeNoRawat = (encodedNoRawat: string) => {
@@ -91,9 +95,114 @@ const PatientTable: React.FC<PatientTableProps> = ({
   const [currentPage, setCurrentPage] = useState(1);
   const itemsPerPage = 10;
   
+  const normalizeSortValue = (accessor: string, rawValue: any) => {
+    if (rawValue === null || rawValue === undefined) {
+      return '';
+    }
+
+    if (typeof rawValue === 'number') {
+      return rawValue;
+    }
+
+    if (rawValue instanceof Date) {
+      return rawValue.getTime();
+    }
+
+    const normalizedText = String(rawValue).trim();
+    if (!normalizedText) {
+      return '';
+    }
+
+    const parsedNumeric = Number(normalizedText.replace(/,/g, '.'));
+    if (Number.isFinite(parsedNumeric) && /^[0-9.,-]+$/.test(normalizedText)) {
+      return parsedNumeric;
+    }
+
+    const formattedDate = formatPotentialDateValue(accessor, normalizedText);
+    if (formattedDate) {
+      const parsed = Date.parse(normalizedText.replace(' ', 'T'));
+      if (!Number.isNaN(parsed)) {
+        return parsed;
+      }
+    }
+
+    return normalizedText.toLowerCase();
+  };
+
+  const resolveSortValue = (row: any, accessor: string) => {
+    if (!accessor) {
+      return '';
+    }
+    return normalizeSortValue(accessor, row?.[accessor]);
+  };
+
+  const toggleSort = (accessor: string) => {
+    if (!accessor) {
+      return;
+    }
+
+    setSortKey((prev) => {
+      if (prev !== accessor) {
+        setSortDirection('asc');
+        return accessor;
+      }
+
+      setSortDirection((dir) => (dir === 'asc' ? 'desc' : 'asc'));
+      return prev;
+    });
+  };
+
+  const getSortIcon = (accessor: string) => {
+    if (!accessor || sortKey !== accessor) {
+      return <ArrowUpDown className="h-3.5 w-3.5 opacity-60" />;
+    }
+
+    return sortDirection === 'asc'
+      ? <ArrowUp className="h-3.5 w-3.5" />
+      : <ArrowDown className="h-3.5 w-3.5" />;
+  };
+
+  const sortedPatientData = useMemo(() => {
+    if (!sortKey) {
+      return patientData;
+    }
+
+    const rowsWithIndex = patientData.map((row, index) => ({ row, index }));
+    rowsWithIndex.sort((left, right) => {
+      const leftValue = resolveSortValue(left.row, sortKey);
+      const rightValue = resolveSortValue(right.row, sortKey);
+
+      if (leftValue === rightValue) {
+        return left.index - right.index;
+      }
+
+      if (leftValue === '') {
+        return 1;
+      }
+
+      if (rightValue === '') {
+        return -1;
+      }
+
+      if (typeof leftValue === 'number' && typeof rightValue === 'number') {
+        return sortDirection === 'asc' ? leftValue - rightValue : rightValue - leftValue;
+      }
+
+      const leftText = String(leftValue);
+      const rightText = String(rightValue);
+      return sortDirection === 'asc'
+        ? leftText.localeCompare(rightText, 'id')
+        : rightText.localeCompare(leftText, 'id');
+    });
+
+    return rowsWithIndex.map((item) => item.row);
+  }, [patientData, sortDirection, sortKey]);
+
   // If external pagination is provided, use all data; otherwise use local pagination
-  const displayData = pagination ? patientData : patientData.slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage);
-  const totalPages = pagination ? pagination.totalPages : Math.ceil(patientData.length / itemsPerPage);
+  const displayData = pagination
+    ? sortedPatientData
+    : sortedPatientData.slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage);
+  const totalPages = pagination ? pagination.totalPages : Math.ceil(sortedPatientData.length / itemsPerPage);
 
   // Simple pagination helper
   const getVisiblePages = () => {
@@ -139,7 +248,7 @@ const PatientTable: React.FC<PatientTableProps> = ({
     }
   };
 
-  const formatPotentialDateValue = (accessor: string, value: any) => {
+  function formatPotentialDateValue(accessor: string, value: any) {
     const accessorLower = String(accessor || '').toLowerCase();
     const shouldConsiderDate =
       accessorLower.includes('tgl') ||
@@ -174,7 +283,7 @@ const PatientTable: React.FC<PatientTableProps> = ({
     }
 
     return null;
-  };
+  }
   
   // Handle the case when simple view is used (with type and without columns)
   const renderSimpleView = () => {
@@ -183,12 +292,48 @@ const PatientTable: React.FC<PatientTableProps> = ({
         <Table>
           <TableHeader>
             <TableRow>
-              <TableHead className="font-medium">No</TableHead>
-              <TableHead className="font-medium">Nama {isMobile ? '' : 'Lengkap'}</TableHead>
+              <TableHead className="font-medium">
+                <button
+                  type="button"
+                  className="inline-flex items-center gap-2"
+                  onClick={() => toggleSort('id')}
+                >
+                  <span>No</span>
+                  {getSortIcon('id')}
+                </button>
+              </TableHead>
+              <TableHead className="font-medium">
+                <button
+                  type="button"
+                  className="inline-flex items-center gap-2"
+                  onClick={() => toggleSort('name')}
+                >
+                  <span>Nama {isMobile ? '' : 'Lengkap'}</span>
+                  {getSortIcon('name')}
+                </button>
+              </TableHead>
               {type === 'active' ? (
-                <TableHead className="font-medium text-right sm:text-left">Kunj</TableHead>
+                <TableHead className="font-medium text-right sm:text-left">
+                  <button
+                    type="button"
+                    className="inline-flex items-center gap-2"
+                    onClick={() => toggleSort('visits')}
+                  >
+                    <span>Kunj</span>
+                    {getSortIcon('visits')}
+                  </button>
+                </TableHead>
               ) : (
-                <TableHead className="font-medium text-right sm:text-left">Status</TableHead>
+                <TableHead className="font-medium text-right sm:text-left">
+                  <button
+                    type="button"
+                    className="inline-flex items-center gap-2"
+                    onClick={() => toggleSort('status')}
+                  >
+                    <span>Status</span>
+                    {getSortIcon('status')}
+                  </button>
+                </TableHead>
               )}
             </TableRow>
           </TableHeader>
@@ -259,7 +404,18 @@ const PatientTable: React.FC<PatientTableProps> = ({
             <TableRow>
               {columns.map((column, index) => (
                 <TableHead key={index} className="font-medium whitespace-nowrap">
-                  {column.header}
+                  <button
+                    type="button"
+                    className={cn(
+                      "inline-flex items-center gap-2",
+                      column.accessor ? "cursor-pointer" : "cursor-default"
+                    )}
+                    onClick={() => toggleSort(column.accessor)}
+                    disabled={!column.accessor}
+                  >
+                    <span>{column.header}</span>
+                    {column.accessor ? getSortIcon(column.accessor) : null}
+                  </button>
                 </TableHead>
               ))}
             </TableRow>
