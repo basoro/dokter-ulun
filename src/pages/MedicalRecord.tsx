@@ -2460,43 +2460,23 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
     );
   }, [formattedNoRawat, medicalData?.focused_laboratory_request?.ranap, scopedInpatientVisits]);
   const outpatientLaboratoryHistory = React.useMemo(() => {
-    if (formattedNoRawat) {
-      return aggregateLaboratoryHistoryByNoRawat(
-        buildFocusedLabItems(
-          (medicalData?.focused_laboratory?.ralan || []) as LabData[],
-          formattedNoRawat,
-          'Rawat Jalan'
-        )
-      );
-    }
-
     return aggregateLaboratoryHistoryByNoRawat(
       buildFocusedLabItems(
-        scopedOutpatientVisits.flatMap((visit) => ((visit.laboratory || []) as LabData[]).map((lab) => ({ ...lab, no_rawat: visit.no_rawat }))),
+        sortedOutpatientVisits.flatMap((visit) => ((visit.laboratory || []) as LabData[]).map((lab) => ({ ...lab, no_rawat: visit.no_rawat }))),
         '',
         'Rawat Jalan'
       )
     );
-  }, [formattedNoRawat, medicalData?.focused_laboratory?.ralan, scopedOutpatientVisits]);
+  }, [sortedOutpatientVisits]);
   const inpatientLaboratoryHistory = React.useMemo(() => {
-    if (formattedNoRawat) {
-      return aggregateLaboratoryHistoryByNoRawat(
-        buildFocusedLabItems(
-          (medicalData?.focused_laboratory?.ranap || []) as LabData[],
-          formattedNoRawat,
-          'Rawat Inap'
-        )
-      );
-    }
-
     return aggregateLaboratoryHistoryByNoRawat(
       buildFocusedLabItems(
-        scopedInpatientVisits.flatMap((visit) => ((visit.laboratory || []) as LabData[]).map((lab) => ({ ...lab, no_rawat: visit.no_rawat }))),
+        sortedInpatientVisits.flatMap((visit) => ((visit.laboratory || []) as LabData[]).map((lab) => ({ ...lab, no_rawat: visit.no_rawat }))),
         '',
         'Rawat Inap'
       )
     );
-  }, [formattedNoRawat, medicalData?.focused_laboratory?.ranap, scopedInpatientVisits]);
+  }, [sortedInpatientVisits]);
   const inpatientLaboratoryHistoryAll = useMemo(() => {
     const combined = [...outpatientLaboratoryHistory, ...inpatientLaboratoryHistory];
 
@@ -2571,27 +2551,19 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
     );
   }, [formattedNoRawat, medicalData?.focused_radiology_request?.ranap, scopedInpatientVisits]);
   const outpatientRadiologyHistory = React.useMemo(() => {
-    if (formattedNoRawat) {
-      return buildFocusedItems(medicalData?.focused_radiology?.ralan || [], formattedNoRawat, 'Rawat Jalan');
-    }
-
     return buildFocusedItems(
-      scopedOutpatientVisits.flatMap((visit) => ((visit.radiology || []) as any[]).map((rad) => ({ ...rad, no_rawat: visit.no_rawat }))),
+      sortedOutpatientVisits.flatMap((visit) => ((visit.radiology || []) as any[]).map((rad) => ({ ...rad, no_rawat: visit.no_rawat }))),
       '',
       'Rawat Jalan'
     );
-  }, [formattedNoRawat, medicalData?.focused_radiology?.ralan, scopedOutpatientVisits]);
+  }, [sortedOutpatientVisits]);
   const inpatientRadiologyHistory = React.useMemo(() => {
-    if (formattedNoRawat) {
-      return buildFocusedItems(medicalData?.focused_radiology?.ranap || [], formattedNoRawat, 'Rawat Inap');
-    }
-
     return buildFocusedItems(
-      scopedInpatientVisits.flatMap((visit) => ((visit.radiology || []) as any[]).map((rad) => ({ ...rad, no_rawat: visit.no_rawat }))),
+      sortedInpatientVisits.flatMap((visit) => ((visit.radiology || []) as any[]).map((rad) => ({ ...rad, no_rawat: visit.no_rawat }))),
       '',
       'Rawat Inap'
     );
-  }, [formattedNoRawat, medicalData?.focused_radiology?.ranap, scopedInpatientVisits]);
+  }, [sortedInpatientVisits]);
   const inpatientRadiologyHistoryAll = useMemo(() => {
     const combined = [...outpatientRadiologyHistory, ...inpatientRadiologyHistory];
 
@@ -5270,7 +5242,10 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
   ]);
 
   useEffect(() => {
-    if (formattedNoRawat || loading || loadingMoreVisits) {
+    const shouldHydrateVisitDetailsInFocusedContext = Boolean(formattedNoRawat)
+      && ['laboratory', 'radiology'].includes(activeTab);
+
+    if ((formattedNoRawat && !shouldHydrateVisitDetailsInFocusedContext) || loading || loadingMoreVisits) {
       return;
     }
 
