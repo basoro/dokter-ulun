@@ -19,6 +19,17 @@ class ResumePasienDataService {
     return values.map(() => '?').join(', ');
   }
 
+  getKamarInapLamaSelect(noRawatColumn = 'ki.no_rawat') {
+    return `(
+      SELECT ki_lama.lama
+      FROM kamar_inap ki_lama
+      WHERE ki_lama.no_rawat = ${noRawatColumn}
+        AND COALESCE(ki_lama.stts_pulang, '') <> 'Pindah Kamar'
+      ORDER BY ki_lama.tgl_masuk DESC
+      LIMIT 1
+    )`;
+  }
+
   shouldUseAdmissionDateForDischargeFilter(accessibleDoctorCodes = []) {
     return accessibleDoctorCodes.includes('DR00016');
   }
@@ -869,28 +880,7 @@ class ResumePasienDataService {
             ),
             ''
           ) as tgl_keluar,
-          CASE
-            WHEN SUBSTRING_INDEX(
-              GROUP_CONCAT(COALESCE(ki.stts_pulang, '') ORDER BY ki.tgl_masuk DESC SEPARATOR '||'),
-              '||',
-              1
-            ) IN ('', '-', 'Pindah Kamar')
-              THEN DATEDIFF(CURDATE(), MIN(DATE(ki.tgl_masuk))) + 1
-            ELSE DATEDIFF(
-              STR_TO_DATE(
-                NULLIF(
-                  SUBSTRING_INDEX(
-                    GROUP_CONCAT(COALESCE(DATE_FORMAT(ki.tgl_keluar, '%Y-%m-%d'), '') ORDER BY ki.tgl_masuk DESC SEPARATOR '||'),
-                    '||',
-                    1
-                  ),
-                  ''
-                ),
-                '%Y-%m-%d'
-              ),
-              MIN(DATE(ki.tgl_masuk))
-            ) + 1
-          END as lama,
+          ${this.getKamarInapLamaSelect('ki.no_rawat')} as lama,
           SUBSTRING_INDEX(
             GROUP_CONCAT(COALESCE(ki.stts_pulang, '') ORDER BY ki.tgl_masuk DESC SEPARATOR '||'),
             '||',
@@ -1023,28 +1013,7 @@ class ResumePasienDataService {
           ),
           ''
         ) as tgl_keluar,
-        CASE
-          WHEN SUBSTRING_INDEX(
-            GROUP_CONCAT(COALESCE(ki.stts_pulang, '') ORDER BY ki.tgl_masuk DESC SEPARATOR '||'),
-            '||',
-            1
-          ) IN ('', '-', 'Pindah Kamar')
-            THEN DATEDIFF(CURDATE(), MIN(DATE(ki.tgl_masuk))) + 1
-          ELSE DATEDIFF(
-            STR_TO_DATE(
-              NULLIF(
-                SUBSTRING_INDEX(
-                  GROUP_CONCAT(COALESCE(DATE_FORMAT(ki.tgl_keluar, '%Y-%m-%d'), '') ORDER BY ki.tgl_masuk DESC SEPARATOR '||'),
-                  '||',
-                  1
-                ),
-                ''
-              ),
-              '%Y-%m-%d'
-            ),
-            MIN(DATE(ki.tgl_masuk))
-          ) + 1
-        END as lama,
+        ${this.getKamarInapLamaSelect('rp.no_rawat')} as lama,
         SUBSTRING_INDEX(
           GROUP_CONCAT(COALESCE(ki.stts_pulang, '') ORDER BY ki.tgl_masuk DESC SEPARATOR '||'),
           '||',

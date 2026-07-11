@@ -4954,8 +4954,8 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
         window.alert(
           "⚠️ PERINGATAN ADA RESEP PASIEN OBAT KRONIS\n\n" +
           "Pasien tidak bisa diberikan obat 1 bulan karena masih ada resep kronis sebelumnya\n" +
-          `Tanggal resep terakhir: ${data.tanggal_kronis || '-'} (${data.hari_sebelumnya || 0} hari yang lalu)\n\n` +
-          `Baru bisa diberikan obat kronis pada tanggal: ${data.tanggal_berikutnya || '-'}\n\n` +
+          `Tanggal resep terakhir: ${data.tanggal_kronis || '-'} ${data.jam_kronis || ''}`.trimEnd() + ` (${data.hari_sebelumnya || 0} hari yang lalu)\n\n` +
+          `Baru bisa diberikan obat kronis pada tanggal: ${data.tanggal_berikutnya || '-'} ${data.jam_berikutnya || ''}`.trimEnd() + `\n\n` +
           String(data.data || '')
         );
         setKronisWarningShown(true);

@@ -50,7 +50,7 @@ import {
   CommandItem,
   CommandList
 } from "@/components/ui/command";
-import { format, addDays, differenceInDays, subMonths } from 'date-fns';
+import { format, addDays, subMonths } from 'date-fns';
 import { indonesianLocale, formatUIDate } from '@/lib/date-utils';
 import PatientTable from '@/components/PatientTable';
 import { useIsMobile } from '@/hooks/use-mobile';
@@ -1141,19 +1141,7 @@ const RawatInapTabs = ({ viewMode = 'utama' }: RawatInapTabsProps) => {
     {
       accessor: 'lama',
       header: 'Lama Rawat',
-      render: (row: any) => {
-        if (!row.tgl_masuk) return <span className="text-sm">-</span>;
-
-        const tglMasuk = new Date(row.tgl_masuk);
-        const today = new Date();
-        const lamaRawat = differenceInDays(today, tglMasuk) + 1;
-
-        return (
-          <span className="text-sm">
-            {lamaRawat} hari
-          </span>
-        );
-      }
+      render: (row: any) => <span className="text-sm">{row.lama ? `${row.lama} hari` : '-'}</span>
     },
     {
       accessor: 'clinical_pathway',

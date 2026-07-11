@@ -620,6 +620,72 @@ class PrescriptionDataService {
     };
   }
 
+  formatDateToLocalYmd(value) {
+    const date = value instanceof Date ? new Date(value.getTime()) : new Date(value);
+    if (Number.isNaN(date.getTime())) {
+      return '';
+    }
+
+    const year = date.getFullYear();
+    const month = String(date.getMonth() + 1).padStart(2, '0');
+    const day = String(date.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+  }
+
+  formatTimeToLocalHms(value) {
+    const date = value instanceof Date ? new Date(value.getTime()) : new Date(value);
+    if (Number.isNaN(date.getTime())) {
+      return '';
+    }
+
+    const hours = String(date.getHours()).padStart(2, '0');
+    const minutes = String(date.getMinutes()).padStart(2, '0');
+    const seconds = String(date.getSeconds()).padStart(2, '0');
+    return `${hours}:${minutes}:${seconds}`;
+  }
+
+  formatTimeStringToHm(value) {
+    const normalizedValue = String(value || '').trim();
+    if (!normalizedValue) {
+      return '';
+    }
+
+    const match = normalizedValue.match(/^(\d{2}):(\d{2})(?::\d{2})?$/);
+    if (!match) {
+      return normalizedValue;
+    }
+
+    return `${match[1]}:${match[2]}`;
+  }
+
+  parseMysqlDateTimeAsLocal(value) {
+    const normalizedValue = String(value || '').trim();
+    if (!normalizedValue) {
+      return null;
+    }
+
+    const match = normalizedValue.match(
+      /^(\d{4})-(\d{2})-(\d{2})(?:[ T](\d{2}):(\d{2})(?::(\d{2}))?)?$/
+    );
+
+    if (!match) {
+      const fallbackDate = new Date(normalizedValue);
+      return Number.isNaN(fallbackDate.getTime()) ? null : fallbackDate;
+    }
+
+    const [, year, month, day, hour = '00', minute = '00', second = '00'] = match;
+    const parsedDate = new Date(
+      Number(year),
+      Number(month) - 1,
+      Number(day),
+      Number(hour),
+      Number(minute),
+      Number(second)
+    );
+
+    return Number.isNaN(parsedDate.getTime()) ? null : parsedDate;
+  }
+
   // Get prescriptions for a patient
   async getPrescriptions(no_rawat) {
     if (!no_rawat) {
@@ -1543,9 +1609,7 @@ class PrescriptionDataService {
     const kronisRows = await executeQuery(
       `
         SELECT
-          DATE(tgl_registrasi) AS tanggal_kronis,
-          DATEDIFF(CURDATE(), DATE(tgl_registrasi)) AS hari_sebelumnya,
-          DATE_ADD(DATE(tgl_registrasi), INTERVAL 30 DAY) AS tanggal_berikutnya,
+          DATE_FORMAT(tgl_registrasi, '%Y-%m-%d %H:%i:%s') AS tgl_registrasi,
           no_rawat
         FROM mlite_veronisa
         WHERE no_rkm_medis = ?
@@ -1564,8 +1628,8 @@ class PrescriptionDataService {
       };
     }
 
-    const hariSebelumnya = Number(kronis.hari_sebelumnya ?? 0);
-    if (!Number.isFinite(hariSebelumnya) || hariSebelumnya > 30) {
+    const kronisTimestamp = this.parseMysqlDateTimeAsLocal(kronis.tgl_registrasi);
+    if (!kronisTimestamp || Number.isNaN(kronisTimestamp.getTime())) {
       return {
         success: true,
         data: { status: 'tidak' }
@@ -1579,6 +1643,36 @@ class PrescriptionDataService {
         data: { status: 'tidak' }
       };
     }
+
+    const resepHeaderRows = await executeQuery(
+      `
+        SELECT
+          DATE_FORMAT(ro.tgl_peresepan, '%Y-%m-%d') AS tanggal_resep,
+          TIME_FORMAT(ro.jam, '%H:%i:%s') AS jam_resep
+        FROM resep_obat ro
+        WHERE ro.no_rawat = ?
+        ORDER BY ro.tgl_peresepan DESC, ro.jam DESC, ro.no_resep DESC
+        LIMIT 1
+      `,
+      [noRawat]
+    );
+
+    const resepHeader = resepHeaderRows?.[0] || {};
+    const tanggalKronis = String(resepHeader.tanggal_resep || '').trim() || this.formatDateToLocalYmd(kronisTimestamp);
+    const jamKronisRaw = String(resepHeader.jam_resep || '').trim() || '00:00:00';
+    const jamKronis = this.formatTimeStringToHm(jamKronisRaw);
+    const tanggalBerikutnyaBase = this.parseMysqlDateTimeAsLocal(`${tanggalKronis} ${jamKronisRaw}`) || new Date(kronisTimestamp.getTime());
+    tanggalBerikutnyaBase.setDate(tanggalBerikutnyaBase.getDate() + 30);
+    const hariSebelumnya = Math.floor((Date.now() - kronisTimestamp.getTime()) / 86400000);
+    if (!Number.isFinite(hariSebelumnya) || Date.now() >= tanggalBerikutnyaBase.getTime()) {
+      return {
+        success: true,
+        data: { status: 'tidak' }
+      };
+    }
+
+    const tanggalBerikutnya = this.formatDateToLocalYmd(tanggalBerikutnyaBase);
+    const jamBerikutnya = this.formatTimeStringToHm(jamKronisRaw);
 
     const detailRows = await executeQuery(
       `
@@ -1631,9 +1725,11 @@ class PrescriptionDataService {
       data: {
         status: 'ada',
         data: dataObat.join('\n\n'),
-        tanggal_kronis: kronis.tanggal_kronis,
+        tanggal_kronis: tanggalKronis,
+        jam_kronis: jamKronis,
         hari_sebelumnya: hariSebelumnya,
-        tanggal_berikutnya: kronis.tanggal_berikutnya
+        tanggal_berikutnya: tanggalBerikutnya,
+        jam_berikutnya: jamBerikutnya
       }
     };
   }
