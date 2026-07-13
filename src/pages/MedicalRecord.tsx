@@ -1647,7 +1647,6 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
 
   const [fullscreenLabHistory, setFullscreenLabHistory] = useState<any | null>(null);
   const [laboratoryHistoryFilter, setLaboratoryHistoryFilter] = useState<'pk' | 'pa' | 'mikro'>('pk');
-  const [draggingLab, setDraggingLab] = useState<LabData | null>(null);
   const [canvasItems, setCanvasItems] = useState<Array<{ type: string; content: any; position: { x: number; y: number } }>>([]);
   const [draggingRad, setDraggingRad] = useState<any | null>(null);
   const [radiologies, setRadiologies] = useState<RadiologyFormItem[]>(getDefaultRadiologyRequestForm);
@@ -1926,7 +1925,6 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
         position: { x: 0, y: 0 }
       }
     ]);
-    setDraggingLab(null);
     toast({
       title: "Lab Result Added",
       description: "Hasil laboratorium berhasil ditambahkan ke canvas",
@@ -4409,12 +4407,7 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
     return items.map((labGroup, groupIndex) => (
       <div
         key={`${labGroup.no_rawat}-${labGroup.tanggal}-${groupIndex}`}
-        className="border rounded-lg p-4 cursor-move hover:shadow-lg transition-shadow"
-        draggable
-        onDragStart={(e) => {
-          setDraggingLab(labGroup);
-          e.dataTransfer.effectAllowed = 'move';
-        }}
+        className="border rounded-lg p-4 hover:shadow-lg transition-shadow"
       >
         <div className="mb-4 flex flex-col-reverse gap-3 md:flex-row md:items-start md:justify-between">
           <div className="grid flex-1 grid-cols-1 gap-4 md:grid-cols-2">
@@ -12965,24 +12958,15 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
                 </div>
               </Collapsible>
 
-              {/* Drag & Drop Canvas */}
+              {/* Laboratory Canvas */}
               <div className="mb-6 rounded-lg border-2 border-dashed border-gray-300 bg-gray-50/50 p-6 dark:border-slate-700 dark:bg-slate-900/50">
                 <h4 className="mb-4 text-center text-lg font-semibold dark:text-slate-100">
-                  🧪 Drag & Drop Lab Results Canvas
+                  🧪 Lab Results Canvas
                 </h4>
-                <div 
-                  className="min-h-[200px] rounded-lg border bg-white p-4 dark:border-slate-700 dark:bg-slate-950/80"
-                  onDrop={(e) => {
-                    e.preventDefault();
-                    if (draggingLab) {
-                      addLaboratoryResultToCanvas(draggingLab);
-                    }
-                  }}
-                  onDragOver={(e) => e.preventDefault()}
-                >
+                <div className="min-h-[200px] rounded-lg border bg-white p-4 dark:border-slate-700 dark:bg-slate-950/80">
                   {canvasItems.length === 0 ? (
                     <div className="py-8 text-center text-gray-500 dark:text-slate-400">
-                      Drop lab results here...
+                      Tambahkan hasil laboratorium ke canvas melalui tombol "Tambah ke Canvas".
                     </div>
                   ) : (
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
