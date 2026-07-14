@@ -1479,6 +1479,22 @@ export const MedicalResumeModal: React.FC<MedicalResumeModalProps> = ({
       .filter(Boolean)
       .some((text) => String(text).toLowerCase().includes(keyword));
   });
+  const filteredPickerItemIds = filteredPickerItems.map((item) => item.id);
+  const filteredSelectedCount = filteredPickerItemIds.filter((id) => selectedPickerItems.includes(id)).length;
+  const allFilteredItemsSelected = filteredPickerItems.length > 0 && filteredSelectedCount === filteredPickerItems.length;
+  const someFilteredItemsSelected = filteredSelectedCount > 0 && !allFilteredItemsSelected;
+  const abnormalFilteredPickerItemIds = filteredPickerItems
+    .filter((item) =>
+      Array.isArray(item.laboratoryPanels)
+      && item.laboratoryPanels.some((panel) =>
+        Array.isArray(panel.tests)
+        && panel.tests.some((test) => ['H', 'L'].includes(String(test?.keterangan || '').trim().toUpperCase()))
+      )
+    )
+    .map((item) => item.id);
+  const abnormalFilteredSelectedCount = abnormalFilteredPickerItemIds.filter((id) => selectedPickerItems.includes(id)).length;
+  const allAbnormalFilteredItemsSelected = abnormalFilteredPickerItemIds.length > 0
+    && abnormalFilteredSelectedCount === abnormalFilteredPickerItemIds.length;
 
   const openPicker = async (target: ResumePickerTarget) => {
     if (sourceLoading) {
@@ -1529,6 +1545,38 @@ export const MedicalResumeModal: React.FC<MedicalResumeModalProps> = ({
       }
 
       return previous[0] === itemId ? [] : [itemId];
+    });
+  };
+
+  const toggleAllFilteredPickerItems = () => {
+    if (!pickerConfig?.multiple || filteredPickerItemIds.length === 0) {
+      return;
+    }
+
+    setSelectedPickerItems((previous) => {
+      if (allFilteredItemsSelected) {
+        return previous.filter((id) => !filteredPickerItemIds.includes(id));
+      }
+
+      return Array.from(new Set([...previous, ...filteredPickerItemIds]));
+    });
+  };
+
+  const clearAllPickerSelections = () => {
+    setSelectedPickerItems([]);
+  };
+
+  const toggleAbnormalFilteredPickerItems = () => {
+    if (!pickerConfig?.multiple || abnormalFilteredPickerItemIds.length === 0) {
+      return;
+    }
+
+    setSelectedPickerItems((previous) => {
+      if (allAbnormalFilteredItemsSelected) {
+        return previous.filter((id) => !abnormalFilteredPickerItemIds.includes(id));
+      }
+
+      return Array.from(new Set([...previous, ...abnormalFilteredPickerItemIds]));
     });
   };
 
@@ -2058,6 +2106,53 @@ export const MedicalResumeModal: React.FC<MedicalResumeModalProps> = ({
                   </div>
                 ) : (
                   <div className="divide-y">
+                    {pickerConfig?.multiple ? (
+                      <div className="sticky top-0 z-10 flex flex-wrap items-center justify-between gap-3 border-b bg-background px-4 py-3">
+                        <div className="flex items-center gap-3">
+                          <div
+                            data-picker-checkbox="true"
+                            onClick={(event) => event.stopPropagation()}
+                          >
+                            <Checkbox
+                              checked={allFilteredItemsSelected ? true : (someFilteredItemsSelected ? 'indeterminate' : false)}
+                              onCheckedChange={toggleAllFilteredPickerItems}
+                            />
+                          </div>
+                          <button
+                            type="button"
+                            className="text-sm font-medium hover:underline"
+                            onClick={toggleAllFilteredPickerItems}
+                          >
+                            {allFilteredItemsSelected ? 'Batalkan pilih semua' : 'Pilih semua'}
+                          </button>
+                          <span className="text-xs text-muted-foreground">
+                            {filteredSelectedCount} dari {filteredPickerItems.length} item dipilih
+                          </span>
+                        </div>
+                        <div className="flex flex-wrap items-center gap-2">
+                          {pickerConfig.target === 'hasil_laborat' ? (
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="sm"
+                              onClick={toggleAbnormalFilteredPickerItems}
+                              disabled={abnormalFilteredPickerItemIds.length === 0}
+                            >
+                              {allAbnormalFilteredItemsSelected ? 'Batalkan abnormal' : 'Pilih abnormal'}
+                            </Button>
+                          ) : null}
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="sm"
+                            onClick={clearAllPickerSelections}
+                            disabled={selectedPickerItems.length === 0}
+                          >
+                            Bersihkan ceklis
+                          </Button>
+                        </div>
+                      </div>
+                    ) : null}
                     {filteredPickerItems.map((item) => {
                       const checked = selectedPickerItems.includes(item.id);
                       return (
