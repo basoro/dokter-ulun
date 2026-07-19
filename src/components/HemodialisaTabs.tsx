@@ -1,7 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import { useLocation, useNavigate, useSearchParams } from 'react-router-dom';
-import { formatNoRawat } from '@/App';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
@@ -35,6 +34,7 @@ import {
   DialogTitle
 } from '@/components/ui/dialog';
 import { dispatchOpenMedicalRecordTab } from '@/lib/medical-record-tabs';
+import { buildMedicalRecordVisitUrl, normalizeMedicalRecordVisitNoRawat } from '@/lib/medical-record-url';
 
 const parseDateParam = (value: string | null, fallback: Date) => {
   return parseLocalDateValue(value, fallback);
@@ -252,7 +252,7 @@ const HemodialisaTabs = () => {
 
     dispatchOpenMedicalRecordTab({
       noRkmMedis: String(row.no_rkm_medis),
-      noRawat: String(row.no_rawat || ''),
+      noRawat: normalizeMedicalRecordVisitNoRawat(String(row.no_rawat || '')),
       patientName: String(row.name || '').trim(),
       sourcePath: `${location.pathname}${location.search}`
     });
@@ -263,11 +263,7 @@ const HemodialisaTabs = () => {
       return;
     }
 
-    window.open(
-      `/rekam-medik/${encodeURIComponent(String(row.no_rkm_medis))}/${encodeURIComponent(String(row.no_rawat || ''))}`,
-      '_blank',
-      'noopener,noreferrer'
-    );
+    window.open(buildMedicalRecordVisitUrl(String(row.no_rkm_medis), String(row.no_rawat)), '_blank', 'noopener,noreferrer');
   };
 
   const openClinicalPathwayModal = (row: any) => {
@@ -275,7 +271,7 @@ const HemodialisaTabs = () => {
       return;
     }
 
-    const compactNoRawat = String(formatNoRawat(String(row.no_rawat))).replace(/\//g, '');
+    const compactNoRawat = normalizeMedicalRecordVisitNoRawat(String(row.no_rawat));
     navigate(`/clinical-pathway/${row.no_rkm_medis}/${compactNoRawat}?mode=initiation&source=hemodialisa`, {
       state: {
         backgroundLocation: location

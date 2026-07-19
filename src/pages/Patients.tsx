@@ -1,7 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
-import { formatNoRawat } from '@/App';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
@@ -79,6 +78,11 @@ import {
   OPEN_MEDICAL_RECORD_TAB_EVENT,
   type OpenMedicalRecordTabDetail
 } from '@/lib/medical-record-tabs';
+import {
+  buildMedicalRecordVisitUrl,
+  formatMedicalRecordWorkspaceNoRawat,
+  normalizeMedicalRecordVisitNoRawat
+} from '@/lib/medical-record-url';
 
 const parseDateParam = (value: string | null, fallback: Date) => {
   if (!value) return fallback;
@@ -90,18 +94,6 @@ const parseDateParam = (value: string | null, fallback: Date) => {
 const parsePositiveInt = (value: string | null, fallback: number) => {
   const parsed = Number.parseInt(value || '', 10);
   return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
-};
-
-const formatWorkspaceNoRawat = (value: string) => {
-  if (!value || value.includes('/')) {
-    return value;
-  }
-
-  if (value.length < 9) {
-    return value;
-  }
-
-  return `${value.slice(0, 4)}/${value.slice(4, 6)}/${value.slice(6, 8)}/${value.slice(8)}`;
 };
 
 interface MedicalRecordWorkspaceTab {
@@ -1135,7 +1127,7 @@ const RawatInapTabs = ({ viewMode = 'utama' }: RawatInapTabsProps) => {
 
     dispatchOpenMedicalRecordTab({
       noRkmMedis: String(row.no_rkm_medis),
-      noRawat: formatWorkspaceNoRawat(String(row.no_rawat)),
+      noRawat: normalizeMedicalRecordVisitNoRawat(String(row.no_rawat)),
       patientName: String(row.nm_pasien || '').trim(),
       sourcePath: `${location.pathname}${location.search}`
     });
@@ -1146,12 +1138,7 @@ const RawatInapTabs = ({ viewMode = 'utama' }: RawatInapTabsProps) => {
       return;
     }
 
-    const noRawat = formatWorkspaceNoRawat(String(row.no_rawat));
-    window.open(
-      `/rekam-medik/${encodeURIComponent(String(row.no_rkm_medis))}/${encodeURIComponent(noRawat)}`,
-      '_blank',
-      'noopener,noreferrer'
-    );
+    window.open(buildMedicalRecordVisitUrl(String(row.no_rkm_medis), String(row.no_rawat)), '_blank', 'noopener,noreferrer');
   };
 
   const openClinicalPathwayModal = (row: any) => {
@@ -1159,7 +1146,7 @@ const RawatInapTabs = ({ viewMode = 'utama' }: RawatInapTabsProps) => {
       return;
     }
 
-    const compactNoRawat = String(formatNoRawat(String(row.no_rawat))).replace(/\//g, '');
+    const compactNoRawat = normalizeMedicalRecordVisitNoRawat(String(row.no_rawat));
     navigate(`/clinical-pathway/${row.no_rkm_medis}/${compactNoRawat}?mode=monitoring&source=rawat-inap`, {
       state: {
         backgroundLocation: location
@@ -1988,7 +1975,7 @@ const RawatJagaTabs = () => {
 
     dispatchOpenMedicalRecordTab({
       noRkmMedis: String(row.no_rkm_medis),
-      noRawat: formatWorkspaceNoRawat(String(row.no_rawat)),
+      noRawat: normalizeMedicalRecordVisitNoRawat(String(row.no_rawat)),
       patientName: String(row.nm_pasien || '').trim(),
       sourcePath: `${location.pathname}${location.search}`
     });
@@ -1999,12 +1986,7 @@ const RawatJagaTabs = () => {
       return;
     }
 
-    const noRawat = formatWorkspaceNoRawat(String(row.no_rawat));
-    window.open(
-      `/rekam-medik/${encodeURIComponent(String(row.no_rkm_medis))}/${encodeURIComponent(noRawat)}`,
-      '_blank',
-      'noopener,noreferrer'
-    );
+    window.open(buildMedicalRecordVisitUrl(String(row.no_rkm_medis), String(row.no_rawat)), '_blank', 'noopener,noreferrer');
   };
 
   const openClinicalPathwayModal = (row: any) => {
@@ -2012,7 +1994,7 @@ const RawatJagaTabs = () => {
       return;
     }
 
-    const compactNoRawat = String(formatNoRawat(String(row.no_rawat))).replace(/\//g, '');
+    const compactNoRawat = normalizeMedicalRecordVisitNoRawat(String(row.no_rawat));
     navigate(`/clinical-pathway/${row.no_rkm_medis}/${compactNoRawat}?mode=monitoring&source=rawat-inap`, {
       state: {
         backgroundLocation: location
@@ -2443,7 +2425,7 @@ const IGDTabs = () => {
 
     dispatchOpenMedicalRecordTab({
       noRkmMedis: String(row.no_rkm_medis),
-      noRawat: formatWorkspaceNoRawat(String(row.no_rawat)),
+      noRawat: normalizeMedicalRecordVisitNoRawat(String(row.no_rawat)),
       patientName: String(row.nm_pasien || '').trim(),
       sourcePath: `${location.pathname}${location.search}`
     });
@@ -2454,12 +2436,7 @@ const IGDTabs = () => {
       return;
     }
 
-    const noRawat = formatWorkspaceNoRawat(String(row.no_rawat));
-    window.open(
-      `/rekam-medik/${encodeURIComponent(String(row.no_rkm_medis))}/${encodeURIComponent(noRawat)}`,
-      '_blank',
-      'noopener,noreferrer'
-    );
+    window.open(buildMedicalRecordVisitUrl(String(row.no_rkm_medis), String(row.no_rawat)), '_blank', 'noopener,noreferrer');
   };
 
   const openClinicalPathwayModal = (row: any) => {
@@ -2467,7 +2444,7 @@ const IGDTabs = () => {
       return;
     }
 
-    const compactNoRawat = String(formatNoRawat(String(row.no_rawat))).replace(/\//g, '');
+    const compactNoRawat = normalizeMedicalRecordVisitNoRawat(String(row.no_rawat));
     navigate(`/clinical-pathway/${row.no_rkm_medis}/${compactNoRawat}?mode=initiation&source=igd`, {
       state: {
         backgroundLocation: location
@@ -3051,7 +3028,7 @@ const Patients = () => {
                           {tab.patientName || `Pasien ${tab.noRkmMedis}`}
                         </span>
                         <span className="text-xs text-muted-foreground whitespace-nowrap">
-                          {formatWorkspaceNoRawat(tab.noRawat)}
+                          {formatMedicalRecordWorkspaceNoRawat(tab.noRawat)}
                         </span>
                       </button>
                       <Button

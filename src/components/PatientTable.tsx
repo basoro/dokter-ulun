@@ -1,6 +1,5 @@
 import React, { useMemo, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
-import { formatNoRawat } from '@/App';
 import { ArrowDown, ArrowUp, ArrowUpDown, CircleCheck, Clock, User } from 'lucide-react';
 import {
   ContextMenu,
@@ -14,6 +13,7 @@ import { StatusPill } from '@/components/StatusPill';
 import { useIsMobile } from '@/hooks/use-mobile';
 import { cn } from '@/lib/utils';
 import { dispatchOpenMedicalRecordTab } from '@/lib/medical-record-tabs';
+import { buildMedicalRecordVisitUrl, normalizeMedicalRecordVisitNoRawat } from '@/lib/medical-record-url';
 import { formatUIDate, formatUIDateTime } from '@/lib/date-utils';
 
 
@@ -83,19 +83,19 @@ const PatientTable: React.FC<PatientTableProps> = ({
 
   const handleRowClick = (patient: any) => {
     if (patient.no_rkm_medis && patient.no_rawat) {
-      const formattedNoRawat = formatNoRawat(patient.no_rawat);
+      const compactNoRawat = normalizeMedicalRecordVisitNoRawat(String(patient.no_rawat));
 
       if (location.pathname.startsWith('/pasien')) {
         dispatchOpenMedicalRecordTab({
           noRkmMedis: String(patient.no_rkm_medis),
-          noRawat: formattedNoRawat,
+          noRawat: compactNoRawat,
           patientName: String(patient.name || patient.nm_pasien || '').trim(),
           sourcePath: `${location.pathname}${location.search}`
         });
         return;
       }
 
-      navigate(`/rekam-medik/${patient.no_rkm_medis}/${formattedNoRawat}`, {
+      navigate(buildMedicalRecordVisitUrl(String(patient.no_rkm_medis), compactNoRawat), {
         state: {
           from: `${location.pathname}${location.search}`
         }

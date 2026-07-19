@@ -1,7 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import { useLocation, useNavigate, useSearchParams } from 'react-router-dom';
-import { formatNoRawat } from '@/App';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
@@ -40,6 +39,7 @@ import {
   DialogTitle
 } from '@/components/ui/dialog';
 import { dispatchOpenMedicalRecordTab } from '@/lib/medical-record-tabs';
+import { buildMedicalRecordVisitUrl, normalizeMedicalRecordVisitNoRawat } from '@/lib/medical-record-url';
 
 const parseDateParam = (value: string | null, fallback: Date) => {
   return parseLocalDateValue(value, fallback);
@@ -128,7 +128,7 @@ const RawatJalanTabs = () => {
 
     dispatchOpenMedicalRecordTab({
       noRkmMedis: String(row.no_rkm_medis),
-      noRawat: formatNoRawat(String(row.no_rawat)),
+      noRawat: normalizeMedicalRecordVisitNoRawat(String(row.no_rawat)),
       patientName: String(row.name || row.nm_pasien || '').trim(),
       sourcePath: `${location.pathname}${location.search}`
     });
@@ -139,8 +139,7 @@ const RawatJalanTabs = () => {
       return;
     }
 
-    const compactNoRawat = formatNoRawat(String(row.no_rawat));
-    const targetUrl = `/rekam-medik/${encodeURIComponent(String(row.no_rkm_medis))}/${encodeURIComponent(compactNoRawat)}`;
+    const targetUrl = buildMedicalRecordVisitUrl(String(row.no_rkm_medis), String(row.no_rawat));
     window.open(targetUrl, '_blank', 'noopener,noreferrer');
   };
 
@@ -149,7 +148,7 @@ const RawatJalanTabs = () => {
       return;
     }
 
-    const compactNoRawat = formatNoRawat(String(row.no_rawat));
+    const compactNoRawat = normalizeMedicalRecordVisitNoRawat(String(row.no_rawat));
     navigate(`/clinical-pathway/${row.no_rkm_medis}/${compactNoRawat}?mode=initiation&source=rawat-jalan`, {
       state: {
         backgroundLocation: location
