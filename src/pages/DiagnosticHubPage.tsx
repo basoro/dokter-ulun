@@ -56,6 +56,7 @@ interface LabResultSheet {
   nm_dokter?: string;
   kd_dokter_perujuk?: string;
   nm_dokter_perujuk?: string;
+  requested_tests?: string[];
   results: LabResultItem[];
 }
 
@@ -384,6 +385,9 @@ const DiagnosticHubPage: React.FC<DiagnosticHubPageProps> = ({ mode }) => {
 
       if (mode === 'laboratorium') {
         const detail = result?.data as LaboratoryDetail;
+        // #region debug-point B:lab-detail-received
+        fetch("http://127.0.0.1:7777/event",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({sessionId:"lab-results-missing",runId:"pre-fix",hypothesisId:"B",location:"src/pages/DiagnosticHubPage.tsx:fetchDetail",msg:"[DEBUG] Laboratory detail received in frontend",data:{no_rawat:String(noRawat||""),selectedNoRawat:String(selectedNoRawat||""),result_sheets_count:Array.isArray(detail?.result_sheets)?detail.result_sheets.length:0,results_count:Array.isArray(detail?.results)?detail.results.length:0,sheets:Array.isArray(detail?.result_sheets)?detail.result_sheets.map((sheet)=>({tgl_periksa:String(sheet?.tgl_periksa||""),jam:String(sheet?.jam||""),requested_tests_count:Array.isArray(sheet?.requested_tests)?sheet.requested_tests.length:0,requested_tests:Array.isArray(sheet?.requested_tests)?sheet.requested_tests:[],results_count:Array.isArray(sheet?.results)?sheet.results.length:0})):[]},ts:Date.now()})}).catch(()=>{});
+        // #endregion
         setLabDetail(detail);
         setLabReviewForm({
           kesan: String(detail?.review?.kesan || ''),
@@ -906,6 +910,7 @@ const DiagnosticHubPage: React.FC<DiagnosticHubPageProps> = ({ mode }) => {
           nm_dokter: sheet.nm_dokter,
           kd_dokter_perujuk: sheet.kd_dokter_perujuk,
           nm_dokter_perujuk: sheet.nm_dokter_perujuk,
+          requested_tests: Array.isArray(sheet.requested_tests) ? sheet.requested_tests : [],
           groups: Array.from(groups.entries()).map(([templateName, results]) => ({
             templateName,
             results
@@ -935,6 +940,16 @@ const DiagnosticHubPage: React.FC<DiagnosticHubPageProps> = ({ mode }) => {
 
     return [];
   }, [labDetail?.result_sheets, labDetail?.results, mode]);
+
+  React.useEffect(() => {
+    if (mode !== 'laboratorium') {
+      return;
+    }
+
+    // #region debug-point D:lab-render-groups
+    fetch("http://127.0.0.1:7777/event",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({sessionId:"lab-results-missing",runId:"pre-fix",hypothesisId:"D",location:"src/pages/DiagnosticHubPage.tsx:labSheetsWithGroups",msg:"[DEBUG] Laboratory sheets prepared for render",data:{selectedNoRawat:String(selectedNoRawat||""),labDetailNoRawat:String(labDetail?.no_rawat||""),labSheetsWithGroupsCount:Array.isArray(labSheetsWithGroups)?labSheetsWithGroups.length:0,sheets:Array.isArray(labSheetsWithGroups)?labSheetsWithGroups.map((sheet:any)=>({tgl_periksa:String(sheet?.tgl_periksa||""),jam:String(sheet?.jam||""),requested_tests_count:Array.isArray(sheet?.requested_tests)?sheet.requested_tests.length:0,groups_count:Array.isArray(sheet?.groups)?sheet.groups.length:0})):[]},ts:Date.now()})}).catch(()=>{});
+    // #endregion
+  }, [labDetail?.no_rawat, labSheetsWithGroups, mode, selectedNoRawat]);
 
   React.useEffect(() => {
     if (!imageViewer.open || !isCtImageViewer || !activeViewerImage?.src) {
@@ -1387,34 +1402,64 @@ const DiagnosticHubPage: React.FC<DiagnosticHubPageProps> = ({ mode }) => {
                                             </tr>
                                           </thead>
                                           <tbody>
-                                            {sheet.groups.map((group, groupIndex) => (
-                                              <React.Fragment key={`${group.templateName}-${groupIndex}`}>
-                                                <tr className="bg-emerald-50/70">
-                                                  <td colSpan={6} className="border border-slate-400 px-2 py-1 font-semibold uppercase text-emerald-800">
-                                                    {group.templateName}
+                                            {sheet.groups.length > 0 ? (
+                                              sheet.groups.map((group, groupIndex) => (
+                                                <React.Fragment key={`${group.templateName}-${groupIndex}`}>
+                                                  <tr className="bg-emerald-50/70">
+                                                    <td colSpan={6} className="border border-slate-400 px-2 py-1 font-semibold uppercase text-emerald-800">
+                                                      {group.templateName}
+                                                    </td>
+                                                  </tr>
+                                                  {group.results.map((result, index) => {
+                                                    const rowTone = getLabResultRowTone(result.keterangan);
+                                                    return (
+                                                      <tr
+                                                        key={`${group.templateName}-${result.pemeriksaan}-${index}`}
+                                                        className={cn(
+                                                          rowTone === 'high' && 'bg-red-50 text-red-900',
+                                                          rowTone === 'low' && 'bg-amber-50 text-amber-900'
+                                                        )}
+                                                      >
+                                                        <td className="border border-slate-300 px-2 py-1 align-top">{result.pemeriksaan || '-'}</td>
+                                                        <td className="border border-slate-300 px-2 py-1 align-top font-semibold">{result.nilai || '-'}</td>
+                                                        <td className="border border-slate-300 px-2 py-1 align-top">{result.nilai_rujukan || '-'}</td>
+                                                        <td className="border border-slate-300 px-2 py-1 align-top">{result.satuan || '-'}</td>
+                                                        <td className="border border-slate-300 px-2 py-1 align-top">-</td>
+                                                        <td className="border border-slate-300 px-2 py-1 align-top font-semibold">{result.keterangan || '-'}</td>
+                                                      </tr>
+                                                    );
+                                                  })}
+                                                </React.Fragment>
+                                              ))
+                                            ) : (
+                                              <>
+                                                <tr className="bg-amber-50/70">
+                                                  <td colSpan={6} className="border border-slate-400 px-2 py-1 font-semibold uppercase text-amber-800">
+                                                    Pemeriksaan Tercatat
                                                   </td>
                                                 </tr>
-                                                {group.results.map((result, index) => {
-                                                  const rowTone = getLabResultRowTone(result.keterangan);
-                                                  return (
-                                                    <tr
-                                                      key={`${group.templateName}-${result.pemeriksaan}-${index}`}
-                                                      className={cn(
-                                                        rowTone === 'high' && 'bg-red-50 text-red-900',
-                                                        rowTone === 'low' && 'bg-amber-50 text-amber-900'
-                                                      )}
-                                                    >
-                                                      <td className="border border-slate-300 px-2 py-1 align-top">{result.pemeriksaan || '-'}</td>
-                                                      <td className="border border-slate-300 px-2 py-1 align-top font-semibold">{result.nilai || '-'}</td>
-                                                      <td className="border border-slate-300 px-2 py-1 align-top">{result.nilai_rujukan || '-'}</td>
-                                                      <td className="border border-slate-300 px-2 py-1 align-top">{result.satuan || '-'}</td>
+                                                {Array.isArray(sheet.requested_tests) && sheet.requested_tests.length > 0 ? (
+                                                  sheet.requested_tests.map((testName, testIndex) => (
+                                                    <tr key={`${testName}-${testIndex}`}>
+                                                      <td className="border border-slate-300 px-2 py-1 align-top">{testName || '-'}</td>
+                                                      <td className="border border-slate-300 px-2 py-1 align-top font-semibold">-</td>
                                                       <td className="border border-slate-300 px-2 py-1 align-top">-</td>
-                                                      <td className="border border-slate-300 px-2 py-1 align-top font-semibold">{result.keterangan || '-'}</td>
+                                                      <td className="border border-slate-300 px-2 py-1 align-top">-</td>
+                                                      <td className="border border-slate-300 px-2 py-1 align-top">-</td>
+                                                      <td className="border border-slate-300 px-2 py-1 align-top italic text-slate-600">
+                                                        {testIndex === 0 ? 'Belum ada detail hasil laboratorium.' : '-'}
+                                                      </td>
                                                     </tr>
-                                                  );
-                                                })}
-                                              </React.Fragment>
-                                            ))}
+                                                  ))
+                                                ) : (
+                                                  <tr>
+                                                    <td colSpan={6} className="border border-slate-300 px-2 py-2 align-top text-slate-600 italic">
+                                                      Belum ada detail hasil laboratorium pada lembar pemeriksaan ini.
+                                                    </td>
+                                                  </tr>
+                                                )}
+                                              </>
+                                            )}
                                           </tbody>
                                         </table>
                                       </div>
