@@ -447,6 +447,8 @@ class LaboratoryDataService {
 
       const resultsQuery = `
         SELECT
+          dpl.tgl_periksa,
+          dpl.jam,
           COALESCE(layanan.nm_perawatan, 'Template Lainnya') AS template_name,
           tl.Pemeriksaan AS pemeriksaan,
           dpl.nilai,
@@ -457,7 +459,7 @@ class LaboratoryDataService {
         INNER JOIN template_laboratorium tl ON dpl.id_template = tl.id_template
         LEFT JOIN jns_perawatan_lab layanan ON tl.kd_jenis_prw = layanan.kd_jenis_prw
         WHERE dpl.no_rawat = ?
-        ORDER BY dpl.tgl_periksa DESC, dpl.jam DESC, layanan.nm_perawatan ASC, tl.Pemeriksaan ASC
+        ORDER BY dpl.tgl_periksa DESC, dpl.jam ASC, dpl.kd_jenis_prw ASC, dpl.id_template ASC
       `;
 
       const impressionQuery = `
@@ -480,26 +482,103 @@ class LaboratoryDataService {
         ORDER BY lokasi_file ASC
       `;
 
-      const [[[responsibleDoctor]], [patientRows], [resultRows], [impressionRows], [attachmentRows]] = await Promise.all([
-        connection.execute(`
-          SELECT
-            TRIM(ms.value) AS kd_dokter,
-            COALESCE(TRIM(d.nm_dokter), '') AS nm_dokter
-          FROM mlite_settings ms
-          LEFT JOIN dokter d ON TRIM(d.kd_dokter) = TRIM(ms.value)
-          WHERE ms.module = 'settings' AND ms.field = 'pj_Laboratorium'
-          LIMIT 1
-        `),
+      const doctorPerSheetQuery = `
+        SELECT DISTINCT
+          pl.tgl_periksa,
+          pl.jam,
+          pl.kd_dokter,
+          COALESCE(d.nm_dokter, '') AS nm_dokter,
+          pl.dokter_perujuk AS kd_dokter_perujuk,
+          COALESCE(d2.nm_dokter, '') AS nm_dokter_perujuk
+        FROM periksa_lab pl
+        LEFT JOIN dokter d ON pl.kd_dokter = d.kd_dokter
+        LEFT JOIN dokter d2 ON pl.dokter_perujuk = d2.kd_dokter
+        WHERE pl.no_rawat = ?
+      `;
+
+      const responsibleDoctorQuery = `
+        SELECT
+          pl.kd_dokter,
+          COALESCE(d.nm_dokter, '') AS nm_dokter
+        FROM periksa_lab pl
+        LEFT JOIN dokter d ON pl.kd_dokter = d.kd_dokter
+        WHERE pl.no_rawat = ?
+        ORDER BY pl.tgl_periksa DESC, pl.jam DESC
+        LIMIT 1
+      `;
+
+      const [[responsibleDoctorRows], [patientRows], [resultRows], [impressionRows], [attachmentRows], [doctorPerSheetRows]] = await Promise.all([
+        connection.execute(responsibleDoctorQuery, [no_rawat]),
         connection.execute(patientQuery, [no_rawat]),
         connection.execute(resultsQuery, [no_rawat]),
         connection.execute(impressionQuery, [no_rawat]),
-        connection.execute(attachmentsQuery, [no_rawat])
+        connection.execute(attachmentsQuery, [no_rawat]),
+        connection.execute(doctorPerSheetQuery, [no_rawat])
       ]);
+
+      const responsibleDoctor = responsibleDoctorRows?.[0] || null;
 
       const patient = patientRows?.[0];
       if (!patient) {
         throw new Error('Data pasien laboratorium tidak ditemukan');
       }
+
+      // Build map of (tgl_periksa, jam) -> doctor info from periksa_lab
+      const doctorBySheet = new Map();
+      for (const row of doctorPerSheetRows) {
+        const sheetKey = `${String(row.tgl_periksa || '').trim()}|${String(row.jam || '').trim()}`;
+        if (!doctorBySheet.has(sheetKey)) {
+          doctorBySheet.set(sheetKey, {
+            kd_dokter: String(row.kd_dokter || '').trim(),
+            nm_dokter: String(row.nm_dokter || '').trim(),
+            kd_dokter_perujuk: String(row.kd_dokter_perujuk || '').trim(),
+            nm_dokter_perujuk: String(row.nm_dokter_perujuk || '').trim()
+          });
+        }
+      }
+
+      // Group results by (tgl_periksa, jam) into separate sheets
+      const sheetsMap = new Map();
+      for (const row of resultRows) {
+        const sheetKey = `${String(row.tgl_periksa || '').trim()}|${String(row.jam || '').trim()}`;
+        if (!sheetsMap.has(sheetKey)) {
+          const doctorInfo = doctorBySheet.get(sheetKey) || { kd_dokter: '', nm_dokter: '', kd_dokter_perujuk: '', nm_dokter_perujuk: '' };
+          sheetsMap.set(sheetKey, {
+            tgl_periksa: row.tgl_periksa || '',
+            jam: row.jam || '',
+            kd_dokter: doctorInfo.kd_dokter,
+            nm_dokter: doctorInfo.nm_dokter,
+            kd_dokter_perujuk: doctorInfo.kd_dokter_perujuk,
+            nm_dokter_perujuk: doctorInfo.nm_dokter_perujuk,
+            results: []
+          });
+        }
+        sheetsMap.get(sheetKey).results.push({
+          template_name: row.template_name || 'Template Lainnya',
+          pemeriksaan: row.pemeriksaan || '',
+          nilai: row.nilai || '',
+          satuan: row.satuan || '',
+          nilai_rujukan: row.nilai_rujukan || '',
+          keterangan: row.keterangan || ''
+        });
+      }
+
+      // Sort sheets by date descending
+      const resultSheets = Array.from(sheetsMap.values()).sort((a, b) => {
+        const dateCompare = String(b.tgl_periksa || '').localeCompare(String(a.tgl_periksa || ''));
+        if (dateCompare !== 0) return dateCompare;
+        return String(b.jam || '').localeCompare(String(a.jam || ''));
+      });
+
+      // Flatten all results for backward compatibility
+      const flatResults = resultRows.map((row) => ({
+        template_name: row.template_name || 'Template Lainnya',
+        pemeriksaan: row.pemeriksaan || '',
+        nilai: row.nilai || '',
+        satuan: row.satuan || '',
+        nilai_rujukan: row.nilai_rujukan || '',
+        keterangan: row.keterangan || ''
+      }));
 
       return {
         success: true,
@@ -522,14 +601,8 @@ class LaboratoryDataService {
               url: DigitalFilesService.buildFileUrl(lokasiFile)
             };
           }),
-          results: resultRows.map((row) => ({
-            template_name: row.template_name || 'Template Lainnya',
-            pemeriksaan: row.pemeriksaan || '',
-            nilai: row.nilai || '',
-            satuan: row.satuan || '',
-            nilai_rujukan: row.nilai_rujukan || '',
-            keterangan: row.keterangan || ''
-          })),
+          results: flatResults,
+          result_sheets: resultSheets,
           review: impressionRows?.[0] || {
             kesan: '',
             saran: ''

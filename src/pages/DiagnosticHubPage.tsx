@@ -40,6 +40,25 @@ interface DiagnosticListItem {
   pemeriksaan: string;
 }
 
+interface LabResultItem {
+  template_name?: string;
+  pemeriksaan: string;
+  nilai: string;
+  satuan: string;
+  nilai_rujukan: string;
+  keterangan: string;
+}
+
+interface LabResultSheet {
+  tgl_periksa: string;
+  jam: string;
+  kd_dokter?: string;
+  nm_dokter?: string;
+  kd_dokter_perujuk?: string;
+  nm_dokter_perujuk?: string;
+  results: LabResultItem[];
+}
+
 interface LaboratoryDetail {
   no_rkm_medis: string;
   no_rawat: string;
@@ -56,14 +75,8 @@ interface LaboratoryDetail {
     nama_file: string;
     url: string;
   }>;
-  results: Array<{
-    template_name?: string;
-    pemeriksaan: string;
-    nilai: string;
-    satuan: string;
-    nilai_rujukan: string;
-    keterangan: string;
-  }>;
+  results: LabResultItem[];
+  result_sheets?: LabResultSheet[];
   review: {
     kesan?: string;
     saran?: string;
@@ -871,24 +884,57 @@ const DiagnosticHubPage: React.FC<DiagnosticHubPageProps> = ({ mode }) => {
   const activeDetail = mode === 'laboratorium' ? labDetail : radiologyDetail;
   const activeViewerImage = imageViewer.images[imageViewer.currentIndex] || null;
   const isCtImageViewer = imageViewer.modality === 'CT';
-  const groupedLabResults = React.useMemo(() => {
-    if (mode !== 'laboratorium' || !labDetail?.results?.length) {
+  const labSheetsWithGroups = React.useMemo(() => {
+    if (mode !== 'laboratorium') {
       return [];
     }
 
-    const groups = new Map<string, LaboratoryDetail['results']>();
-    labDetail.results.forEach((result) => {
-      const groupName = String(result.template_name || '').trim() || 'Template Lainnya';
-      const currentGroup = groups.get(groupName) || [];
-      currentGroup.push(result);
-      groups.set(groupName, currentGroup);
-    });
+    // Use result_sheets if available, otherwise fall back to flat results
+    const sheets = labDetail?.result_sheets;
+    if (sheets && sheets.length > 0) {              return sheets.map((sheet) => {
+        const groups = new Map<string, LabResultItem[]>();
+        sheet.results.forEach((result) => {
+          const groupName = String(result.template_name || '').trim() || 'Template Lainnya';
+          const currentGroup = groups.get(groupName) || [];
+          currentGroup.push(result);
+          groups.set(groupName, currentGroup);
+        });
+        return {
+          tgl_periksa: sheet.tgl_periksa,
+          jam: sheet.jam,
+          kd_dokter: sheet.kd_dokter,
+          nm_dokter: sheet.nm_dokter,
+          kd_dokter_perujuk: sheet.kd_dokter_perujuk,
+          nm_dokter_perujuk: sheet.nm_dokter_perujuk,
+          groups: Array.from(groups.entries()).map(([templateName, results]) => ({
+            templateName,
+            results
+          }))
+        };
+      });
+    }
 
-    return Array.from(groups.entries()).map(([templateName, results]) => ({
-      templateName,
-      results
-    }));
-  }, [labDetail?.results, mode]);
+    // Fallback to flat results if result_sheets not available
+    if (labDetail?.results?.length) {
+      const groups = new Map<string, LabResultItem[]>();
+      labDetail.results.forEach((result) => {
+        const groupName = String(result.template_name || '').trim() || 'Template Lainnya';
+        const currentGroup = groups.get(groupName) || [];
+        currentGroup.push(result);
+        groups.set(groupName, currentGroup);
+      });
+      return [{
+        tgl_periksa: '',
+        jam: '',
+        groups: Array.from(groups.entries()).map(([templateName, results]) => ({
+          templateName,
+          results
+        }))
+      }];
+    }
+
+    return [];
+  }, [labDetail?.result_sheets, labDetail?.results, mode]);
 
   React.useEffect(() => {
     if (!imageViewer.open || !isCtImageViewer || !activeViewerImage?.src) {
@@ -1239,140 +1285,161 @@ const DiagnosticHubPage: React.FC<DiagnosticHubPageProps> = ({ mode }) => {
                     <Card>
                       <CardHeader className="pb-2">
                         <CardTitle className="text-base">Hasil Pemeriksaan</CardTitle>
+                        {labSheetsWithGroups.length > 1 ? (
+                          <CardDescription>
+                            {labSheetsWithGroups.length} lembar hasil pemeriksaan
+                          </CardDescription>
+                        ) : null}
                       </CardHeader>
                       <CardContent>
-                        {labDetail.results.length === 0 ? (
+                        {labSheetsWithGroups.length === 0 ? (
                           <p className="text-sm text-muted-foreground">Belum ada hasil pemeriksaan laboratorium.</p>
                         ) : (
-                          <div className="rounded-lg bg-slate-200 p-3 sm:p-5">
-                            <div className="mx-auto w-full max-w-[860px] bg-white p-4 text-[11px] text-slate-900 shadow-sm sm:p-6">
-                              <div className="border border-slate-500 p-3">
-                                <div className="flex items-start gap-4 border-b border-slate-500 pb-3">
-                                  <div className="flex h-16 w-16 shrink-0 items-center justify-center">
-                                    <img src={logoImg} alt="Logo RSUD" className="h-14 w-14 object-contain" />
+                          <div className="space-y-6">
+                            {labSheetsWithGroups.map((sheet, sheetIndex) => (
+                              <div key={`sheet-${sheet.tgl_periksa}-${sheet.jam}-${sheetIndex}`} className="rounded-lg bg-slate-200 p-3 sm:p-5">
+                                {labSheetsWithGroups.length > 1 ? (
+                                  <div className="mb-3 flex items-center gap-2">
+                                    <Badge variant="outline" className="text-xs">
+                                      Lembar {sheetIndex + 1} dari {labSheetsWithGroups.length}
+                                    </Badge>
+                                    <span className="text-xs text-muted-foreground">
+                                      {sheet.tgl_periksa && sheet.jam
+                                        ? `Tanggal: ${formatUIDate(sheet.tgl_periksa)} | Jam: ${String(sheet.jam).substring(0, 5)}`
+                                        : ''}
+                                    </span>
                                   </div>
-                                  <div className="flex-1 text-center leading-tight">
-                                    <p className="text-[11px] font-semibold uppercase tracking-wide">Pemerintah Kabupaten Hulu Sungai Tengah</p>
-                                    <p className="text-[11px] font-semibold uppercase tracking-wide">Dinas Kesehatan</p>
-                                    <p className="text-lg font-bold uppercase">UPT RSUD H. Damanhuri Barabai</p>
-                                    <p className="text-[10px] text-slate-600">
-                                      Jalan Murakata Nomor 4 Barabai Barat, Hulu Sungai Tengah, Kalimantan Selatan 71314
-                                    </p>
-                                    <p className="text-[10px] text-slate-600">
-                                      Telepon: 08115000800, Email: rsdhbarabai@gmail.com
-                                    </p>
-                                  </div>
-                                </div>
-
-                                <div className="mt-3 grid gap-3 md:grid-cols-2">
-                                  <div className="border border-slate-500 p-2">
-                                    <div className="grid grid-cols-[88px_10px_1fr] gap-y-1">
-                                      <p className="uppercase">No. RM</p>
-                                      <p>:</p>
-                                      <p>{labDetail.no_rkm_medis || '-'}</p>
-                                      <p className="uppercase">Nama</p>
-                                      <p>:</p>
-                                      <p className="font-semibold uppercase">{labDetail.nm_pasien || '-'}</p>
-                                      <p className="uppercase">No. Rawat</p>
-                                      <p>:</p>
-                                      <p>{labDetail.no_rawat || '-'}</p>
-                                      <p className="uppercase">Umur</p>
-                                      <p>:</p>
-                                      <p>{labDetail.umur || '-'}</p>
-                                      <p className="uppercase">Ket. Klinik</p>
-                                      <p>:</p>
-                                      <p>{labDetail.nm_perawatan || '-'}</p>
+                                ) : null}
+                                <div className="mx-auto w-full max-w-[860px] bg-white p-4 text-[11px] text-slate-900 shadow-sm sm:p-6">
+                                  <div className="border border-slate-500 p-3">
+                                    <div className="flex items-start gap-4 border-b border-slate-500 pb-3">
+                                      <div className="flex h-16 w-16 shrink-0 items-center justify-center">
+                                        <img src={logoImg} alt="Logo RSUD" className="h-14 w-14 object-contain" />
+                                      </div>
+                                      <div className="flex-1 text-center leading-tight">
+                                        <p className="text-[11px] font-semibold uppercase tracking-wide">Pemerintah Kabupaten Hulu Sungai Tengah</p>
+                                        <p className="text-[11px] font-semibold uppercase tracking-wide">Dinas Kesehatan</p>
+                                        <p className="text-lg font-bold uppercase">UPT RSUD H. Damanhuri Barabai</p>
+                                        <p className="text-[10px] text-slate-600">
+                                          Jalan Murakata Nomor 4 Barabai Barat, Hulu Sungai Tengah, Kalimantan Selatan 71314
+                                        </p>
+                                        <p className="text-[10px] text-slate-600">
+                                          Telepon: 08115000800, Email: rsdhbarabai@gmail.com
+                                        </p>
+                                      </div>
                                     </div>
-                                  </div>
-                                  <div className="border border-slate-500 p-2">
-                                    <div className="grid grid-cols-[88px_10px_1fr] gap-y-1">
-                                      <p className="uppercase">No. Lab</p>
-                                      <p>:</p>
-                                      <p>{labDetail.no_rawat || '-'}</p>
-                                      <p className="uppercase">Ruang</p>
-                                      <p>:</p>
-                                      <p>{formatLabSheetStatus(labDetail.status_lanjut)}</p>
-                                      <p className="uppercase">Status</p>
-                                      <p>:</p>
-                                      <p>{labDetail.kd_pj || '-'}</p>
-                                      <p className="uppercase">Dokter</p>
-                                      <p>:</p>
-                                      <p>{labDetail.lab_responsible_doctor_name || labDetail.nm_dokter || '-'}</p>
-                                      <p className="uppercase">Tanggal</p>
-                                      <p>:</p>
-                                      <p>{formatUIDateTime(new Date())}</p>
-                                    </div>
-                                  </div>
-                                </div>
 
-                                <div className="mt-3 border border-slate-500">
-                                  <div className="border-b border-slate-500 bg-emerald-50 px-3 py-1 text-center text-xs font-bold uppercase tracking-wide text-emerald-700">
-                                    Hasil Pemeriksaan Laboratorium
-                                  </div>
-                                  <div className="overflow-x-auto">
-                                    <table className="w-full border-collapse text-[11px]">
-                                      <thead>
-                                        <tr className="bg-slate-100">
-                                          <th className="border border-slate-400 px-2 py-1 text-left font-bold uppercase">Pemeriksaan</th>
-                                          <th className="border border-slate-400 px-2 py-1 text-left font-bold uppercase">Hasil</th>
-                                          <th className="border border-slate-400 px-2 py-1 text-left font-bold uppercase">Nilai Rujukan</th>
-                                          <th className="border border-slate-400 px-2 py-1 text-left font-bold uppercase">Satuan</th>
-                                          <th className="border border-slate-400 px-2 py-1 text-left font-bold uppercase">Metoda</th>
-                                          <th className="border border-slate-400 px-2 py-1 text-left font-bold uppercase">Ket</th>
-                                        </tr>
-                                      </thead>
-                                      <tbody>
-                                        {groupedLabResults.map((group, groupIndex) => (
-                                          <React.Fragment key={`${group.templateName}-${groupIndex}`}>
-                                            <tr className="bg-emerald-50/70">
-                                              <td colSpan={6} className="border border-slate-400 px-2 py-1 font-semibold uppercase text-emerald-800">
-                                                {group.templateName}
-                                              </td>
+                                    <div className="mt-3 grid gap-3 md:grid-cols-2">
+                                      <div className="border border-slate-500 p-2">
+                                        <div className="grid grid-cols-[88px_10px_1fr] gap-y-1">
+                                          <p className="uppercase">No. RM</p>
+                                          <p>:</p>
+                                          <p>{labDetail.no_rkm_medis || '-'}</p>
+                                          <p className="uppercase">Nama</p>
+                                          <p>:</p>
+                                          <p className="font-semibold uppercase">{labDetail.nm_pasien || '-'}</p>
+                                          <p className="uppercase">No. Rawat</p>
+                                          <p>:</p>
+                                          <p>{labDetail.no_rawat || '-'}</p>
+                                          <p className="uppercase">Umur</p>
+                                          <p>:</p>
+                                          <p>{labDetail.umur || '-'}</p>
+                                          <p className="uppercase">Ket. Klinik</p>
+                                          <p>:</p>
+                                          <p>{labDetail.nm_perawatan || '-'}</p>
+                                        </div>
+                                      </div>
+                                      <div className="border border-slate-500 p-2">
+                                        <div className="grid grid-cols-[88px_10px_1fr] gap-y-1">
+                                          <p className="uppercase">No. Lab</p>
+                                          <p>:</p>
+                                          <p>{labDetail.no_rawat || '-'}</p>
+                                          <p className="uppercase">Ruang</p>
+                                          <p>:</p>
+                                          <p>{formatLabSheetStatus(labDetail.status_lanjut)}</p>
+                                          <p className="uppercase">Status</p>
+                                          <p>:</p>
+                                          <p>{labDetail.kd_pj || '-'}</p>
+                                          <p className="uppercase">Dokter</p>
+                                          <p>:</p>
+                                          <p>{sheet.nm_dokter_perujuk || labDetail.nm_dokter || '-'}</p>
+                                          <p className="uppercase">Tanggal</p>
+                                          <p>:</p>
+                                          <p>{formatUIDateTime(new Date())}</p>
+                                        </div>
+                                      </div>
+                                    </div>
+
+                                    <div className="mt-3 border border-slate-500">
+                                      <div className="border-b border-slate-500 bg-emerald-50 px-3 py-1 text-center text-xs font-bold uppercase tracking-wide text-emerald-700">
+                                        Hasil Pemeriksaan Laboratorium
+                                      </div>
+                                      <div className="overflow-x-auto">
+                                        <table className="w-full border-collapse text-[11px]">
+                                          <thead>
+                                            <tr className="bg-slate-100">
+                                              <th className="border border-slate-400 px-2 py-1 text-left font-bold uppercase">Pemeriksaan</th>
+                                              <th className="border border-slate-400 px-2 py-1 text-left font-bold uppercase">Hasil</th>
+                                              <th className="border border-slate-400 px-2 py-1 text-left font-bold uppercase">Nilai Rujukan</th>
+                                              <th className="border border-slate-400 px-2 py-1 text-left font-bold uppercase">Satuan</th>
+                                              <th className="border border-slate-400 px-2 py-1 text-left font-bold uppercase">Metoda</th>
+                                              <th className="border border-slate-400 px-2 py-1 text-left font-bold uppercase">Ket</th>
                                             </tr>
-                                            {group.results.map((result, index) => {
-                                              const rowTone = getLabResultRowTone(result.keterangan);
-                                              return (
-                                                <tr
-                                                  key={`${group.templateName}-${result.pemeriksaan}-${index}`}
-                                                  className={cn(
-                                                    rowTone === 'high' && 'bg-red-50 text-red-900',
-                                                    rowTone === 'low' && 'bg-amber-50 text-amber-900'
-                                                  )}
-                                                >
-                                                  <td className="border border-slate-300 px-2 py-1 align-top">{result.pemeriksaan || '-'}</td>
-                                                  <td className="border border-slate-300 px-2 py-1 align-top font-semibold">{result.nilai || '-'}</td>
-                                                  <td className="border border-slate-300 px-2 py-1 align-top">{result.nilai_rujukan || '-'}</td>
-                                                  <td className="border border-slate-300 px-2 py-1 align-top">{result.satuan || '-'}</td>
-                                                  <td className="border border-slate-300 px-2 py-1 align-top">-</td>
-                                                  <td className="border border-slate-300 px-2 py-1 align-top font-semibold">{result.keterangan || '-'}</td>
+                                          </thead>
+                                          <tbody>
+                                            {sheet.groups.map((group, groupIndex) => (
+                                              <React.Fragment key={`${group.templateName}-${groupIndex}`}>
+                                                <tr className="bg-emerald-50/70">
+                                                  <td colSpan={6} className="border border-slate-400 px-2 py-1 font-semibold uppercase text-emerald-800">
+                                                    {group.templateName}
+                                                  </td>
                                                 </tr>
-                                              );
-                                            })}
-                                          </React.Fragment>
-                                        ))}
-                                      </tbody>
-                                    </table>
-                                  </div>
-                                </div>
+                                                {group.results.map((result, index) => {
+                                                  const rowTone = getLabResultRowTone(result.keterangan);
+                                                  return (
+                                                    <tr
+                                                      key={`${group.templateName}-${result.pemeriksaan}-${index}`}
+                                                      className={cn(
+                                                        rowTone === 'high' && 'bg-red-50 text-red-900',
+                                                        rowTone === 'low' && 'bg-amber-50 text-amber-900'
+                                                      )}
+                                                    >
+                                                      <td className="border border-slate-300 px-2 py-1 align-top">{result.pemeriksaan || '-'}</td>
+                                                      <td className="border border-slate-300 px-2 py-1 align-top font-semibold">{result.nilai || '-'}</td>
+                                                      <td className="border border-slate-300 px-2 py-1 align-top">{result.nilai_rujukan || '-'}</td>
+                                                      <td className="border border-slate-300 px-2 py-1 align-top">{result.satuan || '-'}</td>
+                                                      <td className="border border-slate-300 px-2 py-1 align-top">-</td>
+                                                      <td className="border border-slate-300 px-2 py-1 align-top font-semibold">{result.keterangan || '-'}</td>
+                                                    </tr>
+                                                  );
+                                                })}
+                                              </React.Fragment>
+                                            ))}
+                                          </tbody>
+                                        </table>
+                                      </div>
+                                    </div>
 
-                                <div className="mt-3 flex flex-col justify-between gap-4 text-[10px] text-slate-700 sm:flex-row">
-                                  <div className="max-w-[60%] space-y-1">
-                                    <p>
-                                      Jika sekiranya ada keraguan tentang hasil pemeriksaan, diharapkan segera menghubungi Instalasi Laboratorium Patologi Klinik.
-                                    </p>
-                                    <p>
-                                      Catatan: {labReviewForm.kesan || labDetail.review.kesan || '-'}
-                                    </p>
-                                  </div>
-                                  <div className="min-w-[200px] text-left sm:text-right">
-                                    <p>Tanggal cetak: {formatUIDateTime(new Date())}</p>
-                                    <p>Dokter Penanggung Jawab,</p>
-                                    <div className="h-16" />
-                                    <p className="font-semibold">{labDetail.lab_responsible_doctor_name || labDetail.nm_dokter || '-'}</p>
+                                    <div className="mt-3 flex flex-col justify-between gap-4 text-[10px] text-slate-700 sm:flex-row">
+                                      <div className="max-w-[60%] space-y-1">
+                                        <p>
+                                          Jika sekiranya ada keraguan tentang hasil pemeriksaan, diharapkan segera menghubungi Instalasi Laboratorium Patologi Klinik.
+                                        </p>
+                                        <p>
+                                          Catatan: {labReviewForm.kesan || labDetail.review.kesan || '-'}
+                                        </p>
+                                      </div>
+                                      <div className="min-w-[200px] text-left sm:text-right">
+                                        <p>Tanggal cetak: {formatUIDateTime(new Date())}</p>
+                                        <p>Dokter Penanggung Jawab,</p>
+                                        <div className="h-16" />
+                                        <p className="font-semibold">{sheet.nm_dokter || labDetail.lab_responsible_doctor_name || labDetail.nm_dokter || '-'}</p>
+                                      </div>
+                                    </div>
                                   </div>
                                 </div>
                               </div>
-                            </div>
+                            ))}
                           </div>
                         )}
                       </CardContent>
