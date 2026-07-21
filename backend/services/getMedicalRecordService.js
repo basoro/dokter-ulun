@@ -1781,36 +1781,37 @@ class GetMedicalRecordService {
 
   // Helper function to fetch lab results
   static async fetchLaboratory(noRawat, status = null) {
-    const headerQuery = `
-      SELECT
+    const headerQuery = `      SELECT
         pl.no_rawat,
         pl.kd_jenis_prw,
         pl.tgl_periksa,
         pl.jam,
         jp.nm_perawatan,
         dokter.nm_dokter,
-        petugas.nama AS nama_petugas
+        petugas.nama AS nama_petugas,
+        COALESCE(d2.nm_dokter, '') AS nm_dokter_penanggung_jawab
       FROM periksa_lab pl 
-      LEFT JOIN jns_perawatan_lab jp ON pl.kd_jenis_prw = jp.kd_jenis_prw 
-      LEFT JOIN dokter ON pl.dokter_perujuk = dokter.kd_dokter
-      LEFT JOIN petugas ON pl.nip = petugas.nip
-      WHERE pl.no_rawat = ?
-        AND (? IS NULL OR LOWER(pl.status) = LOWER(?))
-        AND (jp.nm_perawatan IS NULL OR LOWER(jp.nm_perawatan) NOT LIKE '%mikrobiologi%')
-      ORDER BY pl.tgl_periksa DESC, pl.jam ASC
-    `;
-    const [headerRows] = await db.execute(headerQuery, [noRawat, status, status]);
+        LEFT JOIN jns_perawatan_lab jp ON pl.kd_jenis_prw = jp.kd_jenis_prw 
+        LEFT JOIN dokter ON pl.dokter_perujuk = dokter.kd_dokter
+        LEFT JOIN dokter d2 ON pl.kd_dokter = d2.kd_dokter
+        LEFT JOIN petugas ON pl.nip = petugas.nip
+        WHERE pl.no_rawat = ?
+          AND (? IS NULL OR LOWER(pl.status) = LOWER(?))
+          AND (jp.nm_perawatan IS NULL OR LOWER(jp.nm_perawatan) NOT LIKE '%mikrobiologi%')
+        ORDER BY pl.tgl_periksa DESC, pl.jam ASC
+      `;
+      const [headerRows] = await db.execute(headerQuery, [noRawat, status, status]);
 
-    const normalizedHeaders = Array.isArray(headerRows) ? headerRows : [];
-    if (normalizedHeaders.length === 0) {
-      return [];
-    }
+      const normalizedHeaders = Array.isArray(headerRows) ? headerRows : [];
+      if (normalizedHeaders.length === 0) {
+        return [];
+      }
 
-    const detailQuery = `
-      SELECT
-        dpl.kd_jenis_prw,
-        dpl.tgl_periksa,
-        dpl.jam,
+      const detailQuery = `
+        SELECT
+          dpl.kd_jenis_prw,
+          dpl.tgl_periksa,
+          dpl.jam,
         dpl.nilai,
         dpl.nilai_rujukan,
         dpl.keterangan,
@@ -1859,7 +1860,8 @@ class GetMedicalRecordService {
         dokter: row.nm_dokter || '',
         petugas: row.nama_petugas || '',
         pemeriksaan: detailsByKey.get(key) || [],
-        lab_type: 'pk'
+        lab_type: 'pk',
+        lab_responsible_doctor_name: String(row.nm_dokter_penanggung_jawab || '').trim()
       };
     });
   }
@@ -1873,10 +1875,11 @@ class GetMedicalRecordService {
         pl.jam,
         jp.nm_perawatan,
         dokter.nm_dokter,
-        petugas.nama AS nama_petugas
+        petugas.nama AS nama_petugas,
+        COALESCE(d2.nm_dokter, '') AS nm_dokter_penanggung_jawab
       FROM periksa_lab pl
-      LEFT JOIN jns_perawatan_lab jp ON pl.kd_jenis_prw = jp.kd_jenis_prw
-      LEFT JOIN dokter ON pl.dokter_perujuk = dokter.kd_dokter
+      LEFT JOIN jns_perawatan_lab jp ON pl.kd_jenis_prw = jp.kd_jenis_prw        LEFT JOIN dokter ON pl.dokter_perujuk = dokter.kd_dokter
+      LEFT JOIN dokter d2 ON pl.kd_dokter = d2.kd_dokter
       LEFT JOIN petugas ON pl.nip = petugas.nip
       WHERE pl.no_rawat = ?
         AND (? IS NULL OR LOWER(pl.status) = LOWER(?))
@@ -1944,7 +1947,8 @@ class GetMedicalRecordService {
         dokter: row.nm_dokter || '',
         petugas: row.nama_petugas || '',
         pemeriksaan: detailsByKey.get(key) || [],
-        lab_type: 'mikro'
+        lab_type: 'mikro',
+        lab_responsible_doctor_name: String(row.nm_dokter_penanggung_jawab || '').trim()
       };
     });
   }
@@ -2030,18 +2034,13 @@ class GetMedicalRecordService {
   }
 
   static async fetchLaboratoryAll(noRawat, status = null) {
-    const [responsibleDoctor, pk, mikro, pa] = await Promise.all([
-      this.getLaboratoryResponsibleDoctor(),
+    const [pk, mikro, pa] = await Promise.all([
       this.fetchLaboratory(noRawat, status),
       this.fetchLaboratoryMicro(noRawat, status),
       this.fetchLaboratoryPa(noRawat)
     ]);
 
-    return [...(pk || []), ...(mikro || []), ...(pa || [])].map((entry) => ({
-      ...entry,
-      lab_responsible_doctor_code: responsibleDoctor.kd_dokter,
-      lab_responsible_doctor_name: responsibleDoctor.nm_dokter
-    }));
+    return [...(pk || []), ...(mikro || []), ...(pa || [])];
   }
 
   // Helper function to fetch radiology results

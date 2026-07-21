@@ -350,7 +350,7 @@ class LaboratoryDataService {
         LEFT JOIN permintaan_lab plr ON plr.no_rawat = rp.no_rawat
         LEFT JOIN dokter d ON plr.dokter_perujuk = d.kd_dokter
         INNER JOIN periksa_lab pl ON rp.no_rawat = pl.no_rawat
-        INNER JOIN jns_perawatan_lab layanan ON pl.kd_jenis_prw = layanan.kd_jenis_prw
+        LEFT JOIN jns_perawatan_lab layanan ON pl.kd_jenis_prw = layanan.kd_jenis_prw
         ${whereClause}
       `;
 
@@ -370,7 +370,7 @@ class LaboratoryDataService {
         LEFT JOIN permintaan_lab plr ON plr.no_rawat = rp.no_rawat
         LEFT JOIN dokter d ON plr.dokter_perujuk = d.kd_dokter
         INNER JOIN periksa_lab pl ON rp.no_rawat = pl.no_rawat
-        INNER JOIN jns_perawatan_lab layanan ON pl.kd_jenis_prw = layanan.kd_jenis_prw
+        LEFT JOIN jns_perawatan_lab layanan ON pl.kd_jenis_prw = layanan.kd_jenis_prw
         ${whereClause}
         GROUP BY
           rp.no_rawat,
@@ -433,7 +433,7 @@ class LaboratoryDataService {
         LEFT JOIN permintaan_lab plr ON plr.no_rawat = rp.no_rawat
         LEFT JOIN dokter d ON plr.dokter_perujuk = d.kd_dokter
         INNER JOIN periksa_lab pl ON rp.no_rawat = pl.no_rawat
-        INNER JOIN jns_perawatan_lab layanan ON pl.kd_jenis_prw = layanan.kd_jenis_prw
+        LEFT JOIN jns_perawatan_lab layanan ON pl.kd_jenis_prw = layanan.kd_jenis_prw
         WHERE rp.no_rawat = ?
         GROUP BY
           rp.no_rkm_medis,
@@ -489,10 +489,12 @@ class LaboratoryDataService {
           pl.kd_dokter,
           COALESCE(d.nm_dokter, '') AS nm_dokter,
           pl.dokter_perujuk AS kd_dokter_perujuk,
-          COALESCE(d2.nm_dokter, '') AS nm_dokter_perujuk
+          COALESCE(d2.nm_dokter, '') AS nm_dokter_perujuk,
+          COALESCE(layanan.nm_perawatan, '') AS nm_perawatan
         FROM periksa_lab pl
         LEFT JOIN dokter d ON pl.kd_dokter = d.kd_dokter
         LEFT JOIN dokter d2 ON pl.dokter_perujuk = d2.kd_dokter
+        LEFT JOIN jns_perawatan_lab layanan ON pl.kd_jenis_prw = layanan.kd_jenis_prw
         WHERE pl.no_rawat = ?
       `;
 
@@ -532,17 +534,54 @@ class LaboratoryDataService {
             kd_dokter: String(row.kd_dokter || '').trim(),
             nm_dokter: String(row.nm_dokter || '').trim(),
             kd_dokter_perujuk: String(row.kd_dokter_perujuk || '').trim(),
-            nm_dokter_perujuk: String(row.nm_dokter_perujuk || '').trim()
+            nm_dokter_perujuk: String(row.nm_dokter_perujuk || '').trim(),
+            requested_tests: []
           });
+        }
+
+        const doctorSheet = doctorBySheet.get(sheetKey);
+        const examinationName = String(row.nm_perawatan || '').trim();
+        if (doctorSheet && examinationName && !doctorSheet.requested_tests.includes(examinationName)) {
+          doctorSheet.requested_tests.push(examinationName);
         }
       }
 
-      // Group results by (tgl_periksa, jam) into separate sheets
+      // Build sheets from ALL periksa_lab entries first (even those without detail results)
       const sheetsMap = new Map();
-      for (const row of resultRows) {
+      for (const row of doctorPerSheetRows) {
         const sheetKey = `${String(row.tgl_periksa || '').trim()}|${String(row.jam || '').trim()}`;
         if (!sheetsMap.has(sheetKey)) {
-          const doctorInfo = doctorBySheet.get(sheetKey) || { kd_dokter: '', nm_dokter: '', kd_dokter_perujuk: '', nm_dokter_perujuk: '' };
+          sheetsMap.set(sheetKey, {
+            tgl_periksa: row.tgl_periksa || '',
+            jam: row.jam || '',
+            kd_dokter: String(row.kd_dokter || '').trim(),
+            nm_dokter: String(row.nm_dokter || '').trim(),
+            kd_dokter_perujuk: String(row.kd_dokter_perujuk || '').trim(),
+            nm_dokter_perujuk: String(row.nm_dokter_perujuk || '').trim(),
+            requested_tests: [],
+            results: []
+          });
+        }
+
+        const sheet = sheetsMap.get(sheetKey);
+        const examinationName = String(row.nm_perawatan || '').trim();
+        if (sheet && examinationName && !sheet.requested_tests.includes(examinationName)) {
+          sheet.requested_tests.push(examinationName);
+        }
+      }
+
+      // Then add results from detail_periksa_lab to existing (or new) sheets
+      for (const row of resultRows) {
+        const sheetKey = `${String(row.tgl_periksa || '').trim()}|${String(row.jam || '').trim()}`;
+        // Create sheet if not already present (e.g., periksa_lab missing but detail exists)
+        if (!sheetsMap.has(sheetKey)) {
+          const doctorInfo = doctorBySheet.get(sheetKey) || {
+            kd_dokter: '',
+            nm_dokter: '',
+            kd_dokter_perujuk: '',
+            nm_dokter_perujuk: '',
+            requested_tests: []
+          };
           sheetsMap.set(sheetKey, {
             tgl_periksa: row.tgl_periksa || '',
             jam: row.jam || '',
@@ -550,6 +589,7 @@ class LaboratoryDataService {
             nm_dokter: doctorInfo.nm_dokter,
             kd_dokter_perujuk: doctorInfo.kd_dokter_perujuk,
             nm_dokter_perujuk: doctorInfo.nm_dokter_perujuk,
+            requested_tests: doctorInfo.requested_tests || [],
             results: []
           });
         }
@@ -579,6 +619,10 @@ class LaboratoryDataService {
         nilai_rujukan: row.nilai_rujukan || '',
         keterangan: row.keterangan || ''
       }));
+
+      // #region debug-point A:lab-detail-payload
+      fetch("http://127.0.0.1:7777/event",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({sessionId:"lab-results-missing",runId:"pre-fix",hypothesisId:"A",location:"backend/services/laboratoryDataService.js:getLabPatientDetail",msg:"[DEBUG] Laboratory detail payload built",data:{no_rawat:String(no_rawat||""),doctorSheetRowsCount:Array.isArray(doctorPerSheetRows)?doctorPerSheetRows.length:0,resultRowsCount:Array.isArray(resultRows)?resultRows.length:0,resultSheetsCount:resultSheets.length,sheets:resultSheets.map((sheet)=>({tgl_periksa:String(sheet?.tgl_periksa||""),jam:String(sheet?.jam||""),requested_tests_count:Array.isArray(sheet?.requested_tests)?sheet.requested_tests.length:0,requested_tests:Array.isArray(sheet?.requested_tests)?sheet.requested_tests:[],results_count:Array.isArray(sheet?.results)?sheet.results.length:0}))},ts:Date.now()})}).catch(()=>{});
+      // #endregion
 
       return {
         success: true,
