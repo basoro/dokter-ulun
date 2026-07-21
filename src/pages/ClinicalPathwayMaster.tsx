@@ -7,6 +7,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { Separator } from '@/components/ui/separator';
 import { useToast } from '@/hooks/use-toast';
 import { API_URLS } from '@/config/api';
+import { useAuth } from '@/contexts/AuthContext';
 import {
   ClipboardList,
   Loader2,
@@ -414,6 +415,7 @@ const escapeHtml = (value: unknown) => String(value ?? '')
   .replace(/'/g, '&#39;');
 
 const ClinicalPathwayMaster: React.FC = () => {
+  const { user } = useAuth();
   const { toast } = useToast();
   const [activeTab, setActiveTab] = React.useState<TabKey>('dashboard');
   const [masterOptions, setMasterOptions] = React.useState<MasterOption[]>([]);
@@ -482,15 +484,29 @@ const ClinicalPathwayMaster: React.FC = () => {
   const [printPreviewOpen, setPrintPreviewOpen] = React.useState(false);
   const [printPreviewHtml, setPrintPreviewHtml] = React.useState('');
   const printPreviewFrameRef = React.useRef<HTMLIFrameElement | null>(null);
+  const currentUsername = String(user?.username || '').trim();
+  const currentUserName = String(user?.name || user?.username || '').trim();
 
   const requestJson = React.useCallback(async <T,>(url: string, options?: RequestInit): Promise<T> => {
-    const response = await fetch(url, options);
+    const headers = new Headers(options?.headers || {});
+    if (currentUsername) {
+      headers.set('x-user-id', currentUsername);
+      headers.set('x-username', currentUsername);
+    }
+    if (currentUserName) {
+      headers.set('x-user-name', currentUserName);
+    }
+
+    const response = await fetch(url, {
+      ...options,
+      headers
+    });
     const result = await response.json();
     if (!response.ok || result?.success === false) {
       throw new Error(result?.message || 'Terjadi kesalahan saat memproses data');
     }
     return result as T;
-  }, []);
+  }, [currentUserName, currentUsername]);
 
   const fetchMasterOptions = React.useCallback(async () => {
     try {

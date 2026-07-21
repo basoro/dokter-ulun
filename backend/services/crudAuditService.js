@@ -283,6 +283,78 @@ const ensureAccess = (username) => {
   }
 };
 
+const normalizeDateFilter = (value) => {
+  const normalized = String(value || '').trim();
+  if (!normalized) {
+    return '';
+  }
+
+  const date = new Date(normalized);
+  if (Number.isNaN(date.getTime())) {
+    return '';
+  }
+
+  return date.toISOString().slice(0, 10);
+};
+
+const isWithinDateRange = (value, startDateFilter, endDateFilter) => {
+  if (!startDateFilter && !endDateFilter) {
+    return true;
+  }
+
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    return false;
+  }
+
+  const dateOnly = date.toISOString().slice(0, 10);
+  if (startDateFilter && dateOnly < startDateFilter) {
+    return false;
+  }
+  if (endDateFilter && dateOnly > endDateFilter) {
+    return false;
+  }
+
+  return true;
+};
+
+const buildAuditSummary = (records) => {
+  const actionMap = new Map();
+  const actorMap = new Map();
+  const moduleMap = new Map();
+  const statusMap = new Map();
+
+  records.forEach((entry) => {
+    const actionKey = String(entry?.action || '').trim() || '-';
+    actionMap.set(actionKey, (actionMap.get(actionKey) || 0) + 1);
+
+    const actorKey = String(entry?.actor_id || entry?.actor_name || '-').trim() || '-';
+    actorMap.set(actorKey, (actorMap.get(actorKey) || 0) + 1);
+
+    const moduleKey = String(entry?.entity || '').trim() || '-';
+    moduleMap.set(moduleKey, (moduleMap.get(moduleKey) || 0) + 1);
+
+    const statusKey = String(entry?.status || '').trim() || '-';
+    statusMap.set(statusKey, (statusMap.get(statusKey) || 0) + 1);
+  });
+
+  const toSortedArray = (map, maxItems = null) => {
+    const items = Array.from(map.entries())
+      .map(([name, total]) => ({ name, total }))
+      .sort((a, b) => b.total - a.total || a.name.localeCompare(b.name));
+
+    return typeof maxItems === 'number' ? items.slice(0, maxItems) : items;
+  };
+
+  return {
+    total_records: records.length,
+    action_data: toSortedArray(actionMap),
+    actor_data: toSortedArray(actorMap, 5),
+    module_data: toSortedArray(moduleMap, 5),
+    status_data: toSortedArray(statusMap)
+  };
+};
+
 const hasFullAuditAccess = (username) => {
   const normalizedUsername = String(username || '').trim();
   return Boolean(normalizedUsername) && getAllowedAuditUsers().includes(normalizedUsername);
@@ -337,6 +409,8 @@ export const getAuditHistory = async (username, options = {}) => {
   const statusFilter = String(options.status || '').trim().toLowerCase();
   const entityFilter = String(options.entity || '').trim().toLowerCase();
   const searchFilter = String(options.search || '').trim().toLowerCase();
+  const startDateFilter = normalizeDateFilter(options.start_date);
+  const endDateFilter = normalizeDateFilter(options.end_date);
 
   const content = await fs.readFile(LOG_FILE, 'utf8').catch(() => '');
   const records = content
@@ -353,14 +427,16 @@ export const getAuditHistory = async (username, options = {}) => {
     .filter(Boolean)
     .reverse()
     .filter((entry) => {
+      const dateMatch = isWithinDateRange(entry?.created_at, startDateFilter, endDateFilter);
       const actionMatch = !actionFilter || String(entry?.action || '').toLowerCase() === actionFilter;
       const statusMatch = !statusFilter || String(entry?.status || '').toLowerCase() === statusFilter;
       const entityMatch = !entityFilter || String(entry?.entity || '').toLowerCase().includes(entityFilter);
       const searchBlob = JSON.stringify(entry || {}).toLowerCase();
       const searchMatch = !searchFilter || searchBlob.includes(searchFilter);
-      return actionMatch && statusMatch && entityMatch && searchMatch;
+      return dateMatch && actionMatch && statusMatch && entityMatch && searchMatch;
     });
 
+  const summary = buildAuditSummary(records);
   const total = records.length;
   const startIndex = (page - 1) * limit;
   const items = records.slice(startIndex, startIndex + limit);
@@ -370,6 +446,13 @@ export const getAuditHistory = async (username, options = {}) => {
     full_access: fullAccess,
     actor_scope: 'all',
     data: items,
+    summary: {
+      ...summary,
+      period: {
+        start_date: startDateFilter,
+        end_date: endDateFilter
+      }
+    },
     pagination: {
       page,
       limit,

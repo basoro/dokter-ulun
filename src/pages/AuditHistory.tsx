@@ -34,6 +34,17 @@ interface AuditHistoryResponse {
   full_access?: boolean;
   actor_scope?: string;
   data?: AuditLogEntry[];
+  summary?: {
+    total_records: number;
+    action_data: Array<{ name: string; total: number }>;
+    actor_data: Array<{ name: string; total: number }>;
+    module_data: Array<{ name: string; total: number }>;
+    status_data: Array<{ name: string; total: number }>;
+    period?: {
+      start_date?: string;
+      end_date?: string;
+    };
+  };
   pagination?: {
     page: number;
     limit: number;
@@ -158,6 +169,24 @@ const getAuditSummary = (entry: AuditLogEntry) => {
 
 const AUDIT_CHART_COLORS = ['#0ea5e9', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#14b8a6'];
 
+const formatDateInputValue = (date: Date) => {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+};
+
+const getDefaultAuditPeriod = () => {
+  const now = new Date();
+  const startDate = new Date(now.getFullYear(), now.getMonth(), 1);
+  const endDate = new Date(now.getFullYear(), now.getMonth() + 1, 0);
+
+  return {
+    startDate: formatDateInputValue(startDate),
+    endDate: formatDateInputValue(endDate)
+  };
+};
+
 const AuditHistory: React.FC = () => {
   const { user } = useAuth();
   const [checkingAccess, setCheckingAccess] = React.useState(true);
@@ -167,53 +196,47 @@ const AuditHistory: React.FC = () => {
   const [entries, setEntries] = React.useState<AuditLogEntry[]>([]);
   const [error, setError] = React.useState('');
   const [page, setPage] = React.useState(1);
+  const defaultPeriod = React.useMemo(() => getDefaultAuditPeriod(), []);
   const [pagination, setPagination] = React.useState({
     page: 1,
     limit: 25,
     total: 0,
     hasMore: false
   });
+  const [summary, setSummary] = React.useState<NonNullable<AuditHistoryResponse['summary']>>({
+    total_records: 0,
+    action_data: [],
+    actor_data: [],
+    module_data: [],
+    status_data: [],
+    period: {
+      start_date: defaultPeriod.startDate,
+      end_date: defaultPeriod.endDate
+    }
+  });
   const [searchInput, setSearchInput] = React.useState('');
   const [search, setSearch] = React.useState('');
   const [action, setAction] = React.useState('all');
   const [status, setStatus] = React.useState('all');
   const [entity, setEntity] = React.useState('');
+  const [startDate, setStartDate] = React.useState(defaultPeriod.startDate);
+  const [endDate, setEndDate] = React.useState(defaultPeriod.endDate);
   const [selectedInsightView, setSelectedInsightView] = React.useState<'action' | 'actor' | 'module' | 'status'>('action');
 
   const auditInsights = React.useMemo(() => {
-    const actionMap = new Map<string, number>();
-    const actorMap = new Map<string, number>();
-    const moduleMap = new Map<string, number>();
-    const statusMap = new Map<string, number>();
+    const mapSummaryData = (
+      items: Array<{ name: string; total: number }>,
+      labelFormatter?: (label: string) => string
+    ) => items.map((item) => ({
+      name: item.name,
+      label: labelFormatter ? labelFormatter(item.name) : item.name,
+      total: item.total
+    }));
 
-    entries.forEach((entry) => {
-      const actionKey = String(entry.action || '').trim() || '-';
-      actionMap.set(actionKey, (actionMap.get(actionKey) || 0) + 1);
-
-      const actorKey = getAuditActorDisplay(entry);
-      actorMap.set(actorKey, (actorMap.get(actorKey) || 0) + 1);
-
-      const moduleKey = getEntityLabel(entry.entity);
-      moduleMap.set(moduleKey, (moduleMap.get(moduleKey) || 0) + 1);
-
-      const statusKey = String(entry.status || '').trim() || '-';
-      statusMap.set(statusKey, (statusMap.get(statusKey) || 0) + 1);
-    });
-
-    const toSortedArray = (map: Map<string, number>, labelFormatter?: (label: string) => string) => (
-      Array.from(map.entries())
-        .map(([name, total]) => ({
-          name,
-          label: labelFormatter ? labelFormatter(name) : name,
-          total
-        }))
-        .sort((a, b) => b.total - a.total || a.label.localeCompare(b.label))
-    );
-
-    const actionData = toSortedArray(actionMap, getActionLabel);
-    const actorData = toSortedArray(actorMap).slice(0, 5);
-    const moduleData = toSortedArray(moduleMap).slice(0, 5);
-    const statusData = toSortedArray(statusMap, getStatusLabel);
+    const actionData = mapSummaryData(summary.action_data || [], getActionLabel);
+    const actorData = mapSummaryData(summary.actor_data || []);
+    const moduleData = mapSummaryData(summary.module_data || [], getEntityLabel);
+    const statusData = mapSummaryData(summary.status_data || [], getStatusLabel);
 
     return {
       actionData,
@@ -225,7 +248,7 @@ const AuditHistory: React.FC = () => {
       topModule: moduleData[0] || null,
       topStatus: statusData[0] || null
     };
-  }, [entries]);
+  }, [summary]);
 
   const selectedInsight = React.useMemo(() => {
     if (selectedInsightView === 'status') {
@@ -310,6 +333,17 @@ const AuditHistory: React.FC = () => {
     const username = String(user?.username || '').trim();
     if (!username || !canAccess) {
       setEntries([]);
+      setSummary({
+        total_records: 0,
+        action_data: [],
+        actor_data: [],
+        module_data: [],
+        status_data: [],
+        period: {
+          start_date: startDate,
+          end_date: endDate
+        }
+      });
       return;
     }
 
@@ -336,6 +370,12 @@ const AuditHistory: React.FC = () => {
         if (entity.trim()) {
           params.set('entity', entity.trim());
         }
+        if (startDate) {
+          params.set('start_date', startDate);
+        }
+        if (endDate) {
+          params.set('end_date', endDate);
+        }
 
         const response = await fetch(`${API_URLS.AUDIT_HISTORY}?${params.toString()}`);
         const result = (await response.json()) as AuditHistoryResponse;
@@ -346,6 +386,17 @@ const AuditHistory: React.FC = () => {
 
         setFullAccess(Boolean(result.full_access));
         setEntries(Array.isArray(result.data) ? result.data : []);
+        setSummary(result.summary || {
+          total_records: 0,
+          action_data: [],
+          actor_data: [],
+          module_data: [],
+          status_data: [],
+          period: {
+            start_date: startDate,
+            end_date: endDate
+          }
+        });
         setPagination((previous) => ({
           ...previous,
           page: result.pagination?.page || page,
@@ -354,6 +405,17 @@ const AuditHistory: React.FC = () => {
         }));
       } catch (fetchError) {
         setEntries([]);
+        setSummary({
+          total_records: 0,
+          action_data: [],
+          actor_data: [],
+          module_data: [],
+          status_data: [],
+          period: {
+            start_date: startDate,
+            end_date: endDate
+          }
+        });
         setError(fetchError instanceof Error ? fetchError.message : 'Gagal memuat riwayat audit');
       } finally {
         setLoading(false);
@@ -361,7 +423,7 @@ const AuditHistory: React.FC = () => {
     };
 
     void fetchAuditHistory();
-  }, [action, canAccess, entity, page, pagination.limit, search, status, user?.username]);
+  }, [action, canAccess, endDate, entity, page, pagination.limit, search, startDate, status, user?.username]);
 
   const handleApplyFilter = () => {
     setPage(1);
@@ -413,7 +475,7 @@ const AuditHistory: React.FC = () => {
           <CardTitle>Filter Audit</CardTitle>
         </CardHeader>
         <CardContent className="space-y-4">
-          <div className="grid grid-cols-1 gap-3 md:grid-cols-4">
+          <div className="grid grid-cols-1 gap-3 md:grid-cols-3 lg:grid-cols-6">
             <Input
               value={searchInput}
               onChange={(event) => setSearchInput(event.target.value)}
@@ -449,6 +511,22 @@ const AuditHistory: React.FC = () => {
               }}
               placeholder="Filter modul, mis. prescription"
             />
+            <Input
+              type="date"
+              value={startDate}
+              onChange={(event) => {
+                setStartDate(event.target.value);
+                setPage(1);
+              }}
+            />
+            <Input
+              type="date"
+              value={endDate}
+              onChange={(event) => {
+                setEndDate(event.target.value);
+                setPage(1);
+              }}
+            />
           </div>
           <div className="flex flex-wrap gap-2">
             <Button onClick={handleApplyFilter}>Terapkan Pencarian</Button>
@@ -460,6 +538,8 @@ const AuditHistory: React.FC = () => {
                 setAction('all');
                 setStatus('all');
                 setEntity('');
+                setStartDate(defaultPeriod.startDate);
+                setEndDate(defaultPeriod.endDate);
                 setPage(1);
               }}
             >
@@ -476,7 +556,7 @@ const AuditHistory: React.FC = () => {
               <div>
                 <h4 className="font-medium">Ringkasan Aktivitas Audit</h4>
                 <p className="text-xs text-muted-foreground">
-                  Pilih tampilan ringkasan sesuai kebutuhan: aksi, aktor, modul, atau status hasil aksi.
+                  Ringkasan dihitung berdasarkan periode tanggal terpilih, bukan berdasarkan halaman daftar log.
                 </p>
               </div>
               <div className="flex flex-wrap gap-2">
@@ -506,13 +586,16 @@ const AuditHistory: React.FC = () => {
 
             <div className="flex flex-wrap items-center gap-2">
               <Badge variant="secondary" className="w-fit">
-                Berdasarkan data yang tampil
+                Periode {summary.period?.start_date || '-'} s.d. {summary.period?.end_date || '-'}
               </Badge>
               <Badge variant="outline" className="w-fit">
                 Teratas: {selectedInsight.topLabel}
               </Badge>
               <Badge variant="outline" className="w-fit">
                 {selectedInsight.topCount} aktivitas
+              </Badge>
+              <Badge variant="outline" className="w-fit">
+                Total {summary.total_records} log
               </Badge>
             </div>
 

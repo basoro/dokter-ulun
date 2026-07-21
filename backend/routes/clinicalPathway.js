@@ -4,9 +4,39 @@ import medicalScribeService from '../services/medicalScribeService.js';
 import { body, param, validationResult } from 'express-validator';
 import { executeQuery } from '../config/database.js';
 import { logCrudActivity } from '../services/crudAuditService.js';
+import DiagnosticAccessService from '../services/diagnosticAccessService.js';
 
 const router = express.Router();
 const clinicalPathwayService = new ClinicalPathwayService();
+
+const getRequestUsername = (req) => String(
+  req?.headers?.['x-user-id']
+  || req?.headers?.['x-username']
+  || req?.body?.username
+  || req?.query?.username
+  || ''
+).trim();
+
+const requireClinicalPathwayAdminAccess = (req, res, next) => {
+  try {
+    const username = getRequestUsername(req);
+
+    if (!username) {
+      return res.status(401).json({
+        success: false,
+        message: 'Username diperlukan untuk mengakses menu Clinical Pathway'
+      });
+    }
+
+    DiagnosticAccessService.ensureAccess('clinical-pathway', username);
+    return next();
+  } catch (error) {
+    return res.status(error.statusCode || 403).json({
+      success: false,
+      message: error.message || 'Anda tidak memiliki akses ke Clinical Pathway'
+    });
+  }
+};
 
 const auditCrudSuccess = async (req, entity, action, result, meta = {}) => {
   await logCrudActivity({
@@ -240,7 +270,7 @@ const validateMappingId = [
     .withMessage('ID mapping ICD tidak valid')
 ];
 
-router.get('/master/summary', async (req, res) => {
+router.get('/master/summary', requireClinicalPathwayAdminAccess, async (req, res) => {
   try {
     const result = await clinicalPathwayService.getMasterManagementSummary();
     return res.json(result);
@@ -254,7 +284,7 @@ router.get('/master/summary', async (req, res) => {
   }
 });
 
-router.get('/dashboard', async (req, res) => {
+router.get('/dashboard', requireClinicalPathwayAdminAccess, async (req, res) => {
   try {
     const result = await clinicalPathwayService.getDashboardOverview(req.query.limit);
     return res.json(result);
@@ -273,7 +303,7 @@ router.get('/dashboard', async (req, res) => {
  * @desc Mendapatkan daftar Master CP
  * @access Private
  */
-router.get('/master', async (req, res) => {
+router.get('/master', requireClinicalPathwayAdminAccess, async (req, res) => {
   try {
     const result = await clinicalPathwayService.getMasterPathwayList(req.query);
     return res.json(result);
@@ -292,7 +322,7 @@ router.get('/master', async (req, res) => {
  * @desc Mendapatkan detail Master CP
  * @access Private
  */
-router.get('/master/:id', validateMasterClinicalPathwayId, async (req, res) => {
+router.get('/master/:id', requireClinicalPathwayAdminAccess, validateMasterClinicalPathwayId, async (req, res) => {
   try {
     const errors = validationResult(req);
     if (!errors.isEmpty()) {
@@ -324,7 +354,7 @@ router.get('/master/:id', validateMasterClinicalPathwayId, async (req, res) => {
  * @desc Membuat Master CP baru
  * @access Private
  */
-router.post('/master', validateMasterClinicalPathwayPayload, async (req, res) => {
+router.post('/master', requireClinicalPathwayAdminAccess, validateMasterClinicalPathwayPayload, async (req, res) => {
   try {
     const errors = validationResult(req);
     if (!errors.isEmpty()) {
@@ -360,7 +390,7 @@ router.post('/master', validateMasterClinicalPathwayPayload, async (req, res) =>
  * @desc Memperbarui Master CP
  * @access Private
  */
-router.put('/master/:id', [...validateMasterClinicalPathwayId, ...validateMasterClinicalPathwayPayload], async (req, res) => {
+router.put('/master/:id', requireClinicalPathwayAdminAccess, [...validateMasterClinicalPathwayId, ...validateMasterClinicalPathwayPayload], async (req, res) => {
   try {
     const errors = validationResult(req);
     if (!errors.isEmpty()) {
@@ -398,7 +428,7 @@ router.put('/master/:id', [...validateMasterClinicalPathwayId, ...validateMaster
  * @desc Menghapus Master CP
  * @access Private
  */
-router.delete('/master/:id', validateMasterClinicalPathwayId, async (req, res) => {
+router.delete('/master/:id', requireClinicalPathwayAdminAccess, validateMasterClinicalPathwayId, async (req, res) => {
   try {
     const errors = validationResult(req);
     if (!errors.isEmpty()) {
@@ -431,7 +461,7 @@ router.delete('/master/:id', validateMasterClinicalPathwayId, async (req, res) =
   }
 });
 
-router.get('/template-day', async (req, res) => {
+router.get('/template-day', requireClinicalPathwayAdminAccess, async (req, res) => {
   try {
     const result = await clinicalPathwayService.getTemplateDayList(req.query);
     return res.json(result);
@@ -445,7 +475,7 @@ router.get('/template-day', async (req, res) => {
   }
 });
 
-router.get('/template-day/:templateId', validateTemplateDayId, async (req, res) => {
+router.get('/template-day/:templateId', requireClinicalPathwayAdminAccess, validateTemplateDayId, async (req, res) => {
   try {
     const errors = validationResult(req);
     if (!errors.isEmpty()) {
@@ -472,7 +502,7 @@ router.get('/template-day/:templateId', validateTemplateDayId, async (req, res) 
   }
 });
 
-router.post('/template-day', validateTemplateDayPayload, async (req, res) => {
+router.post('/template-day', requireClinicalPathwayAdminAccess, validateTemplateDayPayload, async (req, res) => {
   try {
     const errors = validationResult(req);
     if (!errors.isEmpty()) {
@@ -503,7 +533,7 @@ router.post('/template-day', validateTemplateDayPayload, async (req, res) => {
   }
 });
 
-router.put('/template-day/:templateId', [...validateTemplateDayId, ...validateTemplateDayPayload], async (req, res) => {
+router.put('/template-day/:templateId', requireClinicalPathwayAdminAccess, [...validateTemplateDayId, ...validateTemplateDayPayload], async (req, res) => {
   try {
     const errors = validationResult(req);
     if (!errors.isEmpty()) {
@@ -536,7 +566,7 @@ router.put('/template-day/:templateId', [...validateTemplateDayId, ...validateTe
   }
 });
 
-router.delete('/template-day/:templateId', validateTemplateDayId, async (req, res) => {
+router.delete('/template-day/:templateId', requireClinicalPathwayAdminAccess, validateTemplateDayId, async (req, res) => {
   try {
     const errors = validationResult(req);
     if (!errors.isEmpty()) {
@@ -569,7 +599,7 @@ router.delete('/template-day/:templateId', validateTemplateDayId, async (req, re
   }
 });
 
-router.get('/mapping', async (req, res) => {
+router.get('/mapping', requireClinicalPathwayAdminAccess, async (req, res) => {
   try {
     const result = await clinicalPathwayService.getDiagnosisMappingList(req.query);
     return res.json(result);
@@ -583,7 +613,7 @@ router.get('/mapping', async (req, res) => {
   }
 });
 
-router.get('/mapping/:mappingId', validateMappingId, async (req, res) => {
+router.get('/mapping/:mappingId', requireClinicalPathwayAdminAccess, validateMappingId, async (req, res) => {
   try {
     const errors = validationResult(req);
     if (!errors.isEmpty()) {
@@ -610,7 +640,7 @@ router.get('/mapping/:mappingId', validateMappingId, async (req, res) => {
   }
 });
 
-router.post('/mapping', validateMappingPayload, async (req, res) => {
+router.post('/mapping', requireClinicalPathwayAdminAccess, validateMappingPayload, async (req, res) => {
   try {
     const errors = validationResult(req);
     if (!errors.isEmpty()) {
@@ -641,7 +671,7 @@ router.post('/mapping', validateMappingPayload, async (req, res) => {
   }
 });
 
-router.put('/mapping/:mappingId', [...validateMappingId, ...validateMappingPayload], async (req, res) => {
+router.put('/mapping/:mappingId', requireClinicalPathwayAdminAccess, [...validateMappingId, ...validateMappingPayload], async (req, res) => {
   try {
     const errors = validationResult(req);
     if (!errors.isEmpty()) {
@@ -674,7 +704,7 @@ router.put('/mapping/:mappingId', [...validateMappingId, ...validateMappingPaylo
   }
 });
 
-router.delete('/mapping/:mappingId', validateMappingId, async (req, res) => {
+router.delete('/mapping/:mappingId', requireClinicalPathwayAdminAccess, validateMappingId, async (req, res) => {
   try {
     const errors = validationResult(req);
     if (!errors.isEmpty()) {
@@ -707,7 +737,7 @@ router.delete('/mapping/:mappingId', validateMappingId, async (req, res) => {
   }
 });
 
-router.get('/cppt', async (req, res) => {
+router.get('/cppt', requireClinicalPathwayAdminAccess, async (req, res) => {
   try {
     const result = await clinicalPathwayService.getCpptTemplateList(req.query);
     return res.json(result);
@@ -721,7 +751,7 @@ router.get('/cppt', async (req, res) => {
   }
 });
 
-router.get('/cppt/:cpptId', validateCpptTemplateId, async (req, res) => {
+router.get('/cppt/:cpptId', requireClinicalPathwayAdminAccess, validateCpptTemplateId, async (req, res) => {
   try {
     const errors = validationResult(req);
     if (!errors.isEmpty()) {
@@ -770,7 +800,7 @@ router.get('/generator/preview/by-no-rawat/:no_rawat', async (req, res) => {
   }
 });
 
-router.get('/monitoring', async (req, res) => {
+router.get('/monitoring', requireClinicalPathwayAdminAccess, async (req, res) => {
   try {
     const result = await clinicalPathwayService.getMonitoringList(req.query);
     return res.json(result);
@@ -784,7 +814,7 @@ router.get('/monitoring', async (req, res) => {
   }
 });
 
-router.post('/cppt', validateCpptTemplatePayload, async (req, res) => {
+router.post('/cppt', requireClinicalPathwayAdminAccess, validateCpptTemplatePayload, async (req, res) => {
   try {
     const errors = validationResult(req);
     if (!errors.isEmpty()) {
@@ -815,7 +845,7 @@ router.post('/cppt', validateCpptTemplatePayload, async (req, res) => {
   }
 });
 
-router.put('/cppt/:cpptId', [...validateCpptTemplateId, ...validateCpptTemplatePayload], async (req, res) => {
+router.put('/cppt/:cpptId', requireClinicalPathwayAdminAccess, [...validateCpptTemplateId, ...validateCpptTemplatePayload], async (req, res) => {
   try {
     const errors = validationResult(req);
     if (!errors.isEmpty()) {
@@ -848,7 +878,7 @@ router.put('/cppt/:cpptId', [...validateCpptTemplateId, ...validateCpptTemplateP
   }
 });
 
-router.delete('/cppt/:cpptId', validateCpptTemplateId, async (req, res) => {
+router.delete('/cppt/:cpptId', requireClinicalPathwayAdminAccess, validateCpptTemplateId, async (req, res) => {
   try {
     const errors = validationResult(req);
     if (!errors.isEmpty()) {
