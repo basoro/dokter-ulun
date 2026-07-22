@@ -1258,6 +1258,7 @@ const aggregateLaboratoryHistoryByNoRawat = (records: LabData[] = []) => {
       nm_perawatan: String(record?.nm_perawatan || '').trim(),
       dokter: String(record?.dokter || '').trim(),
       petugas: String(record?.petugas || '').trim(),
+      lab_responsible_doctor_name: String((record as any)?.lab_responsible_doctor_name || '').trim(),
       hasil: panelTests
     });
 
@@ -9387,34 +9388,86 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
 
     return allVisits.find((visit: any) => String(visit?.no_rawat || '').trim() === fullscreenNoRawat) || focusedVisit;
   }, [allVisits, focusedVisit, fullscreenLabHistory]);
-  const fullscreenLabPanels = useMemo(() => {
+  const fullscreenLabSheets = useMemo(() => {
     const groupedCarePanels = Array.isArray(fullscreenLabHistory?.perawatans)
       ? fullscreenLabHistory.perawatans
       : [];
 
     if (groupedCarePanels.length > 0) {
-      return groupedCarePanels.map((panel: any, index: number) => ({
-        groupName: panel?.nm_perawatan || `Pemeriksaan ${index + 1}`,
-        groupMeta: panel,
-        tests: Array.isArray(panel?.hasil) ? panel.hasil : []
-      }));
+      const sheetMap = new Map<string, {
+        tanggal: string;
+        dokter: string;
+        petugas: string;
+        lab_responsible_doctor_name: string;
+        requested_tests: string[];
+        groups: Array<{
+          templateName: string;
+          groupMeta: any;
+          results: any[];
+        }>;
+      }>();
+
+      groupedCarePanels.forEach((panel: any, index: number) => {
+        const normalizedTanggal = String(panel?.tanggal || '').trim();
+        const [datePart = '', timePart = '00:00'] = normalizedTanggal.split(' ');
+        const sheetKey = `${datePart}|${timePart}`;
+        if (!sheetMap.has(sheetKey)) {
+          sheetMap.set(sheetKey, {
+            tanggal: normalizedTanggal,
+            dokter: String(panel?.dokter || '').trim(),
+            petugas: String(panel?.petugas || '').trim(),
+            lab_responsible_doctor_name: String(panel?.lab_responsible_doctor_name || '').trim(),
+            requested_tests: [],
+            groups: []
+          });
+        }
+
+        const currentSheet = sheetMap.get(sheetKey);
+        const groupName = String(panel?.nm_perawatan || `Pemeriksaan ${index + 1}`).trim() || `Pemeriksaan ${index + 1}`;
+        if (currentSheet) {
+          if (groupName && !currentSheet.requested_tests.includes(groupName)) {
+            currentSheet.requested_tests.push(groupName);
+          }
+          if (!currentSheet.dokter && panel?.dokter) {
+            currentSheet.dokter = String(panel.dokter).trim();
+          }
+          if (!currentSheet.petugas && panel?.petugas) {
+            currentSheet.petugas = String(panel.petugas).trim();
+          }
+          currentSheet.groups.push({
+            templateName: groupName,
+            groupMeta: panel,
+            results: Array.isArray(panel?.hasil) ? panel.hasil : []
+          });
+        }
+      });
+
+      return Array.from(sheetMap.values()).sort((left, right) => {
+        const [leftDate = '', leftTime = '00:00'] = String(left?.tanggal || '').trim().split(' ');
+        const [rightDate = '', rightTime = '00:00'] = String(right?.tanggal || '').trim().split(' ');
+        const dateCompare = rightDate.localeCompare(leftDate);
+        if (dateCompare !== 0) {
+          return dateCompare;
+        }
+        return rightTime.localeCompare(leftTime);
+      });
     }
 
-    return groupLaboratoryTestsByPanel(fullscreenLabHistory).map((panel) => ({
-      ...panel,
-      groupMeta: null
+    const fallbackPanels = groupLaboratoryTestsByPanel(fullscreenLabHistory).map((panel) => ({
+      templateName: panel.groupName,
+      groupMeta: null,
+      results: panel.tests
     }));
+
+    return fallbackPanels.length > 0 ? [{
+      tanggal: String(fullscreenLabHistory?.tanggal || '').trim(),
+      dokter: '',
+      petugas: '',
+      lab_responsible_doctor_name: String(fullscreenLabHistory?.lab_responsible_doctor_name || '').trim(),
+      requested_tests: fallbackPanels.map((panel) => panel.templateName),
+      groups: fallbackPanels
+    }] : [];
   }, [fullscreenLabHistory]);
-  const fullscreenLabDoctorName = useMemo(
-    () => (
-      String(fullscreenLabHistory?.lab_responsible_doctor_name || '').trim()
-      || String(fullscreenLabVisit?.dokter || '').trim()
-      || String(dpjpMeta.dokterUtama?.nama || '').trim()
-      || String(user?.name || '').trim()
-      || '-'
-    ),
-    [dpjpMeta.dokterUtama?.nama, fullscreenLabHistory?.lab_responsible_doctor_name, fullscreenLabVisit?.dokter, user?.name]
-  );
   const fullscreenLabRoomLabel = useMemo(
     () => (
       String(fullscreenLabVisit?.poliklinik || '').trim()
@@ -9426,14 +9479,6 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
   const fullscreenLabStatusLabel = useMemo(
     () => visitCaraBayar || '-',
     [visitCaraBayar]
-  );
-  const fullscreenLabResultDateTime = useMemo(
-    () => formatLabSheetDateTime(fullscreenLabHistory?.tanggal),
-    [fullscreenLabHistory?.tanggal]
-  );
-  const fullscreenLabAgeLabel = useMemo(
-    () => formatLabSheetAge(currentPatient.tanggal_lahir, fullscreenLabHistory?.tanggal),
-    [currentPatient.tanggal_lahir, fullscreenLabHistory?.tanggal]
   );
   const fullscreenLabPrintedAt = useMemo(
     () => formatUIDateTime(new Date()),
@@ -13601,147 +13646,174 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
 
           {fullscreenLabHistory ? (
             <div className="max-h-[95vh] overflow-y-auto bg-slate-200 p-3 sm:p-6">
-              <div className="mx-auto w-full max-w-[860px] bg-white p-4 text-[11px] text-slate-900 shadow-lg sm:p-6">
-                <div className="border border-slate-500 p-3">
-                  <div className="flex items-start gap-4 border-b border-slate-500 pb-3">
-                    <div className="flex h-16 w-16 shrink-0 items-center justify-center">
-                      <img src={logoImg} alt="Logo RSUD" className="h-14 w-14 object-contain" />
-                    </div>
-                    <div className="flex-1 text-center leading-tight">
-                      <p className="text-[11px] font-semibold uppercase tracking-wide">Pemerintah Kabupaten Hulu Sungai Tengah</p>
-                      <p className="text-[11px] font-semibold uppercase tracking-wide">Dinas Kesehatan</p>
-                      <p className="text-lg font-bold uppercase">UPT RSUD H. Damanhuri Barabai</p>
-                      <p className="text-[10px] text-slate-600">
-                        Jalan Murakata Nomor 4 Barabai Barat, Hulu Sungai Tengah, Kalimantan Selatan 71314
-                      </p>
-                      <p className="text-[10px] text-slate-600">
-                        Telepon: 08115000800, Email: rsdhbarabai@gmail.com
-                      </p>
-                    </div>
-                  </div>
+              <div className="mx-auto w-full max-w-[860px] space-y-6 text-[11px] text-slate-900">
+                {fullscreenLabSheets.length > 0 ? (
+                  fullscreenLabSheets.map((sheet: any, sheetIndex: number) => {
+                    const sheetDateLabel = formatLabSheetDateTime(sheet?.tanggal || fullscreenLabHistory?.tanggal);
+                    const sheetAgeLabel = formatLabSheetAge(currentPatient.tanggal_lahir, sheet?.tanggal || fullscreenLabHistory?.tanggal);
+                    const sheetDoctorLabel =
+                      String(sheet?.dokter || '').trim()
+                      || String(fullscreenLabVisit?.dokter || '').trim()
+                      || String(dpjpMeta.dokterUtama?.nama || '').trim()
+                      || String(user?.name || '').trim()
+                      || '-';
+                    const sheetResponsibleDoctorLabel =
+                      String(sheet?.lab_responsible_doctor_name || '').trim()
+                      || String(fullscreenLabHistory?.lab_responsible_doctor_name || '').trim()
+                      || String(sheet?.dokter || '').trim()
+                      || String(fullscreenLabVisit?.dokter || '').trim()
+                      || String(dpjpMeta.dokterUtama?.nama || '').trim()
+                      || String(user?.name || '').trim()
+                      || '-';
 
-                  <div className="mt-3 grid gap-3 md:grid-cols-2">
-                    <div className="border border-slate-500 p-2">
-                      <div className="grid grid-cols-[88px_10px_1fr] gap-y-1">
-                        <p className="uppercase">No. RM</p>
-                        <p>:</p>
-                        <p>{currentPatient.no_rm || no_rkm_medis || '-'}</p>
-                        <p className="uppercase">Nama</p>
-                        <p>:</p>
-                        <p className="font-semibold uppercase">{currentPatient.nama || '-'}</p>
-                        <p className="uppercase">Tgl. Lahir</p>
-                        <p>:</p>
-                        <p>{formatUIDate(currentPatient.tanggal_lahir)}</p>
-                        <p className="uppercase">Umur / JK</p>
-                        <p>:</p>
-                        <p>{fullscreenLabAgeLabel} / {formatGenderLabel(currentPatient.jenis_kelamin)}</p>
-                        <p className="uppercase">Ket. Klinik</p>
-                        <p>:</p>
-                        <p>{String(fullscreenLabHistory?.source || '-').trim() || '-'}</p>
-                      </div>
-                    </div>
-                    <div className="border border-slate-500 p-2">
-                      <div className="grid grid-cols-[88px_10px_1fr] gap-y-1">
-                        <p className="uppercase">No. Lab</p>
-                        <p>:</p>
-                        <p>{fullscreenLabHistory.noorder || fullscreenLabHistory.no_rawat || '-'}</p>
-                        <p className="uppercase">Ruang</p>
-                        <p>:</p>
-                        <p>{fullscreenLabRoomLabel}</p>
-                        <p className="uppercase">Status</p>
-                        <p>:</p>
-                        <p>{fullscreenLabStatusLabel}</p>
-                        <p className="uppercase">Dokter</p>
-                        <p>:</p>
-                        <p>{fullscreenLabDoctorName}</p>
-                        <p className="uppercase">Tanggal</p>
-                        <p>:</p>
-                        <p>{fullscreenLabResultDateTime}</p>
-                      </div>
-                    </div>
-                  </div>
+                    return (
+                      <div key={`${sheet.tanggal}-${sheetIndex}`} className="bg-white p-4 shadow-lg sm:p-6">
+                        <div className="border border-slate-500 p-3">
+                          <div className="flex items-start gap-4 border-b border-slate-500 pb-3">
+                            <div className="flex h-16 w-16 shrink-0 items-center justify-center">
+                              <img src={logoImg} alt="Logo RSUD" className="h-14 w-14 object-contain" />
+                            </div>
+                            <div className="flex-1 text-center leading-tight">
+                              <p className="text-[11px] font-semibold uppercase tracking-wide">Pemerintah Kabupaten Hulu Sungai Tengah</p>
+                              <p className="text-[11px] font-semibold uppercase tracking-wide">Dinas Kesehatan</p>
+                              <p className="text-lg font-bold uppercase">UPT RSUD H. Damanhuri Barabai</p>
+                              <p className="text-[10px] text-slate-600">
+                                Jalan Murakata Nomor 4 Barabai Barat, Hulu Sungai Tengah, Kalimantan Selatan 71314
+                              </p>
+                              <p className="text-[10px] text-slate-600">
+                                Telepon: 08115000800, Email: rsdhbarabai@gmail.com
+                              </p>
+                            </div>
+                          </div>
 
-                  <div className="mt-3 border border-slate-500">
-                    <div className="border-b border-slate-500 bg-emerald-50 px-3 py-1 text-center text-xs font-bold uppercase tracking-wide text-emerald-700">
-                      Hasil Pemeriksaan Laboratorium
-                    </div>
-                    <div className="overflow-x-auto">
-                      <table className="w-full border-collapse text-[11px]">
-                        <thead>
-                          <tr className="bg-slate-100">
-                            <th className="border border-slate-400 px-2 py-1 text-left font-bold uppercase">Pemeriksaan</th>
-                            <th className="border border-slate-400 px-2 py-1 text-left font-bold uppercase">Hasil</th>
-                            <th className="border border-slate-400 px-2 py-1 text-left font-bold uppercase">Nilai Rujukan</th>
-                            <th className="border border-slate-400 px-2 py-1 text-left font-bold uppercase">Satuan</th>
-                            <th className="border border-slate-400 px-2 py-1 text-left font-bold uppercase">Metoda</th>
-                            <th className="border border-slate-400 px-2 py-1 text-left font-bold uppercase">Ket</th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {fullscreenLabPanels.length > 0 ? (
-                            fullscreenLabPanels.map((panel: any, groupIndex: number) => (
-                              <React.Fragment key={`${panel.groupName}-${groupIndex}`}>
-                                <tr className="bg-emerald-50/70">
-                                  <td colSpan={6} className="border border-slate-400 px-2 py-1 font-semibold uppercase text-emerald-800">
-                                    {panel.groupName}
-                                  </td>
-                                </tr>
-                                {panel.groupMeta ? (
-                                  <tr className="bg-slate-50">
-                                    <td colSpan={6} className="border border-slate-300 px-2 py-1 text-[10px] text-slate-700">
-                                      Waktu: {formatLabSheetDateTime(panel.groupMeta.tanggal)}
-                                      {panel.groupMeta.dokter ? ` | Dokter: ${panel.groupMeta.dokter}` : ''}
-                                      {panel.groupMeta.petugas ? ` | Petugas: ${panel.groupMeta.petugas}` : ''}
-                                    </td>
+                          <div className="mt-3 grid gap-3 md:grid-cols-2">
+                            <div className="border border-slate-500 p-2">
+                              <div className="grid grid-cols-[88px_10px_1fr] gap-y-1">
+                                <p className="uppercase">No. RM</p>
+                                <p>:</p>
+                                <p>{currentPatient.no_rm || no_rkm_medis || '-'}</p>
+                                <p className="uppercase">Nama</p>
+                                <p>:</p>
+                                <p className="font-semibold uppercase">{currentPatient.nama || '-'}</p>
+                                <p className="uppercase">Tgl. Lahir</p>
+                                <p>:</p>
+                                <p>{formatUIDate(currentPatient.tanggal_lahir)}</p>
+                                <p className="uppercase">Umur / JK</p>
+                                <p>:</p>
+                                <p>{sheetAgeLabel} / {formatGenderLabel(currentPatient.jenis_kelamin)}</p>
+                                <p className="uppercase">Ket. Klinik</p>
+                                <p>:</p>
+                                <p>{String(fullscreenLabHistory?.source || '-').trim() || '-'}</p>
+                              </div>
+                            </div>
+                            <div className="border border-slate-500 p-2">
+                              <div className="grid grid-cols-[88px_10px_1fr] gap-y-1">
+                                <p className="uppercase">No. Lab</p>
+                                <p>:</p>
+                                <p>{fullscreenLabHistory.noorder || fullscreenLabHistory.no_rawat || '-'}</p>
+                                <p className="uppercase">Ruang</p>
+                                <p>:</p>
+                                <p>{fullscreenLabRoomLabel}</p>
+                                <p className="uppercase">Status</p>
+                                <p>:</p>
+                                <p>{fullscreenLabStatusLabel}</p>
+                                <p className="uppercase">Dokter</p>
+                                <p>:</p>
+                                <p>{sheetDoctorLabel}</p>
+                                <p className="uppercase">Tanggal</p>
+                                <p>:</p>
+                                <p>{sheetDateLabel}</p>
+                              </div>
+                            </div>
+                          </div>
+
+                          <div className="mt-3 border border-slate-500">
+                            <div className="border-b border-slate-500 bg-emerald-50 px-3 py-1 text-center text-xs font-bold uppercase tracking-wide text-emerald-700">
+                              Hasil Pemeriksaan Laboratorium
+                            </div>
+                            {fullscreenLabSheets.length > 1 ? (
+                              <div className="border-b border-slate-300 bg-slate-50 px-3 py-1 text-[10px] text-slate-700">
+                                Lembar {sheetIndex + 1} dari {fullscreenLabSheets.length}
+                              </div>
+                            ) : null}
+                            <div className="overflow-x-auto">
+                              <table className="w-full border-collapse text-[11px]">
+                                <thead>
+                                  <tr className="bg-slate-100">
+                                    <th className="border border-slate-400 px-2 py-1 text-left font-bold uppercase">Pemeriksaan</th>
+                                    <th className="border border-slate-400 px-2 py-1 text-left font-bold uppercase">Hasil</th>
+                                    <th className="border border-slate-400 px-2 py-1 text-left font-bold uppercase">Nilai Rujukan</th>
+                                    <th className="border border-slate-400 px-2 py-1 text-left font-bold uppercase">Satuan</th>
+                                    <th className="border border-slate-400 px-2 py-1 text-left font-bold uppercase">Metoda</th>
+                                    <th className="border border-slate-400 px-2 py-1 text-left font-bold uppercase">Ket</th>
                                   </tr>
-                                ) : null}
-                                {panel.tests.map((test: any, testIndex: number) => (
-                                  <tr
-                                    key={`${panel.groupName}-${testIndex}`}
-                                    className={cn(
-                                      test.keterangan === 'H' && "text-red-700",
-                                      test.keterangan === 'L' && "text-blue-700"
-                                    )}
-                                  >
-                                    <td className="border border-slate-300 px-2 py-1 align-top">{test.pemeriksaan || '-'}</td>
-                                    <td className="border border-slate-300 px-2 py-1 align-top font-semibold">{test.hasil || '-'}</td>
-                                    <td className="border border-slate-300 px-2 py-1 align-top">{test.rujukan || test.nilai_rujukan || '-'}</td>
-                                    <td className="border border-slate-300 px-2 py-1 align-top">{test.satuan || '-'}</td>
-                                    <td className="border border-slate-300 px-2 py-1 align-top">{test.metode || test.method || '-'}</td>
-                                    <td className="border border-slate-300 px-2 py-1 align-top font-semibold">{test.keterangan || '-'}</td>
-                                  </tr>
-                                ))}
-                              </React.Fragment>
-                            ))
-                          ) : (
-                            <tr>
-                              <td colSpan={6} className="border border-slate-300 px-3 py-4 text-center italic text-slate-500">
-                                Tidak ada hasil pemeriksaan
-                              </td>
-                            </tr>
-                          )}
-                        </tbody>
-                      </table>
-                    </div>
-                  </div>
+                                </thead>
+                                <tbody>
+                                  {sheet.groups.length > 0 ? (
+                                    sheet.groups.map((group: any, groupIndex: number) => (
+                                      <React.Fragment key={`${group.templateName}-${groupIndex}`}>
+                                        <tr className="bg-emerald-50/70">
+                                          <td colSpan={6} className="border border-slate-400 px-2 py-1 font-semibold uppercase text-emerald-800">
+                                            {group.templateName}
+                                          </td>
+                                        </tr>
+                                        {group.results.map((test: any, testIndex: number) => (
+                                          <tr
+                                            key={`${group.templateName}-${test.pemeriksaan}-${testIndex}`}
+                                            className={cn(
+                                              test.keterangan === 'H' && "text-red-700",
+                                              test.keterangan === 'L' && "text-blue-700"
+                                            )}
+                                          >
+                                            <td className="border border-slate-300 px-2 py-1 align-top">{test.pemeriksaan || '-'}</td>
+                                            <td className="border border-slate-300 px-2 py-1 align-top font-semibold">{test.hasil || '-'}</td>
+                                            <td className="border border-slate-300 px-2 py-1 align-top">{test.rujukan || test.nilai_rujukan || '-'}</td>
+                                            <td className="border border-slate-300 px-2 py-1 align-top">{test.satuan || '-'}</td>
+                                            <td className="border border-slate-300 px-2 py-1 align-top">{test.metode || test.method || '-'}</td>
+                                            <td className="border border-slate-300 px-2 py-1 align-top font-semibold">{test.keterangan || '-'}</td>
+                                          </tr>
+                                        ))}
+                                      </React.Fragment>
+                                    ))
+                                  ) : (
+                                    <tr>
+                                      <td colSpan={6} className="border border-slate-300 px-3 py-4 text-center italic text-slate-500">
+                                        Tidak ada hasil pemeriksaan
+                                      </td>
+                                    </tr>
+                                  )}
+                                </tbody>
+                              </table>
+                            </div>
+                          </div>
 
-                  <div className="mt-3 flex flex-col justify-between gap-4 text-[10px] text-slate-700 sm:flex-row">
-                    <div className="max-w-[60%] space-y-1">
-                      <p>
-                        Jika sekiranya ada keraguan tentang hasil pemeriksaan, diharapkan segera menghubungi Instalasi Laboratorium Patologi Klinik.
-                      </p>
-                      <p>
-                        Catatan: {fullscreenLabHistory?.catatan || '-'}
-                      </p>
-                    </div>
-                    <div className="min-w-[200px] text-left sm:text-right">
-                      <p>Tanggal cetak: {fullscreenLabPrintedAt}</p>
-                      <p>Dokter Penanggung Jawab,</p>
-                      <div className="h-16" />
-                      <p className="font-semibold">{fullscreenLabDoctorName}</p>
+                          <div className="mt-3 flex flex-col justify-between gap-4 text-[10px] text-slate-700 sm:flex-row">
+                            <div className="max-w-[60%] space-y-1">
+                              <p>
+                                Jika sekiranya ada keraguan tentang hasil pemeriksaan, diharapkan segera menghubungi Instalasi Laboratorium Patologi Klinik.
+                              </p>
+                              <p>
+                                Catatan: {fullscreenLabHistory?.catatan || '-'}
+                              </p>
+                            </div>
+                            <div className="min-w-[200px] text-left sm:text-right">
+                              <p>Tanggal cetak: {fullscreenLabPrintedAt}</p>
+                              <p>Dokter Penanggung Jawab,</p>
+                              <div className="h-16" />
+                              <p className="font-semibold">{sheetResponsibleDoctorLabel}</p>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })
+                ) : (
+                  <div className="bg-white p-4 shadow-lg sm:p-6">
+                    <div className="border border-slate-500 px-3 py-4 text-center italic text-slate-500">
+                      Tidak ada hasil pemeriksaan
                     </div>
                   </div>
-                </div>
+                )}
               </div>
             </div>
           ) : null}
