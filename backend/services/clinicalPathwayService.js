@@ -1886,6 +1886,210 @@ class ClinicalPathwayService {
     };
   }
 
+  async getGeneratorCandidateList(filters = {}) {
+    const page = Math.max(1, Number(filters.page || 1));
+    const limit = Math.max(1, Math.min(100, Number(filters.limit || 20)));
+    const offset = (page - 1) * limit;
+    const search = this.sanitizeLabel(filters.search);
+    const clinicalPathwayId = Number(filters.clinical_pathway_id || 0);
+    const bangsal = this.sanitizeLabel(filters.bangsal);
+    const kamar = this.sanitizeLabel(filters.kamar);
+    const tanggalMasukAwal = this.formatDateOnly(filters.tanggal_masuk_awal);
+    const tanggalMasukAkhir = this.formatDateOnly(filters.tanggal_masuk_akhir);
+
+    const whereClauses = ['1 = 1'];
+    const whereParams = [];
+    const havingClauses = [];
+    const havingParams = [];
+
+    if (search) {
+      whereClauses.push(`(
+        rp.no_rawat LIKE ?
+        OR rp.no_rkm_medis LIKE ?
+        OR pa.nm_pasien LIKE ?
+        OR dp.kd_penyakit LIKE ?
+        OR py.nm_penyakit LIKE ?
+        OR cp.kode_cp LIKE ?
+        OR cp.nama_cp LIKE ?
+      )`);
+      whereParams.push(
+        `%${search}%`,
+        `%${search}%`,
+        `%${search}%`,
+        `%${search}%`,
+        `%${search}%`,
+        `%${search}%`,
+        `%${search}%`
+      );
+    }
+
+    if (clinicalPathwayId > 0) {
+      whereClauses.push(`cp.id = ?`);
+      whereParams.push(clinicalPathwayId);
+    }
+
+    if (bangsal) {
+      whereClauses.push(`COALESCE(b.nm_bangsal, '') LIKE ?`);
+      whereParams.push(`%${bangsal}%`);
+    }
+
+    if (kamar) {
+      whereClauses.push(`COALESCE(k.kd_kamar, '') LIKE ?`);
+      whereParams.push(`%${kamar}%`);
+    }
+
+    if (tanggalMasukAwal) {
+      havingClauses.push(`DATE(MIN(ki.tgl_masuk)) >= ?`);
+      havingParams.push(tanggalMasukAwal);
+    }
+
+    if (tanggalMasukAkhir) {
+      havingClauses.push(`DATE(MIN(ki.tgl_masuk)) <= ?`);
+      havingParams.push(tanggalMasukAkhir);
+    }
+
+    const fromClause = `
+      FROM kamar_inap ki
+      INNER JOIN reg_periksa rp ON rp.no_rawat = ki.no_rawat
+      INNER JOIN pasien pa ON pa.no_rkm_medis = rp.no_rkm_medis
+      LEFT JOIN kamar k ON k.kd_kamar = ki.kd_kamar
+      LEFT JOIN bangsal b ON b.kd_bangsal = k.kd_bangsal
+      INNER JOIN diagnosa_pasien dp ON dp.no_rawat = rp.no_rawat AND dp.status = rp.status_lanjut
+      INNER JOIN mlite_clinical_pathway_diagnosis cpd ON cpd.kd_penyakit = dp.kd_penyakit
+      INNER JOIN mlite_clinical_pathway cp ON cp.id = cpd.clinical_pathway_id AND cp.aktif = 'Ya' AND cp.jenis_layanan = 'Ranap'
+      LEFT JOIN penyakit py ON py.kd_penyakit = dp.kd_penyakit
+      LEFT JOIN mlite_clinical_pathway_patient cpp ON cpp.no_rawat = rp.no_rawat
+      LEFT JOIN mlite_clinical_pathway existing_cp ON existing_cp.id = cpp.clinical_pathway_id
+    `;
+    const whereSql = `WHERE ${whereClauses.join(' AND ')}`;
+    const havingSql = havingClauses.length ? `HAVING ${havingClauses.join(' AND ')}` : '';
+
+    const [countRows] = await db.execute(
+      `SELECT COUNT(*) AS total
+       FROM (
+         SELECT rp.no_rawat
+         ${fromClause}
+         ${whereSql}
+         GROUP BY rp.no_rawat
+         ${havingSql}
+       ) matched_patients`,
+      [...whereParams, ...havingParams]
+    );
+
+    const [rows] = await db.execute(
+      `SELECT
+        rp.no_rawat,
+        rp.no_rkm_medis,
+        pa.nm_pasien,
+        MIN(CONCAT(ki.tgl_masuk, ' ', COALESCE(ki.jam_masuk, '00:00:00'))) AS tgl_masuk,
+        GROUP_CONCAT(DISTINCT COALESCE(b.nm_bangsal, '') ORDER BY b.nm_bangsal ASC SEPARATOR '||') AS bangsal_labels,
+        GROUP_CONCAT(DISTINCT COALESCE(k.kd_kamar, '') ORDER BY k.kd_kamar ASC SEPARATOR '||') AS kamar_labels,
+        GROUP_CONCAT(
+          DISTINCT CONCAT(dp.kd_penyakit, ' - ', COALESCE(py.nm_penyakit, ''))
+          ORDER BY dp.prioritas ASC, dp.kd_penyakit ASC
+          SEPARATOR '||'
+        ) AS matched_icd_labels,
+        COUNT(DISTINCT dp.kd_penyakit) AS matched_icd_count,
+        GROUP_CONCAT(
+          DISTINCT CONCAT(cp.kode_cp, ' - ', cp.nama_cp)
+          ORDER BY cp.confidence_score DESC, cp.nama_cp ASC
+          SEPARATOR '||'
+        ) AS matched_clinical_pathway_labels,
+        COUNT(DISTINCT cp.id) AS matched_clinical_pathway_count,
+        MAX(cpp.id) AS existing_patient_id,
+        MAX(COALESCE(existing_cp.kode_cp, '')) AS existing_kode_cp,
+        MAX(COALESCE(existing_cp.nama_cp, '')) AS existing_nama_cp,
+        MAX(COALESCE(cpp.status, '')) AS existing_status_cp
+       ${fromClause}
+       ${whereSql}
+       GROUP BY rp.no_rawat, rp.no_rkm_medis, pa.nm_pasien
+       ${havingSql}
+       ORDER BY MIN(ki.tgl_masuk) DESC, rp.no_rawat DESC
+       LIMIT ? OFFSET ?`,
+      [...whereParams, ...havingParams, limit, offset]
+    );
+
+    const data = rows.map((row) => ({
+      no_rawat: row.no_rawat,
+      no_rkm_medis: row.no_rkm_medis,
+      nm_pasien: row.nm_pasien,
+      tgl_masuk: row.tgl_masuk,
+      bangsal_labels: String(row.bangsal_labels || '')
+        .split('||')
+        .map((item) => item.trim())
+        .filter(Boolean),
+      kamar_labels: String(row.kamar_labels || '')
+        .split('||')
+        .map((item) => item.trim())
+        .filter(Boolean),
+      matched_icd_count: Number(row.matched_icd_count || 0),
+      matched_icd_labels: String(row.matched_icd_labels || '')
+        .split('||')
+        .map((item) => item.trim())
+        .filter(Boolean),
+      matched_clinical_pathway_count: Number(row.matched_clinical_pathway_count || 0),
+      matched_clinical_pathway_labels: String(row.matched_clinical_pathway_labels || '')
+        .split('||')
+        .map((item) => item.trim())
+        .filter(Boolean),
+      existing: Number(row.existing_patient_id || 0)
+        ? {
+            patient_id: Number(row.existing_patient_id || 0),
+            kode_cp: String(row.existing_kode_cp || '').trim(),
+            nama_cp: String(row.existing_nama_cp || '').trim(),
+            status_cp: String(row.existing_status_cp || '').trim()
+          }
+        : null
+    }));
+
+    return {
+      success: true,
+      data,
+      pagination: {
+        page,
+        limit,
+        total: Number(countRows[0]?.total || 0),
+        totalPages: Math.max(1, Math.ceil(Number(countRows[0]?.total || 0) / limit))
+      }
+    };
+  }
+
+  async getGeneratorCandidateFilterOptions() {
+    const fromClause = `
+      FROM kamar_inap ki
+      INNER JOIN reg_periksa rp ON rp.no_rawat = ki.no_rawat
+      LEFT JOIN kamar k ON k.kd_kamar = ki.kd_kamar
+      LEFT JOIN bangsal b ON b.kd_bangsal = k.kd_bangsal
+      INNER JOIN diagnosa_pasien dp ON dp.no_rawat = rp.no_rawat AND dp.status = rp.status_lanjut
+      INNER JOIN mlite_clinical_pathway_diagnosis cpd ON cpd.kd_penyakit = dp.kd_penyakit
+      INNER JOIN mlite_clinical_pathway cp ON cp.id = cpd.clinical_pathway_id AND cp.aktif = 'Ya' AND cp.jenis_layanan = 'Ranap'
+      WHERE 1 = 1
+    `;
+
+    const [bangsalRows, kamarRows] = await Promise.all([
+      db.execute(
+        `SELECT DISTINCT COALESCE(b.nm_bangsal, '') AS label
+         ${fromClause}
+         AND COALESCE(b.nm_bangsal, '') <> ''
+         ORDER BY b.nm_bangsal ASC`
+      ),
+      db.execute(
+        `SELECT DISTINCT COALESCE(k.kd_kamar, '') AS label
+         ${fromClause}
+         AND COALESCE(k.kd_kamar, '') <> ''
+         ORDER BY k.kd_kamar ASC`
+      )
+    ]);
+
+    return {
+      success: true,
+      data: {
+        bangsal_options: (bangsalRows[0] || []).map((row) => String(row.label || '').trim()).filter(Boolean),
+        kamar_options: (kamarRows[0] || []).map((row) => String(row.label || '').trim()).filter(Boolean)
+      }
+    };
+  }
+
   async getGeneratorPreviewByNoRawat(noRawat, preferredClinicalPathwayId = null) {
     const normalizedNoRawat = this.normalizeNoRawat(noRawat);
     const [rows] = await db.execute(

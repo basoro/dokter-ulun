@@ -748,6 +748,34 @@ router.get('/generator/preview/by-no-rawat/:no_rawat', async (req, res) => {
   }
 });
 
+router.get('/generator/candidates', requireClinicalPathwayAdminAccess, async (req, res) => {
+  try {
+    const result = await clinicalPathwayService.getGeneratorCandidateList(req.query);
+    return res.json(result);
+  } catch (error) {
+    console.error('Error in clinical pathway generator candidates route:', error);
+    return res.status(500).json({
+      success: false,
+      message: 'Terjadi kesalahan server',
+      error: process.env.NODE_ENV === 'development' ? error.message : undefined
+    });
+  }
+});
+
+router.get('/generator/filter-options', requireClinicalPathwayAdminAccess, async (req, res) => {
+  try {
+    const result = await clinicalPathwayService.getGeneratorCandidateFilterOptions();
+    return res.json(result);
+  } catch (error) {
+    console.error('Error in clinical pathway generator filter options route:', error);
+    return res.status(500).json({
+      success: false,
+      message: 'Terjadi kesalahan server',
+      error: process.env.NODE_ENV === 'development' ? error.message : undefined
+    });
+  }
+});
+
 router.get('/monitoring', requireClinicalPathwayAdminAccess, async (req, res) => {
   try {
     const result = await clinicalPathwayService.getMonitoringList(req.query);

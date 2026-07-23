@@ -1,6 +1,7 @@
 import React from 'react';
 import logoImg from '@/assets/logo.png';
 import { Button } from '@/components/ui/button';
+import { Checkbox } from '@/components/ui/checkbox';
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from '@/components/ui/command';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
@@ -193,6 +194,37 @@ type GeneratorPreview = {
   };
 };
 
+type GeneratorCandidateItem = {
+  no_rawat: string;
+  no_rkm_medis: string;
+  nm_pasien: string;
+  tgl_masuk?: string;
+  bangsal_labels: string[];
+  kamar_labels: string[];
+  matched_icd_count: number;
+  matched_icd_labels: string[];
+  matched_clinical_pathway_count: number;
+  matched_clinical_pathway_labels: string[];
+  existing: {
+    patient_id: number;
+    kode_cp: string;
+    nama_cp: string;
+    status_cp: string;
+  } | null;
+};
+
+type GeneratorCandidateFilterOptions = {
+  bangsal_options: string[];
+  kamar_options: string[];
+};
+
+type GeneratorBatchSelectionItem = {
+  no_rawat: string;
+  no_rkm_medis: string;
+  nm_pasien: string;
+  has_existing_cp: boolean;
+};
+
 type MonitoringListItem = {
   id: number;
   no_rawat: string;
@@ -293,6 +325,19 @@ type SearchableCategorySelectProps = {
   placeholder: string;
   searchPlaceholder?: string;
   emptyText?: string;
+  className?: string;
+  disabled?: boolean;
+};
+
+type SearchableStringSelectProps = {
+  options: string[];
+  value: string;
+  onChange: (value: string) => void;
+  placeholder: string;
+  searchPlaceholder?: string;
+  emptyText?: string;
+  allowEmpty?: boolean;
+  emptyOptionLabel?: string;
   className?: string;
   disabled?: boolean;
 };
@@ -415,6 +460,74 @@ const SearchableMasterSelect = ({
                 >
                   <Check className={cn('mr-2 h-4 w-4', Number(value || 0) === Number(item.id) ? 'opacity-100' : 'opacity-0')} />
                   <span className="truncate">{item.kode_cp} - {item.nama_cp}</span>
+                </CommandItem>
+              ))}
+            </CommandGroup>
+          </CommandList>
+        </Command>
+      </PopoverContent>
+    </Popover>
+  );
+};
+
+const SearchableStringSelect = ({
+  options,
+  value,
+  onChange,
+  placeholder,
+  searchPlaceholder = 'Cari data...',
+  emptyText = 'Data tidak ditemukan.',
+  allowEmpty = false,
+  emptyOptionLabel = 'Semua',
+  className,
+  disabled = false
+}: SearchableStringSelectProps) => {
+  const [open, setOpen] = React.useState(false);
+
+  return (
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverTrigger asChild>
+        <Button
+          type="button"
+          variant="outline"
+          role="combobox"
+          aria-expanded={open}
+          disabled={disabled}
+          className={cn('h-9 w-full justify-between border-input bg-background px-3 text-sm font-normal', className)}
+        >
+          <span className="truncate">{value || placeholder}</span>
+          <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+        </Button>
+      </PopoverTrigger>
+      <PopoverContent className="w-[var(--radix-popover-trigger-width)] p-0" align="start">
+        <Command>
+          <CommandInput placeholder={searchPlaceholder} />
+          <CommandList>
+            <CommandEmpty>{emptyText}</CommandEmpty>
+            <CommandGroup>
+              {allowEmpty ? (
+                <CommandItem
+                  value={emptyOptionLabel}
+                  onSelect={() => {
+                    onChange('');
+                    setOpen(false);
+                  }}
+                >
+                  <Check className={cn('mr-2 h-4 w-4', !value ? 'opacity-100' : 'opacity-0')} />
+                  {emptyOptionLabel}
+                </CommandItem>
+              ) : null}
+              {options.map((item) => (
+                <CommandItem
+                  key={item}
+                  value={item}
+                  onSelect={() => {
+                    onChange(item);
+                    setOpen(false);
+                  }}
+                >
+                  <Check className={cn('mr-2 h-4 w-4', value === item ? 'opacity-100' : 'opacity-0')} />
+                  <span className="truncate">{item}</span>
                 </CommandItem>
               ))}
             </CommandGroup>
@@ -599,6 +712,27 @@ const ClinicalPathwayMaster: React.FC = () => {
   const [generatorLoading, setGeneratorLoading] = React.useState(false);
   const [generatorSaving, setGeneratorSaving] = React.useState(false);
   const [generatorPreview, setGeneratorPreview] = React.useState<GeneratorPreview | null>(null);
+  const [generatorCandidateSearch, setGeneratorCandidateSearch] = React.useState('');
+  const [generatorCandidateClinicalPathwayId, setGeneratorCandidateClinicalPathwayId] = React.useState(0);
+  const [generatorCandidateBangsal, setGeneratorCandidateBangsal] = React.useState('');
+  const [generatorCandidateKamar, setGeneratorCandidateKamar] = React.useState('');
+  const [generatorCandidateDateStart, setGeneratorCandidateDateStart] = React.useState('');
+  const [generatorCandidateDateEnd, setGeneratorCandidateDateEnd] = React.useState('');
+  const [generatorCandidateLoading, setGeneratorCandidateLoading] = React.useState(false);
+  const [generatorCandidates, setGeneratorCandidates] = React.useState<GeneratorCandidateItem[]>([]);
+  const [generatorActionKey, setGeneratorActionKey] = React.useState('');
+  const [generatorCandidatePage, setGeneratorCandidatePage] = React.useState(1);
+  const [generatorCandidatePagination, setGeneratorCandidatePagination] = React.useState({
+    page: 1,
+    limit: 20,
+    total: 0,
+    totalPages: 1
+  });
+  const [generatorBangsalOptions, setGeneratorBangsalOptions] = React.useState<string[]>([]);
+  const [generatorKamarOptions, setGeneratorKamarOptions] = React.useState<string[]>([]);
+  const [generatorBatchSelections, setGeneratorBatchSelections] = React.useState<GeneratorBatchSelectionItem[]>([]);
+  const [generatorBatchConfirmOpen, setGeneratorBatchConfirmOpen] = React.useState(false);
+  const [generatorBatchOnlyNew, setGeneratorBatchOnlyNew] = React.useState(true);
 
   const [monitoringSearch, setMonitoringSearch] = React.useState('');
   const [monitoringStatus, setMonitoringStatus] = React.useState('');
@@ -758,14 +892,154 @@ const ClinicalPathwayMaster: React.FC = () => {
     }
   }, [monitoringSearch, monitoringStatus, requestJson, toast]);
 
+  const fetchGeneratorCandidates = React.useCallback(async () => {
+    try {
+      setGeneratorCandidateLoading(true);
+      const query = new URLSearchParams({ limit: '20', page: String(generatorCandidatePage) });
+      if (generatorCandidateSearch.trim()) {
+        query.set('search', generatorCandidateSearch.trim());
+      }
+      if (generatorCandidateClinicalPathwayId) {
+        query.set('clinical_pathway_id', String(generatorCandidateClinicalPathwayId));
+      }
+      if (generatorCandidateBangsal.trim()) {
+        query.set('bangsal', generatorCandidateBangsal.trim());
+      }
+      if (generatorCandidateKamar.trim()) {
+        query.set('kamar', generatorCandidateKamar.trim());
+      }
+      if (generatorCandidateDateStart) {
+        query.set('tanggal_masuk_awal', generatorCandidateDateStart);
+      }
+      if (generatorCandidateDateEnd) {
+        query.set('tanggal_masuk_akhir', generatorCandidateDateEnd);
+      }
+      const result = await requestJson<ApiListResponse<GeneratorCandidateItem>>(
+        `${API_URLS.CLINICAL_PATHWAY}/generator/candidates?${query.toString()}`
+      );
+      setGeneratorCandidates(Array.isArray(result.data) ? result.data : []);
+      setGeneratorCandidatePagination(result.pagination || {
+        page: generatorCandidatePage,
+        limit: 20,
+        total: 0,
+        totalPages: 1
+      });
+    } catch (error) {
+      setGeneratorCandidates([]);
+      setGeneratorCandidatePagination({
+        page: generatorCandidatePage,
+        limit: 20,
+        total: 0,
+        totalPages: 1
+      });
+      console.error('Error loading generator candidates:', error);
+      toast({
+        title: 'Error',
+        description: error instanceof Error ? error.message : 'Gagal memuat daftar pasien generator',
+        variant: 'destructive'
+      });
+    } finally {
+      setGeneratorCandidateLoading(false);
+    }
+  }, [
+    generatorCandidateClinicalPathwayId,
+    generatorCandidateBangsal,
+    generatorCandidateDateEnd,
+    generatorCandidateDateStart,
+    generatorCandidateKamar,
+    generatorCandidatePage,
+    generatorCandidateSearch,
+    requestJson,
+    toast
+  ]);
+
+  const fetchGeneratorCandidateFilterOptions = React.useCallback(async () => {
+    try {
+      const result = await requestJson<ApiDetailResponse<GeneratorCandidateFilterOptions>>(
+        `${API_URLS.CLINICAL_PATHWAY}/generator/filter-options`
+      );
+      setGeneratorBangsalOptions(Array.isArray(result.data?.bangsal_options) ? result.data!.bangsal_options : []);
+      setGeneratorKamarOptions(Array.isArray(result.data?.kamar_options) ? result.data!.kamar_options : []);
+    } catch (error) {
+      console.error('Error loading generator filter options:', error);
+    }
+  }, [requestJson]);
+
   React.useEffect(() => {
     void fetchMasterOptions();
     void fetchDashboard();
     void fetchMasterList();
     void fetchTemplateList();
     void fetchMappingList();
+    void fetchGeneratorCandidateFilterOptions();
+    void fetchGeneratorCandidates();
     void fetchMonitoringList();
-  }, [fetchDashboard, fetchMappingList, fetchMasterList, fetchMasterOptions, fetchMonitoringList, fetchTemplateList]);
+  }, [fetchDashboard, fetchGeneratorCandidateFilterOptions, fetchGeneratorCandidates, fetchMappingList, fetchMasterList, fetchMasterOptions, fetchMonitoringList, fetchTemplateList]);
+
+  const generatorBatchSelectionSet = React.useMemo(
+    () => new Set(generatorBatchSelections.map((item) => item.no_rawat)),
+    [generatorBatchSelections]
+  );
+  const generatorSelectableCandidates = React.useMemo(
+    () => generatorCandidates.filter((item) => !(generatorBatchOnlyNew && item.existing)),
+    [generatorBatchOnlyNew, generatorCandidates]
+  );
+  const generatorSelectableCurrentPageCount = generatorSelectableCandidates.length;
+  const generatorSelectedSelectableCurrentPageCount = React.useMemo(
+    () => generatorSelectableCandidates.filter((item) => generatorBatchSelectionSet.has(item.no_rawat)).length,
+    [generatorBatchSelectionSet, generatorSelectableCandidates]
+  );
+  const generatorAllCurrentPageSelected = generatorSelectableCurrentPageCount > 0
+    && generatorSelectedSelectableCurrentPageCount === generatorSelectableCurrentPageCount;
+
+  const toggleGeneratorBatchSelection = (item: GeneratorBatchSelectionItem, checked: boolean) => {
+    setGeneratorBatchSelections((current) => {
+      if (checked) {
+        if (current.some((entry) => entry.no_rawat === item.no_rawat)) {
+          return current;
+        }
+        return [...current, item];
+      }
+      return current.filter((entry) => entry.no_rawat !== item.no_rawat);
+    });
+  };
+
+  const toggleGeneratorCurrentPageSelections = (checked: boolean) => {
+    setGeneratorBatchSelections((current) => {
+      const currentMap = new Map(current.map((item) => [item.no_rawat, item]));
+      if (checked) {
+        generatorSelectableCandidates.forEach((item) => {
+          currentMap.set(item.no_rawat, {
+            no_rawat: item.no_rawat,
+            no_rkm_medis: item.no_rkm_medis,
+            nm_pasien: item.nm_pasien,
+            has_existing_cp: Boolean(item.existing)
+          });
+        });
+        return Array.from(currentMap.values());
+      }
+      generatorSelectableCandidates.forEach((item) => {
+        currentMap.delete(item.no_rawat);
+      });
+      return Array.from(currentMap.values());
+    });
+  };
+  const generatorBatchSelectedExistingCount = React.useMemo(
+    () => generatorBatchSelections.filter((item) => item.has_existing_cp).length,
+    [generatorBatchSelections]
+  );
+  const generatorBatchReadyItems = React.useMemo(
+    () => (generatorBatchOnlyNew
+      ? generatorBatchSelections.filter((item) => !item.has_existing_cp)
+      : generatorBatchSelections),
+    [generatorBatchOnlyNew, generatorBatchSelections]
+  );
+  React.useEffect(() => {
+    if (!generatorBatchOnlyNew) {
+      return;
+    }
+    setGeneratorBatchSelections((current) => current.filter((item) => !item.has_existing_cp));
+  }, [generatorBatchOnlyNew]);
 
   const searchIcd = async (
     keyword: string,
@@ -1072,8 +1346,9 @@ const ClinicalPathwayMaster: React.FC = () => {
     }
   };
 
-  const previewGenerator = async () => {
-    if (!generatorNoRawat.trim()) {
+  const previewGenerator = async (rawNoRawat?: string, preferredMasterId?: number) => {
+    const targetNoRawat = String(rawNoRawat || generatorNoRawat || '').trim();
+    if (!targetNoRawat) {
       toast({
         title: 'No. Rawat wajib diisi',
         description: 'Masukkan nomor rawat pasien untuk preview generator.',
@@ -1083,13 +1358,17 @@ const ClinicalPathwayMaster: React.FC = () => {
     }
 
     try {
+      const actionKey = targetNoRawat ? `preview:${targetNoRawat}` : 'preview';
+      setGeneratorActionKey(actionKey);
       setGeneratorLoading(true);
-      const query = generatorMasterId ? `?clinical_pathway_id=${generatorMasterId}` : '';
+      const selectedMasterId = Number(preferredMasterId || generatorMasterId || 0);
+      const query = selectedMasterId ? `?clinical_pathway_id=${selectedMasterId}` : '';
       const result = await requestJson<ApiDetailResponse<GeneratorPreview>>(
-        `${API_URLS.CLINICAL_PATHWAY}/generator/preview/by-no-rawat/${encodeURIComponent(generatorNoRawat.trim())}${query}`
+        `${API_URLS.CLINICAL_PATHWAY}/generator/preview/by-no-rawat/${encodeURIComponent(targetNoRawat)}${query}`
       );
       setGeneratorPreview(result.data || null);
-      setGeneratorMasterId(Number(result.data?.selected_clinical_pathway_id || generatorMasterId || 0));
+      setGeneratorNoRawat(String(result.data?.registration?.no_rawat || targetNoRawat));
+      setGeneratorMasterId(Number(result.data?.selected_clinical_pathway_id || selectedMasterId || 0));
     } catch (error) {
       setGeneratorPreview(null);
       toast({
@@ -1099,11 +1378,36 @@ const ClinicalPathwayMaster: React.FC = () => {
       });
     } finally {
       setGeneratorLoading(false);
+      setGeneratorActionKey('');
     }
   };
 
-  const generatePatient = async () => {
-    if (!generatorPreview?.registration?.no_rkm_medis || !generatorPreview?.registration?.no_rawat) {
+  const submitGeneratePatient = async (payload: {
+    no_rkm_medis: string;
+    no_rawat: string;
+    clinical_pathway_id?: number;
+  }) => {
+    await requestJson<ApiDetailResponse<unknown>>(`${API_URLS.CLINICAL_PATHWAY}/generate-patient`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        no_rkm_medis: payload.no_rkm_medis,
+        no_rawat: payload.no_rawat,
+        clinical_pathway_id: Number(payload.clinical_pathway_id || 0) || undefined
+      })
+    });
+  };
+
+  const generatePatient = async (payload?: {
+    no_rkm_medis?: string;
+    no_rawat?: string;
+    clinical_pathway_id?: number;
+  }) => {
+    const targetNoRkmMedis = String(payload?.no_rkm_medis || generatorPreview?.registration?.no_rkm_medis || '').trim();
+    const targetNoRawat = String(payload?.no_rawat || generatorPreview?.registration?.no_rawat || '').trim();
+    const targetClinicalPathwayId = Number(payload?.clinical_pathway_id || generatorMasterId || 0);
+
+    if (!targetNoRkmMedis || !targetNoRawat) {
       toast({
         title: 'Preview belum tersedia',
         description: 'Lakukan preview pasien terlebih dahulu sebelum generate.',
@@ -1113,18 +1417,22 @@ const ClinicalPathwayMaster: React.FC = () => {
     }
 
     try {
+      const actionKey = targetNoRawat ? `generate:${targetNoRawat}` : 'generate';
+      setGeneratorActionKey(actionKey);
       setGeneratorSaving(true);
-      await requestJson<ApiDetailResponse<unknown>>(`${API_URLS.CLINICAL_PATHWAY}/generate-patient`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          no_rkm_medis: generatorPreview.registration.no_rkm_medis,
-          no_rawat: generatorPreview.registration.no_rawat,
-          clinical_pathway_id: generatorMasterId || undefined
-        })
+      await submitGeneratePatient({
+        no_rkm_medis: targetNoRkmMedis,
+        no_rawat: targetNoRawat,
+        clinical_pathway_id: targetClinicalPathwayId || undefined
       });
       toast({ title: 'Berhasil', description: 'Generator pasien Clinical Pathway berhasil dijalankan' });
-      await Promise.all([previewGenerator(), fetchDashboard(), fetchMonitoringList()]);
+      setGeneratorNoRawat(targetNoRawat);
+      await Promise.all([
+        previewGenerator(targetNoRawat, targetClinicalPathwayId || undefined),
+        fetchDashboard(),
+        fetchMonitoringList(),
+        fetchGeneratorCandidates()
+      ]);
     } catch (error) {
       toast({
         title: 'Error',
@@ -1133,6 +1441,88 @@ const ClinicalPathwayMaster: React.FC = () => {
       });
     } finally {
       setGeneratorSaving(false);
+      setGeneratorActionKey('');
+    }
+  };
+
+  const openGenerateBatchConfirm = () => {
+    if (!generatorBatchSelections.length) {
+      toast({
+        title: 'Pilih pasien terlebih dahulu',
+        description: 'Centang minimal satu pasien untuk generate batch.',
+        variant: 'destructive'
+      });
+      return;
+    }
+
+    if (!generatorBatchReadyItems.length) {
+      toast({
+        title: 'Tidak ada pasien yang diproses',
+        description: 'Semua pasien terpilih sudah memiliki Clinical Pathway aktif/nonaktif sebelumnya.',
+        variant: 'destructive'
+      });
+      return;
+    }
+
+    setGeneratorBatchConfirmOpen(true);
+  };
+
+  const generatePatientBatch = async () => {
+    if (!generatorBatchReadyItems.length) {
+      setGeneratorBatchConfirmOpen(false);
+      return;
+    }
+
+    try {
+      const batchItems = [...generatorBatchReadyItems];
+      setGeneratorActionKey('generate:batch');
+      setGeneratorSaving(true);
+      setGeneratorBatchConfirmOpen(false);
+
+      let successCount = 0;
+      const failedPatients: string[] = [];
+
+      for (const item of batchItems) {
+        try {
+          await submitGeneratePatient({
+            no_rkm_medis: item.no_rkm_medis,
+            no_rawat: item.no_rawat
+          });
+          successCount += 1;
+        } catch (error) {
+          failedPatients.push(`${item.no_rawat}${error instanceof Error ? ` (${error.message})` : ''}`);
+        }
+      }
+
+      setGeneratorBatchSelections([]);
+
+      await Promise.all([
+        fetchDashboard(),
+        fetchMonitoringList(),
+        fetchGeneratorCandidates()
+      ]);
+
+      if (failedPatients.length) {
+        toast({
+          title: 'Generate batch selesai sebagian',
+          description: `${successCount} berhasil, ${failedPatients.length} gagal. Contoh: ${failedPatients.slice(0, 2).join(', ')}`,
+          variant: failedPatients.length === batchItems.length ? 'destructive' : 'default'
+        });
+      } else {
+        toast({
+          title: 'Berhasil',
+          description: `${successCount} pasien berhasil digenerate secara batch`
+        });
+      }
+    } catch (error) {
+      toast({
+        title: 'Error',
+        description: error instanceof Error ? error.message : 'Gagal menjalankan generate batch Clinical Pathway',
+        variant: 'destructive'
+      });
+    } finally {
+      setGeneratorSaving(false);
+      setGeneratorActionKey('');
     }
   };
 
@@ -2199,123 +2589,447 @@ const ClinicalPathwayMaster: React.FC = () => {
         ) : null}
 
         {activeTab === 'generator' ? (
-          <div className="grid gap-4 xl:grid-cols-[324px_minmax(0,1fr)]">
-            <div className={panelClass}>
-              <div className={`${panelHeaderClass} border-primary/10 bg-primary/10 text-primary dark:text-primary`}>Generator Pasien</div>
-              <div className="space-y-4 p-4">
-                <div className="space-y-1">
-                  <label className="text-xs font-semibold">No. Rawat</label>
-                  <input className={inputClass} value={generatorNoRawat} onChange={(e) => setGeneratorNoRawat(e.target.value)} placeholder="2026/06/23/000018" />
+          <div className="space-y-4">
+            <div className="grid gap-4 xl:grid-cols-[324px_minmax(0,1fr)]">
+              <div className={panelClass}>
+                <div className={`${panelHeaderClass} border-primary/10 bg-primary/10 text-primary dark:text-primary`}>Generator Pasien</div>
+                <div className="space-y-4 p-4">
+                  <div className="space-y-1">
+                    <label className="text-xs font-semibold">No. Rawat</label>
+                    <input className={inputClass} value={generatorNoRawat} onChange={(e) => setGeneratorNoRawat(e.target.value)} placeholder="2026/06/23/000018" />
+                  </div>
+                  <div className="space-y-1">
+                    <label className="text-xs font-semibold">Clinical Pathway Manual</label>
+                    <SearchableMasterSelect
+                      options={masterOptions}
+                      value={Number(generatorMasterId || 0)}
+                      onChange={(nextId) => setGeneratorMasterId(nextId)}
+                      placeholder="Auto dari diagnosis"
+                      allowEmpty
+                      emptyOptionLabel="Auto dari diagnosis"
+                    />
+                  </div>
+                  <div className="flex gap-2">
+                    <Button size="sm" onClick={() => void previewGenerator()} disabled={generatorLoading}>
+                      {generatorLoading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+                      Preview
+                    </Button>
+                    <Button size="sm" variant="outline" onClick={() => void generatePatient()} disabled={generatorSaving || !generatorPreview}>
+                      {generatorSaving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+                      Generate Pasien
+                    </Button>
+                  </div>
                 </div>
-                <div className="space-y-1">
-                  <label className="text-xs font-semibold">Clinical Pathway Manual</label>
+              </div>
+
+              <div className={panelClass}>
+                <div className={panelHeaderClass}>Preview Generator Pasien</div>
+                <div className="space-y-4 p-4">
+                  {generatorPreview ? (
+                    <>
+                      <div className="grid gap-3 lg:grid-cols-2">
+                        <div className="rounded-md border bg-muted/30 p-3 text-xs">
+                          <div><span className="font-semibold">Pasien:</span> {generatorPreview.registration.nm_pasien}</div>
+                          <div><span className="font-semibold">No. RM:</span> {generatorPreview.registration.no_rkm_medis}</div>
+                          <div><span className="font-semibold">No. Rawat:</span> {generatorPreview.registration.no_rawat}</div>
+                          <div><span className="font-semibold">Layanan:</span> {generatorPreview.registration.status_lanjut}</div>
+                        </div>
+                        <div className="rounded-md border bg-muted/30 p-3 text-xs">
+                          <div className="font-semibold">Diagnosis</div>
+                          <ul className="mt-2 space-y-1">
+                            {generatorPreview.diagnoses.map((item) => (
+                              <li key={`${item.kd_penyakit}-${item.nm_penyakit}`}>{item.kd_penyakit} - {item.nm_penyakit}</li>
+                            ))}
+                            {!generatorPreview.diagnoses.length ? <li>-</li> : null}
+                          </ul>
+                        </div>
+                      </div>
+
+                      <div className="rounded-md border p-3 dark:border-slate-800">
+                        <div className="mb-2 text-sm font-semibold">Rekomendasi Clinical Pathway</div>
+                        <div className="grid gap-2">
+                          {generatorPreview.master_recommendations.map((item) => (
+                            <button
+                              key={item.id}
+                              type="button"
+                              onClick={() => {
+                                setGeneratorMasterId(item.id);
+                                void previewGenerator(generatorPreview.registration.no_rawat, item.id);
+                              }}
+                              className={`rounded border px-3 py-2 text-left text-xs ${
+                                Number(generatorMasterId || generatorPreview.selected_clinical_pathway_id) === Number(item.id)
+                                  ? 'border-primary/30 bg-primary/10'
+                                  : 'border-border bg-background dark:border-slate-800'
+                              }`}
+                            >
+                              <div className="font-semibold">{item.kode_cp} - {item.nama_cp}</div>
+                              <div className="text-muted-foreground">
+                                {item.status_layanan} | LOS {item.target_los} | Match ICD {item.matched_icd_count} | Confidence {formatPercent(item.confidence_score)}
+                              </div>
+                            </button>
+                          ))}
+                          {!generatorPreview.master_recommendations.length ? (
+                            <div className="text-xs text-muted-foreground">Belum ada rekomendasi clinical pathway.</div>
+                          ) : null}
+                        </div>
+                      </div>
+
+                      <div className="grid gap-4 lg:grid-cols-2">
+                        <div className="rounded-md border p-3 dark:border-slate-800">
+                          <div className="mb-2 text-sm font-semibold">Template Master</div>
+                          <div className="space-y-2 text-xs">
+                            {generatorPreview.master_template.days.map((day) => (
+                              <div key={day.hari_ke} className="rounded-md border p-2 dark:border-slate-800">
+                                <div className="font-semibold">{day.label_hari}</div>
+                                <div className="text-muted-foreground">{day.activities.length} aktivitas</div>
+                              </div>
+                            ))}
+                            {!generatorPreview.master_template.days.length ? <div>Tidak ada template master.</div> : null}
+                          </div>
+                        </div>
+                        <div className="rounded-md border p-3 dark:border-slate-800">
+                          <div className="mb-2 text-sm font-semibold">Template Historis</div>
+                          <div className="text-xs text-muted-foreground">Sumber kasus: {generatorPreview.historical_template.source_case_count || 0}</div>
+                          <div className="mt-2 space-y-2 text-xs">
+                            {generatorPreview.historical_template.days.map((day) => (
+                              <div key={day.hari_ke} className="rounded-md border p-2 dark:border-slate-800">
+                                <div className="font-semibold">{day.label_hari}</div>
+                                <div className="text-muted-foreground">{day.activities.length} aktivitas</div>
+                              </div>
+                            ))}
+                            {!generatorPreview.historical_template.days.length ? <div>Tidak ada template historis.</div> : null}
+                          </div>
+                        </div>
+                      </div>
+                    </>
+                  ) : (
+                    <div className="text-sm text-muted-foreground">Lakukan preview berdasarkan nomor rawat untuk melihat rekomendasi generator pasien.</div>
+                  )}
+                </div>
+              </div>
+            </div>
+
+            <div className={panelClass}>
+              <div className={panelHeaderClass}>Daftar Pasien Generator dari Kamar Inap</div>
+              <div className="space-y-3 border-b p-3 dark:border-slate-800">
+                <div className="grid gap-2 lg:grid-cols-3">
+                  <Input
+                    value={generatorCandidateSearch}
+                    onChange={(e) => setGeneratorCandidateSearch(e.target.value)}
+                    placeholder="Cari no. rawat / pasien / ICD / CP"
+                  />
                   <SearchableMasterSelect
-                    options={masterOptions}
-                    value={Number(generatorMasterId || 0)}
-                    onChange={(nextId) => setGeneratorMasterId(nextId)}
-                    placeholder="Auto dari diagnosis"
+                    options={masterOptions.filter((item) => item.aktif === 'Ya' && item.jenis_layanan === 'Ranap')}
+                    value={Number(generatorCandidateClinicalPathwayId || 0)}
+                    onChange={(nextId) => setGeneratorCandidateClinicalPathwayId(nextId)}
+                    placeholder="Semua Clinical Pathway"
                     allowEmpty
-                    emptyOptionLabel="Auto dari diagnosis"
+                    emptyOptionLabel="Semua Clinical Pathway"
+                    searchPlaceholder="Cari Clinical Pathway..."
+                  />
+                  <SearchableStringSelect
+                    options={generatorBangsalOptions}
+                    value={generatorCandidateBangsal}
+                    onChange={setGeneratorCandidateBangsal}
+                    placeholder="Semua Bangsal"
+                    allowEmpty
+                    emptyOptionLabel="Semua Bangsal"
+                    searchPlaceholder="Cari Bangsal..."
+                    emptyText="Bangsal tidak ditemukan."
+                  />
+                </div>
+                <div className="grid gap-2 lg:grid-cols-3">
+                  <SearchableStringSelect
+                    options={generatorKamarOptions}
+                    value={generatorCandidateKamar}
+                    onChange={setGeneratorCandidateKamar}
+                    placeholder="Semua Kamar"
+                    allowEmpty
+                    emptyOptionLabel="Semua Kamar"
+                    searchPlaceholder="Cari Kamar..."
+                    emptyText="Kamar tidak ditemukan."
+                  />
+                  <Input
+                    type="date"
+                    value={generatorCandidateDateStart}
+                    onChange={(e) => setGeneratorCandidateDateStart(e.target.value)}
+                  />
+                  <Input
+                    type="date"
+                    value={generatorCandidateDateEnd}
+                    onChange={(e) => setGeneratorCandidateDateEnd(e.target.value)}
                   />
                 </div>
                 <div className="flex gap-2">
-                  <Button size="sm" onClick={() => void previewGenerator()} disabled={generatorLoading}>
-                    {generatorLoading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
-                    Preview
+                  <Button
+                    size="sm"
+                    onClick={() => {
+                      if (generatorCandidatePage !== 1) {
+                        setGeneratorCandidatePage(1);
+                        return;
+                      }
+                      void fetchGeneratorCandidates();
+                    }}
+                    disabled={generatorCandidateLoading}
+                  >
+                    {generatorCandidateLoading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Search className="mr-2 h-4 w-4" />}
+                    Tampilkan
                   </Button>
-                  <Button size="sm" variant="outline" onClick={() => void generatePatient()} disabled={generatorSaving || !generatorPreview}>
-                    {generatorSaving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
-                    Generate Pasien
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => {
+                      setGeneratorCandidateSearch('');
+                      setGeneratorCandidateClinicalPathwayId(0);
+                      setGeneratorCandidateBangsal('');
+                      setGeneratorCandidateKamar('');
+                      setGeneratorCandidateDateStart('');
+                      setGeneratorCandidateDateEnd('');
+                      setGeneratorCandidatePage(1);
+                    }}
+                    disabled={generatorCandidateLoading}
+                  >
+                    Reset
+                  </Button>
+                  <label className="flex items-center gap-2 rounded-md border px-3 text-xs text-slate-700 dark:border-slate-800 dark:text-slate-300">
+                    <Checkbox
+                      checked={generatorBatchOnlyNew}
+                      onCheckedChange={(checked) => setGeneratorBatchOnlyNew(Boolean(checked))}
+                      aria-label="Hanya generate pasien yang belum punya Clinical Pathway"
+                    />
+                    Hanya yang belum dibuat CP
+                  </label>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => setGeneratorBatchSelections([])}
+                    disabled={generatorSaving || generatorBatchSelections.length === 0}
+                  >
+                    Batal Pilih ({generatorBatchSelections.length})
+                  </Button>
+                  <Button
+                    size="sm"
+                    onClick={openGenerateBatchConfirm}
+                    disabled={generatorSaving || generatorBatchSelections.length === 0}
+                  >
+                    {generatorSaving && generatorActionKey === 'generate:batch' ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+                    Generate Batch ({generatorBatchSelections.length})
+                  </Button>
+                </div>
+                {generatorBatchOnlyNew ? (
+                  <div className="text-[11px] text-amber-700 dark:text-amber-300">
+                    Mode aman aktif: pasien yang sudah punya CP diberi highlight dan checkbox-nya dikunci.
+                  </div>
+                ) : null}
+              </div>
+              <div className="overflow-x-auto">
+                <table className="min-w-full">
+                  <thead>
+                    <tr>
+                      <th className={tableHeadClass}>
+                        <div className="flex items-center justify-center">
+                          <Checkbox
+                            checked={generatorAllCurrentPageSelected}
+                            onCheckedChange={(checked) => toggleGeneratorCurrentPageSelections(Boolean(checked))}
+                            aria-label="Pilih semua pasien pada halaman ini"
+                          />
+                        </div>
+                      </th>
+                      <th className={tableHeadClass}>No. Rawat</th>
+                      <th className={tableHeadClass}>Pasien</th>
+                      <th className={tableHeadClass}>Bangsal/Kamar</th>
+                      <th className={tableHeadClass}>Masuk</th>
+                      <th className={tableHeadClass}>ICD Match</th>
+                      <th className={tableHeadClass}>Rekomendasi CP</th>
+                      <th className={tableHeadClass}>Status CP</th>
+                      <th className={tableHeadClass}>Aksi</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {generatorCandidates.map((item) => {
+                      const previewKey = `preview:${item.no_rawat}`;
+                      const generateKey = `generate:${item.no_rawat}`;
+                      const isSelected = generatorBatchSelectionSet.has(item.no_rawat);
+                      const hasExistingCp = Boolean(item.existing);
+                      const batchSelectionDisabled = generatorBatchOnlyNew && hasExistingCp;
+                      return (
+                        <tr
+                          key={item.no_rawat}
+                          className={cn(
+                            hasExistingCp ? 'bg-amber-50/70 dark:bg-amber-950/20' : '',
+                            isSelected ? 'ring-1 ring-primary/20' : ''
+                          )}
+                        >
+                          <td className={tableCellClass}>
+                            <div className="flex items-center justify-center">
+                              <Checkbox
+                                checked={isSelected}
+                                disabled={batchSelectionDisabled}
+                                onCheckedChange={(checked) => toggleGeneratorBatchSelection({
+                                  no_rawat: item.no_rawat,
+                                  no_rkm_medis: item.no_rkm_medis,
+                                  nm_pasien: item.nm_pasien,
+                                  has_existing_cp: Boolean(item.existing)
+                                }, Boolean(checked))}
+                                aria-label={`Pilih pasien ${item.nm_pasien}`}
+                              />
+                            </div>
+                          </td>
+                          <td className={tableCellClass}>
+                            <div className="font-medium">{item.no_rawat}</div>
+                            <div className="text-[11px] text-muted-foreground">{item.no_rkm_medis}</div>
+                          </td>
+                          <td className={tableCellClass}>{item.nm_pasien}</td>
+                          <td className={tableCellClass}>
+                            <div className="space-y-1 text-[11px]">
+                              <div>{item.bangsal_labels.join(', ') || '-'}</div>
+                              <div className="text-muted-foreground">{item.kamar_labels.join(', ') || '-'}</div>
+                            </div>
+                          </td>
+                          <td className={tableCellClass}>{formatDateTime(item.tgl_masuk)}</td>
+                          <td className={tableCellClass}>
+                            <div className="space-y-1 text-[11px]">
+                              {item.matched_icd_labels.slice(0, 3).map((label) => (
+                                <div key={label}>{label}</div>
+                              ))}
+                              {item.matched_icd_labels.length > 3 ? (
+                                <div className="text-muted-foreground">+{item.matched_icd_labels.length - 3} ICD lain</div>
+                              ) : null}
+                            </div>
+                          </td>
+                          <td className={tableCellClass}>
+                            <div className="space-y-1 text-[11px]">
+                              {item.matched_clinical_pathway_labels.slice(0, 3).map((label) => (
+                                <div key={label}>{label}</div>
+                              ))}
+                              {item.matched_clinical_pathway_labels.length > 3 ? (
+                                <div className="text-muted-foreground">+{item.matched_clinical_pathway_labels.length - 3} CP lain</div>
+                              ) : null}
+                            </div>
+                          </td>
+                          <td className={cn(tableCellClass, 'max-w-[240px] whitespace-nowrap')}>
+                            {item.existing ? (
+                              <div className="max-w-[220px] text-[11px] whitespace-nowrap">
+                                <div className="flex flex-nowrap items-center gap-1 overflow-x-auto pb-1">
+                                  <span className="inline-flex whitespace-nowrap rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-semibold text-amber-800 dark:bg-amber-900/40 dark:text-amber-200">
+                                    Sudah ada CP
+                                  </span>
+                                  {batchSelectionDisabled ? (
+                                    <span className="inline-flex whitespace-nowrap rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-semibold text-slate-700 dark:bg-slate-800 dark:text-slate-200">
+                                      Terkunci mode aman
+                                    </span>
+                                  ) : null}
+                                </div>
+                                <div
+                                  className="mt-1 truncate font-medium"
+                                  title={`${item.existing.kode_cp} - ${item.existing.nama_cp}`}
+                                >
+                                  {item.existing.kode_cp} - {item.existing.nama_cp}
+                                </div>
+                                <div className="truncate text-muted-foreground" title={item.existing.status_cp || 'Aktif'}>
+                                  {item.existing.status_cp || 'Aktif'}
+                                </div>
+                              </div>
+                            ) : (
+                              <span className="inline-flex whitespace-nowrap rounded-full bg-emerald-100 px-2 py-0.5 text-[10px] font-semibold text-emerald-800 dark:bg-emerald-900/30 dark:text-emerald-200">
+                                Belum dibuat CP
+                              </span>
+                            )}
+                          </td>
+                          <td className={tableCellClass}>
+                            <div className="flex gap-1">
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                onClick={() => void previewGenerator(item.no_rawat)}
+                                disabled={generatorLoading}
+                              >
+                                {generatorLoading && generatorActionKey === previewKey ? <Loader2 className="h-4 w-4 animate-spin" /> : 'Preview'}
+                              </Button>
+                              <Button
+                                size="sm"
+                                onClick={() => void generatePatient({
+                                  no_rkm_medis: item.no_rkm_medis,
+                                  no_rawat: item.no_rawat
+                                })}
+                                disabled={generatorSaving}
+                              >
+                                {generatorSaving && generatorActionKey === generateKey ? <Loader2 className="h-4 w-4 animate-spin" /> : item.existing ? 'Generate Ulang' : 'Generate'}
+                              </Button>
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                    {!generatorCandidates.length ? (
+                      <tr>
+                        <td className={tableCellClass} colSpan={9}>Belum ada pasien rawat inap dengan ICD yang cocok untuk generator.</td>
+                      </tr>
+                    ) : null}
+                  </tbody>
+                </table>
+              </div>
+              <div className="flex items-center justify-between border-t px-3 py-2 text-xs text-muted-foreground dark:border-slate-800">
+                <div>
+                  Total {generatorCandidatePagination.total} pasien | Halaman {generatorCandidatePagination.page} / {generatorCandidatePagination.totalPages} | Terpilih {generatorBatchSelections.length}
+                </div>
+                <div className="flex gap-2">
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => setGeneratorCandidatePage((prev) => Math.max(1, prev - 1))}
+                    disabled={generatorCandidateLoading || generatorCandidatePagination.page <= 1}
+                  >
+                    Sebelumnya
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => setGeneratorCandidatePage((prev) => Math.min(generatorCandidatePagination.totalPages, prev + 1))}
+                    disabled={generatorCandidateLoading || generatorCandidatePagination.page >= generatorCandidatePagination.totalPages}
+                  >
+                    Berikutnya
                   </Button>
                 </div>
               </div>
             </div>
 
-            <div className={panelClass}>
-              <div className={panelHeaderClass}>Preview Generator Pasien</div>
-              <div className="space-y-4 p-4">
-                {generatorPreview ? (
-                  <>
-                    <div className="grid gap-3 lg:grid-cols-2">
-                      <div className="rounded-md border bg-muted/30 p-3 text-xs">
-                        <div><span className="font-semibold">Pasien:</span> {generatorPreview.registration.nm_pasien}</div>
-                        <div><span className="font-semibold">No. RM:</span> {generatorPreview.registration.no_rkm_medis}</div>
-                        <div><span className="font-semibold">No. Rawat:</span> {generatorPreview.registration.no_rawat}</div>
-                        <div><span className="font-semibold">Layanan:</span> {generatorPreview.registration.status_lanjut}</div>
-                      </div>
-                      <div className="rounded-md border bg-muted/30 p-3 text-xs">
-                        <div className="font-semibold">Diagnosis</div>
-                        <ul className="mt-2 space-y-1">
-                          {generatorPreview.diagnoses.map((item) => (
-                            <li key={`${item.kd_penyakit}-${item.nm_penyakit}`}>{item.kd_penyakit} - {item.nm_penyakit}</li>
-                          ))}
-                          {!generatorPreview.diagnoses.length ? <li>-</li> : null}
-                        </ul>
-                      </div>
-                    </div>
-
-                    <div className="rounded-md border p-3 dark:border-slate-800">
-                      <div className="mb-2 text-sm font-semibold">Rekomendasi Clinical Pathway</div>
-                      <div className="grid gap-2">
-                        {generatorPreview.master_recommendations.map((item) => (
-                          <button
-                            key={item.id}
-                            type="button"
-                            onClick={() => {
-                              setGeneratorMasterId(item.id);
-                              void previewGenerator();
-                            }}
-                            className={`rounded border px-3 py-2 text-left text-xs ${
-                              Number(generatorMasterId || generatorPreview.selected_clinical_pathway_id) === Number(item.id)
-                                ? 'border-primary/30 bg-primary/10'
-                                : 'border-border bg-background dark:border-slate-800'
-                            }`}
-                          >
-                            <div className="font-semibold">{item.kode_cp} - {item.nama_cp}</div>
-                            <div className="text-muted-foreground">
-                              {item.status_layanan} | LOS {item.target_los} | Match ICD {item.matched_icd_count} | Confidence {formatPercent(item.confidence_score)}
-                            </div>
-                          </button>
-                        ))}
-                        {!generatorPreview.master_recommendations.length ? (
-                          <div className="text-xs text-muted-foreground">Belum ada rekomendasi clinical pathway.</div>
-                        ) : null}
-                      </div>
-                    </div>
-
-                    <div className="grid gap-4 lg:grid-cols-2">
-                      <div className="rounded-md border p-3 dark:border-slate-800">
-                        <div className="mb-2 text-sm font-semibold">Template Master</div>
-                        <div className="space-y-2 text-xs">
-                          {generatorPreview.master_template.days.map((day) => (
-                            <div key={day.hari_ke} className="rounded-md border p-2 dark:border-slate-800">
-                              <div className="font-semibold">{day.label_hari}</div>
-                              <div className="text-muted-foreground">{day.activities.length} aktivitas</div>
-                            </div>
-                          ))}
-                          {!generatorPreview.master_template.days.length ? <div>Tidak ada template master.</div> : null}
-                        </div>
-                      </div>
-                      <div className="rounded-md border p-3 dark:border-slate-800">
-                        <div className="mb-2 text-sm font-semibold">Template Historis</div>
-                        <div className="text-xs text-muted-foreground">Sumber kasus: {generatorPreview.historical_template.source_case_count || 0}</div>
-                        <div className="mt-2 space-y-2 text-xs">
-                          {generatorPreview.historical_template.days.map((day) => (
-                            <div key={day.hari_ke} className="rounded-md border p-2 dark:border-slate-800">
-                              <div className="font-semibold">{day.label_hari}</div>
-                              <div className="text-muted-foreground">{day.activities.length} aktivitas</div>
-                            </div>
-                          ))}
-                          {!generatorPreview.historical_template.days.length ? <div>Tidak ada template historis.</div> : null}
-                        </div>
-                      </div>
-                    </div>
-                  </>
-                ) : (
-                  <div className="text-sm text-muted-foreground">Lakukan preview berdasarkan nomor rawat untuk melihat rekomendasi generator pasien.</div>
-                )}
-              </div>
-            </div>
+            <Dialog open={generatorBatchConfirmOpen} onOpenChange={setGeneratorBatchConfirmOpen}>
+              <DialogContent className="sm:max-w-md">
+                <DialogHeader>
+                  <DialogTitle>Konfirmasi Generate Batch</DialogTitle>
+                </DialogHeader>
+                <div className="space-y-3 text-sm">
+                  <div className="rounded-md border bg-muted/30 p-3 dark:border-slate-800">
+                    <div>Total dipilih: {generatorBatchSelections.length} pasien</div>
+                    <div>Sudah punya CP: {generatorBatchSelectedExistingCount} pasien</div>
+                    <div>Akan diproses: {generatorBatchReadyItems.length} pasien</div>
+                    <div>Mode aman: {generatorBatchOnlyNew ? 'Hanya yang belum dibuat CP' : 'Semua pasien terpilih'}</div>
+                  </div>
+                  <div className="text-xs text-muted-foreground">
+                    Generate batch akan memproses pasien satu per satu sesuai filter dan pilihan yang sedang aktif.
+                  </div>
+                  <div className="flex justify-end gap-2">
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => setGeneratorBatchConfirmOpen(false)}
+                      disabled={generatorSaving}
+                    >
+                      Batal
+                    </Button>
+                    <Button
+                      size="sm"
+                      onClick={() => void generatePatientBatch()}
+                      disabled={generatorSaving || generatorBatchReadyItems.length === 0}
+                    >
+                      {generatorSaving && generatorActionKey === 'generate:batch' ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+                      Ya, Generate Batch
+                    </Button>
+                  </div>
+                </div>
+              </DialogContent>
+            </Dialog>
           </div>
         ) : null}
 
@@ -2422,14 +3136,14 @@ const ClinicalPathwayMaster: React.FC = () => {
                                 <div className="text-[11px] text-muted-foreground">{item.uraian_kegiatan || item.keterangan || '-'}</div>
                               </td>
                               <td className={tableCellClass}>{item.status}</td>
-                              <td className={tableCellClass}>
-                                <div className="flex items-center gap-2">
+                              <td className={cn(tableCellClass, 'whitespace-nowrap')}>
+                                <div className="flex flex-nowrap items-center gap-2">
                                   <ToggleGroup
                                     type="single"
                                     value={item.status}
                                     variant="outline"
                                     size="sm"
-                                    className="flex-wrap justify-start gap-0"
+                                    className="flex-nowrap justify-start gap-0 whitespace-nowrap"
                                     onValueChange={(nextStatus) => {
                                       if (nextStatus && nextStatus !== item.status) {
                                         void updateExecutionStatus(item.id, nextStatus);
@@ -2442,7 +3156,7 @@ const ClinicalPathwayMaster: React.FC = () => {
                                         value={status}
                                         disabled={monitoringActionKey.startsWith(`execution-${item.id}-`)}
                                         className={cn(
-                                          'min-w-[88px] rounded-none text-xs',
+                                          'min-w-[78px] whitespace-nowrap rounded-none px-2 text-xs',
                                           index === 0 && 'rounded-l-md',
                                           index === 2 && 'rounded-r-md',
                                           item.status === status && status === 'Completed' && 'border-emerald-600 bg-emerald-600 text-white hover:bg-emerald-600 hover:text-white',
