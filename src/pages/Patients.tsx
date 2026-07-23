@@ -3106,6 +3106,7 @@ const Patients = () => {
                 noRkmMedis={tab.noRkmMedis}
                 noRawat={tab.noRawat}
                 embedded
+                workspaceActive={activeMedicalRecordTabId === tab.id}
                 defaultStatusRawat={path.includes('rawat-inap') ? 'Ranap' : 'Ralan'}
               />
             </div>

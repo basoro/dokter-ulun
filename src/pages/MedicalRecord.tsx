@@ -1417,6 +1417,7 @@ interface MedicalRecordProps {
   noRkmMedis?: string;
   noRawat?: string;
   embedded?: boolean;
+  workspaceActive?: boolean;
   defaultStatusRawat?: 'Ralan' | 'Ranap';
 }
 
@@ -1424,6 +1425,7 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
   noRkmMedis,
   noRawat,
   embedded = false,
+  workspaceActive = true,
   defaultStatusRawat
 }) => {
   const routeParams = useParams();
@@ -14309,7 +14311,7 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
       </Dialog>
 
       {/* Floating Buttons for CRUD Operations */}
-      {formattedNoRawat && (
+      {formattedNoRawat && (!embedded || workspaceActive) && (
         <FloatingButtonsModal
           noRawat={formattedNoRawat}
           noRkmMedis={String(no_rkm_medis || '').trim()}
