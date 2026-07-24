@@ -4390,20 +4390,20 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
     if (groupedCarePanels.length > 0) {
       return groupedCarePanels.map((panel: any, panelIndex: number) => (
         <div key={`${panel.nm_perawatan || panel.tanggal || panelIndex}`} className="border rounded-lg p-3 space-y-3 bg-muted/20">
-          <div className="grid grid-cols-1 gap-3 md:grid-cols-4">
-            <div>
+          <div className="grid grid-cols-1 overflow-hidden rounded-md bg-green-100 md:grid-cols-4 md:divide-x md:divide-green-200 dark:bg-green-900/30 dark:md:divide-green-800">
+            <div className="px-3 py-2">
               <p className="text-sm text-muted-foreground">Waktu</p>
               <p className="font-medium">{formatDateSafe(panel.tanggal)}</p>
             </div>
-            <div>
+            <div className="border-t border-green-200 px-3 py-2 md:border-t-0 dark:border-green-800">
               <p className="text-sm text-muted-foreground">Nama Pemeriksaan</p>
               <p className="font-medium">{panel.nm_perawatan || '-'}</p>
             </div>
-            <div>
+            <div className="border-t border-green-200 px-3 py-2 md:border-t-0 dark:border-green-800">
               <p className="text-sm text-muted-foreground">Dokter</p>
               <p className="font-medium">{panel.dokter || '-'}</p>
             </div>
-            <div>
+            <div className="border-t border-green-200 px-3 py-2 md:border-t-0 dark:border-green-800">
               <p className="text-sm text-muted-foreground">Petugas</p>
               <p className="font-medium">{panel.petugas || '-'}</p>
             </div>
