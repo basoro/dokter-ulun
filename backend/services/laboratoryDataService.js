@@ -119,6 +119,54 @@ class LaboratoryDataService {
     };
   }
 
+  normalizeDuplicateExaminations(rows = []) {
+    const duplicates = new Map();
+
+    (Array.isArray(rows) ? rows : []).forEach((row) => {
+      const kode = String(row?.kd_jenis_prw || '').trim();
+      if (!kode || duplicates.has(kode)) {
+        return;
+      }
+
+      duplicates.set(kode, {
+        kd_jenis_prw: kode,
+        nm_perawatan: String(row?.nm_perawatan || '').trim() || kode,
+        tanggal: String(row?.tanggal || '').trim()
+      });
+    });
+
+    return Array.from(duplicates.values());
+  }
+
+  async findCompletedLabExaminations(connection, noRawat, examinations = []) {
+    const normalizedNoRawat = String(noRawat || '').trim();
+    const serviceCodes = (Array.isArray(examinations) ? examinations : [])
+      .map((item) => String(item?.kd_jenis_prw || '').trim())
+      .filter(Boolean);
+
+    const uniqueServiceCodes = [...new Set(serviceCodes)];
+
+    if (!normalizedNoRawat || uniqueServiceCodes.length === 0) {
+      return [];
+    }
+
+    const placeholders = uniqueServiceCodes.map(() => '?').join(', ');
+    const query = `
+      SELECT
+        pl.kd_jenis_prw,
+        COALESCE(jp.nm_perawatan, '') AS nm_perawatan,
+        CONCAT(DATE(pl.tgl_periksa), ' ', COALESCE(pl.jam, '')) AS tanggal
+      FROM periksa_lab pl
+      LEFT JOIN jns_perawatan_lab jp ON jp.kd_jenis_prw = pl.kd_jenis_prw
+      WHERE pl.no_rawat = ?
+        AND pl.kd_jenis_prw IN (${placeholders})
+      ORDER BY pl.tgl_periksa DESC, pl.jam DESC, pl.kd_jenis_prw ASC
+    `;
+
+    const [rows] = await connection.execute(query, [normalizedNoRawat, ...uniqueServiceCodes]);
+    return this.normalizeDuplicateExaminations(rows);
+  }
+
   async getLabRequests(no_rawat) {
     const connection = await this.getConnection();
     try {
@@ -761,8 +809,14 @@ class LaboratoryDataService {
         }
       }
       
+      const duplicateExaminations = await this.findCompletedLabExaminations(connection, no_rawat, examinations);
       await connection.commit();
-      return { success: true, noorder, status_rawat: normalizedStatusRawat };
+      return {
+        success: true,
+        noorder,
+        status_rawat: normalizedStatusRawat,
+        duplicate_examinations: duplicateExaminations
+      };
     } catch (error) {
       await connection.rollback();
       throw error;
@@ -778,10 +832,11 @@ class LaboratoryDataService {
       const normalizedUsername = String(username || '').trim();
       const normalizedStatusRawat = this.normalizeStatusRawat(status_rawat);
       const normalizedKlinis = this.normalizeKlinis(klinis);
+      let existingNoRawat = '';
 
       if (normalizedUsername) {
         const [rows] = await connection.execute(
-          'SELECT dokter_perujuk FROM permintaan_lab WHERE noorder = ? LIMIT 1',
+          'SELECT dokter_perujuk, no_rawat FROM permintaan_lab WHERE noorder = ? LIMIT 1',
           [noorder]
         );
 
@@ -789,9 +844,17 @@ class LaboratoryDataService {
           throw new Error('Permintaan laboratorium tidak ditemukan atau sudah dihapus');
         }
 
+        existingNoRawat = String(rows[0].no_rawat || '').trim();
+
         if (String(rows[0].dokter_perujuk || '').trim() !== normalizedUsername) {
           throw new Error('Anda tidak berhak mengedit permintaan laboratorium ini');
         }
+      } else {
+        const [rows] = await connection.execute(
+          'SELECT no_rawat FROM permintaan_lab WHERE noorder = ? LIMIT 1',
+          [noorder]
+        );
+        existingNoRawat = String(rows?.[0]?.no_rawat || '').trim();
       }
 
       if (normalizedStatusRawat) {
@@ -835,8 +898,13 @@ class LaboratoryDataService {
         }
       }
       
+      const duplicateExaminations = await this.findCompletedLabExaminations(connection, existingNoRawat, examinations);
       await connection.commit();
-      return { success: true, status_rawat: normalizedStatusRawat };
+      return {
+        success: true,
+        status_rawat: normalizedStatusRawat,
+        duplicate_examinations: duplicateExaminations
+      };
     } catch (error) {
       await connection.rollback();
       throw error;

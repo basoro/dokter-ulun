@@ -101,6 +101,53 @@ class RadiologyDataService {
     };
   }
 
+  normalizeDuplicateExaminations(rows = []) {
+    const duplicates = new Map();
+
+    (Array.isArray(rows) ? rows : []).forEach((row) => {
+      const kode = String(row?.kd_jenis_prw || '').trim();
+      if (!kode || duplicates.has(kode)) {
+        return;
+      }
+
+      duplicates.set(kode, {
+        kd_jenis_prw: kode,
+        nm_perawatan: String(row?.nm_perawatan || '').trim() || kode,
+        tanggal: String(row?.tanggal || '').trim()
+      });
+    });
+
+    return Array.from(duplicates.values());
+  }
+
+  async findCompletedRadiologyExaminations(connection, noRawat, examinations = []) {
+    const normalizedNoRawat = String(noRawat || '').trim();
+    const serviceCodes = (Array.isArray(examinations) ? examinations : [])
+      .map((item) => String(item?.kd_jenis_prw || '').trim())
+      .filter(Boolean);
+    const uniqueServiceCodes = [...new Set(serviceCodes)];
+
+    if (!normalizedNoRawat || uniqueServiceCodes.length === 0) {
+      return [];
+    }
+
+    const placeholders = uniqueServiceCodes.map(() => '?').join(', ');
+    const query = `
+      SELECT
+        pr.kd_jenis_prw,
+        COALESCE(jpr.nm_perawatan, '') AS nm_perawatan,
+        CONCAT(DATE(pr.tgl_periksa), ' ', COALESCE(pr.jam, '')) AS tanggal
+      FROM periksa_radiologi pr
+      LEFT JOIN jns_perawatan_radiologi jpr ON jpr.kd_jenis_prw = pr.kd_jenis_prw
+      WHERE pr.no_rawat = ?
+        AND pr.kd_jenis_prw IN (${placeholders})
+      ORDER BY pr.tgl_periksa DESC, pr.jam DESC, pr.kd_jenis_prw ASC
+    `;
+
+    const [rows] = await connection.execute(query, [normalizedNoRawat, ...uniqueServiceCodes]);
+    return this.normalizeDuplicateExaminations(rows);
+  }
+
   async getRadiologyRequests(no_rawat) {
     const connection = await this.getConnection();
     try {
@@ -551,8 +598,14 @@ class RadiologyDataService {
         }
       }
 
+      const duplicateExaminations = await this.findCompletedRadiologyExaminations(connection, no_rawat, examinations);
       await connection.commit();
-      return { success: true, noorder, status_rawat: normalizedStatusRawat };
+      return {
+        success: true,
+        noorder,
+        status_rawat: normalizedStatusRawat,
+        duplicate_examinations: duplicateExaminations
+      };
     } catch (error) {
       await connection.rollback();
       throw error;
@@ -569,10 +622,11 @@ class RadiologyDataService {
 
       const normalizedStatusRawat = this.normalizeStatusRawat(status_rawat);
       const normalizedKlinis = this.normalizeKlinis(klinis);
+      let existingNoRawat = '';
 
       if (normalizedUsername) {
         const [rows] = await connection.execute(
-          'SELECT dokter_perujuk FROM permintaan_radiologi WHERE noorder = ? LIMIT 1',
+          'SELECT dokter_perujuk, no_rawat FROM permintaan_radiologi WHERE noorder = ? LIMIT 1',
           [noorder]
         );
 
@@ -580,9 +634,17 @@ class RadiologyDataService {
           throw new Error('Permintaan radiologi tidak ditemukan atau sudah dihapus');
         }
 
+        existingNoRawat = String(rows[0].no_rawat || '').trim();
+
         if (String(rows[0].dokter_perujuk || '').trim() !== normalizedUsername) {
           throw new Error('Anda tidak berhak mengedit permintaan radiologi ini');
         }
+      } else {
+        const [rows] = await connection.execute(
+          'SELECT no_rawat FROM permintaan_radiologi WHERE noorder = ? LIMIT 1',
+          [noorder]
+        );
+        existingNoRawat = String(rows?.[0]?.no_rawat || '').trim();
       }
 
       await connection.execute('DELETE FROM diagnosa_pasien_klinis WHERE noorder = ?', [noorder]);
@@ -616,8 +678,13 @@ class RadiologyDataService {
         }
       }
 
+      const duplicateExaminations = await this.findCompletedRadiologyExaminations(connection, existingNoRawat, examinations);
       await connection.commit();
-      return { success: true, status_rawat: normalizedStatusRawat };
+      return {
+        success: true,
+        status_rawat: normalizedStatusRawat,
+        duplicate_examinations: duplicateExaminations
+      };
     } catch (error) {
       await connection.rollback();
       throw error;

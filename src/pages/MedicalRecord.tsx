@@ -2,6 +2,7 @@ import React, { Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useR
 import { Link, useParams, useSearchParams } from 'react-router-dom';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Badge } from '@/components/ui/badge';
 import PatientTable from "@/components/PatientTable";
 import { FloatingButtonsModal } from '@/components/FloatingButtonsModal';
 import { CartesianGrid, Legend, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
@@ -345,7 +346,7 @@ interface ProcedureOption {
 type ProcedureStatusRawat = 'Ralan' | 'Ranap';
 type LabStatusRawat = 'Ralan' | 'Ranap' | 'IGD';
 type RadiologyStatusRawat = 'Ralan' | 'Ranap' | 'IGD';
-type OutpatientExaminationSectionTabValue = 'examinations' | 'rehab-medik';
+type OutpatientExaminationSectionTabValue = 'examinations' | 'echo-echocardiography' | 'rehab-medik';
 type InpatientExaminationSectionTabValue = 'examinations' | 'balance-cairan' | 'ventilator' | 'ekstrapiramidal' | 'echo-echocardiography' | 'rehab-medik';
 type VisitDetailSectionFilterValue = 'all' | 'triase' | 'catatan' | 'pemeriksaan' | 'diagnosa' | 'tindakan' | 'resep' | 'laboratorium' | 'radiologi';
 
@@ -1154,6 +1155,55 @@ const buildExaminationHistory = (visits: any[] = [], rawatType: 'Ralan' | 'Ranap
     .sort((a, b) => b.timestamp - a.timestamp);
 };
 
+const getExaminationTimestamp = (exam: any) => {
+  const examDate = String(exam?.tgl_perawatan || exam?.tanggal || '').trim();
+  const examTime = String(exam?.jam_rawat || '00:00').trim() || '00:00';
+  const parsedDate = examDate
+    ? new Date(`${examDate}T${examTime.length === 5 ? `${examTime}:00` : examTime}`).getTime()
+    : 0;
+
+  return Number.isNaN(parsedDate) ? 0 : parsedDate;
+};
+
+const buildVisitExaminationItems = (visit: any) => {
+  const visitStatusRawat = mapStatusLanjutToStatusRawat(visit?.status_lanjut);
+  const primaryBadgeLabel = visitStatusRawat === 'Ranap' ? 'Rawat Inap' : 'IGD/Ralan';
+  const primarySoapLabel = visitStatusRawat === 'Ranap' ? 'SOAPIE' : 'SOAP';
+  const primarySourcePriority = visitStatusRawat === 'Ranap' ? 1 : 0;
+
+  const primaryItems = (visit?.examinations || []).map((exam: any, index: number) => ({
+    key: `primary-${visit?.no_rawat || 'visit'}-${index}-${String(exam?.tgl_perawatan || exam?.tanggal || '').trim()}-${String(exam?.jam_rawat || '').trim()}`,
+    exam,
+    badgeLabel: primaryBadgeLabel,
+    soapLabel: primarySoapLabel,
+    sourcePriority: primarySourcePriority,
+    timestamp: getExaminationTimestamp(exam)
+  }));
+
+  const outpatientItems = visitStatusRawat === 'Ranap'
+    ? (visit?.outpatientExaminations || []).map((exam: any, index: number) => ({
+        key: `ralan-${visit?.no_rawat || 'visit'}-${index}-${String(exam?.tgl_perawatan || exam?.tanggal || '').trim()}-${String(exam?.jam_rawat || '').trim()}`,
+        exam,
+        badgeLabel: 'IGD/Ralan',
+        soapLabel: 'SOAP',
+        sourcePriority: 0,
+        timestamp: getExaminationTimestamp(exam)
+      }))
+    : [];
+
+  return [...outpatientItems, ...primaryItems].sort((a, b) => {
+    if (a.sourcePriority !== b.sourcePriority) {
+      return a.sourcePriority - b.sourcePriority;
+    }
+
+    if (a.timestamp !== b.timestamp) {
+      return b.timestamp - a.timestamp;
+    }
+
+    return a.key.localeCompare(b.key);
+  });
+};
+
 const getRecordTimestamp = (value?: string | null) => {
   const normalized = String(value || '').trim();
   if (!normalized) {
@@ -1721,6 +1771,160 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
   const [isLabFormOpen, setIsLabFormOpen] = useState(false);
   const [isRadiologyFormOpen, setIsRadiologyFormOpen] = useState(false);
   const [isIgdTriageFormOpen, setIsIgdTriageFormOpen] = useState(false);
+  const effectiveLabFormNoRawat = useMemo(
+    () => String(labFormNoRawat || formattedNoRawat || '').trim(),
+    [formattedNoRawat, labFormNoRawat]
+  );
+  const completedLabExaminationsByCode = useMemo(() => {
+    const duplicates = new Map<string, { kode: string; nama: string; tanggal: string }>();
+
+    if (!effectiveLabFormNoRawat) {
+      return duplicates;
+    }
+
+    const targetVisit = allVisits.find(
+      (visit: any) => String(visit?.no_rawat || '').trim() === effectiveLabFormNoRawat
+    );
+    const laboratoryHistory = Array.isArray(targetVisit?.laboratory) ? targetVisit.laboratory : [];
+
+    laboratoryHistory.forEach((item: any) => {
+      const kode = String(item?.kd_jenis_prw || '').trim();
+      if (!kode || duplicates.has(kode)) {
+        return;
+      }
+
+      duplicates.set(kode, {
+        kode,
+        nama: String(item?.nm_perawatan || '').trim() || kode,
+        tanggal: String(item?.tanggal || '').trim()
+      });
+    });
+
+    return duplicates;
+  }, [allVisits, effectiveLabFormNoRawat]);
+  const duplicateLabRequestWarnings = useMemo(() => {
+    const grouped = new Map<string, { kode: string; nama: string; tanggal: string; indexes: number[] }>();
+
+    labTests.forEach((test, index) => {
+      const kode = String(test?.kode || '').trim();
+      if (!kode) {
+        return;
+      }
+
+      const duplicate = completedLabExaminationsByCode.get(kode);
+      if (!duplicate) {
+        return;
+      }
+
+      const existing = grouped.get(kode);
+      if (existing) {
+        existing.indexes.push(index);
+        if (!existing.nama) {
+          existing.nama = String(test?.pemeriksaan || duplicate.nama || kode).trim() || kode;
+        }
+        return;
+      }
+
+      grouped.set(kode, {
+        kode,
+        nama: String(test?.pemeriksaan || duplicate.nama || kode).trim() || kode,
+        tanggal: duplicate.tanggal,
+        indexes: [index]
+      });
+    });
+
+    return Array.from(grouped.values());
+  }, [completedLabExaminationsByCode, labTests]);
+  const duplicateLabRequestWarningsByIndex = useMemo(
+    () => duplicateLabRequestWarnings.reduce<Record<number, { kode: string; nama: string; tanggal: string }>>((result, item) => {
+      item.indexes.forEach((index) => {
+        result[index] = {
+          kode: item.kode,
+          nama: item.nama,
+          tanggal: item.tanggal
+        };
+      });
+      return result;
+    }, {}),
+    [duplicateLabRequestWarnings]
+  );
+  const effectiveRadiologyFormNoRawat = useMemo(
+    () => String(radiologyFormNoRawat || formattedNoRawat || '').trim(),
+    [formattedNoRawat, radiologyFormNoRawat]
+  );
+  const completedRadiologyExaminationsByCode = useMemo(() => {
+    const duplicates = new Map<string, { kode: string; nama: string; tanggal: string }>();
+
+    if (!effectiveRadiologyFormNoRawat) {
+      return duplicates;
+    }
+
+    const targetVisit = allVisits.find(
+      (visit: any) => String(visit?.no_rawat || '').trim() === effectiveRadiologyFormNoRawat
+    );
+    const radiologyHistory = Array.isArray(targetVisit?.radiology) ? targetVisit.radiology : [];
+
+    radiologyHistory.forEach((item: any) => {
+      const kode = String(item?.kd_jenis_prw || '').trim();
+      if (!kode || duplicates.has(kode)) {
+        return;
+      }
+
+      duplicates.set(kode, {
+        kode,
+        nama: String(item?.pemeriksaan || item?.nm_perawatan || '').trim() || kode,
+        tanggal: String(item?.tanggal || '').trim()
+      });
+    });
+
+    return duplicates;
+  }, [allVisits, effectiveRadiologyFormNoRawat]);
+  const duplicateRadiologyRequestWarnings = useMemo(() => {
+    const grouped = new Map<string, { kode: string; nama: string; tanggal: string; indexes: number[] }>();
+
+    radiologies.forEach((radiology, index) => {
+      const kode = String(radiology?.kode || '').trim();
+      if (!kode) {
+        return;
+      }
+
+      const duplicate = completedRadiologyExaminationsByCode.get(kode);
+      if (!duplicate) {
+        return;
+      }
+
+      const existing = grouped.get(kode);
+      if (existing) {
+        existing.indexes.push(index);
+        if (!existing.nama) {
+          existing.nama = String(radiology?.pemeriksaan || duplicate.nama || kode).trim() || kode;
+        }
+        return;
+      }
+
+      grouped.set(kode, {
+        kode,
+        nama: String(radiology?.pemeriksaan || duplicate.nama || kode).trim() || kode,
+        tanggal: duplicate.tanggal,
+        indexes: [index]
+      });
+    });
+
+    return Array.from(grouped.values());
+  }, [completedRadiologyExaminationsByCode, radiologies]);
+  const duplicateRadiologyRequestWarningsByIndex = useMemo(
+    () => duplicateRadiologyRequestWarnings.reduce<Record<number, { kode: string; nama: string; tanggal: string }>>((result, item) => {
+      item.indexes.forEach((index) => {
+        result[index] = {
+          kode: item.kode,
+          nama: item.nama,
+          tanggal: item.tanggal
+        };
+      });
+      return result;
+    }, {}),
+    [duplicateRadiologyRequestWarnings]
+  );
   const [pacsPreviewModal, setPacsPreviewModal] = useState<{
     open: boolean;
     title: string;
@@ -3639,7 +3843,7 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
     if (!formattedNoRawat) {
       return (
         <div className="border border-dashed rounded-lg p-6 text-sm text-muted-foreground bg-muted/20">
-          Pilih kunjungan rawat inap terlebih dahulu untuk melihat data Echocardiography.
+          Pilih kunjungan pasien terlebih dahulu untuk melihat data Echocardiography.
         </div>
       );
     }
@@ -7454,7 +7658,10 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
     if (!echoCardiographyAccess && inpatientExaminationSectionTab === 'echo-echocardiography') {
       setInpatientExaminationSectionTab('examinations');
     }
-  }, [echoCardiographyAccess, inpatientExaminationSectionTab]);
+    if (!echoCardiographyAccess && outpatientExaminationSectionTab === 'echo-echocardiography') {
+      setOutpatientExaminationSectionTab('examinations');
+    }
+  }, [echoCardiographyAccess, inpatientExaminationSectionTab, outpatientExaminationSectionTab]);
 
   useEffect(() => {
     if (!formattedNoRawat) {
@@ -9267,7 +9474,7 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
         setActiveTab('procedures');
         await fetchMedicalRecord({ reset: true, outpatientPage: 1, inpatientPage: 1 });
       } else if (type === 'Laboratorium') {
-        const effectiveNoRawat = labFormNoRawat || formattedNoRawat;
+        const effectiveNoRawat = effectiveLabFormNoRawat;
 
         if (!effectiveNoRawat) {
           throw new Error('Pilih kunjungan pasien terlebih dahulu');
@@ -9332,6 +9539,10 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
           );
         }
 
+        const duplicateExaminations = Array.isArray(responseJson?.duplicate_examinations)
+          ? responseJson.duplicate_examinations
+          : [];
+
         toast({
           title: "Berhasil",
           description: isEditingLabRequest
@@ -9339,11 +9550,27 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
             : `${validLabRequests.length} permintaan laboratorium berhasil disimpan`,
         });
 
+        if (duplicateExaminations.length > 0) {
+          const duplicateNames = duplicateExaminations
+            .slice(0, 3)
+            .map((item: any) => `"${String(item?.nm_perawatan || item?.kd_jenis_prw || '').trim() || '-'}"`)
+            .join(', ');
+          const remainingCount = duplicateExaminations.length - Math.min(duplicateExaminations.length, 3);
+          const duplicateSummary = remainingCount > 0
+            ? `${duplicateNames} dan ${remainingCount} pemeriksaan lainnya`
+            : duplicateNames;
+
+          toast({
+            title: "Notifikasi Pemeriksaan Lab",
+            description: `Pemeriksaan ${duplicateSummary} sudah dilakukan pada no_rawat ini. Permintaan tetap disimpan.`,
+          });
+        }
+
         resetLabForm();
         setActiveTab('laboratory');
         await fetchMedicalRecord({ reset: true, outpatientPage: 1, inpatientPage: 1 });
       } else if (type === 'Radiologi') {
-        const effectiveNoRawat = radiologyFormNoRawat || formattedNoRawat;
+        const effectiveNoRawat = effectiveRadiologyFormNoRawat;
 
         if (!effectiveNoRawat) {
           throw new Error('Pilih kunjungan pasien terlebih dahulu');
@@ -9393,12 +9620,32 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
           );
         }
 
+        const duplicateExaminations = Array.isArray(responseJson?.duplicate_examinations)
+          ? responseJson.duplicate_examinations
+          : [];
+
         toast({
           title: "Berhasil",
           description: isEditingRadiologyRequest
             ? `Permintaan radiologi ${editingRadiologyRequestNo} berhasil diperbarui`
             : `${validRadiologyRequests.length} permintaan radiologi berhasil disimpan`,
         });
+
+        if (duplicateExaminations.length > 0) {
+          const duplicateNames = duplicateExaminations
+            .slice(0, 3)
+            .map((item: any) => `"${String(item?.nm_perawatan || item?.kd_jenis_prw || '').trim() || '-'}"`)
+            .join(', ');
+          const remainingCount = duplicateExaminations.length - Math.min(duplicateExaminations.length, 3);
+          const duplicateSummary = remainingCount > 0
+            ? `${duplicateNames} dan ${remainingCount} pemeriksaan lainnya`
+            : duplicateNames;
+
+          toast({
+            title: "Notifikasi Pemeriksaan Radiologi",
+            description: `Pemeriksaan ${duplicateSummary} sudah dilakukan pada no_rawat ini. Permintaan tetap disimpan.`,
+          });
+        }
 
         resetRadiologyForm();
         setActiveTab('radiology');
@@ -10220,16 +10467,39 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
                             <Stethoscope className="h-5 w-5 mr-2" />
                             Pemeriksaan
                           </h3>
+                          {(() => {
+                            const visitExaminationItems = buildVisitExaminationItems(visit);
+
+                            if (!visitExaminationItems.length) {
+                              return (
+                                <div className="rounded-lg border border-dashed bg-white/70 px-4 py-5 text-sm text-muted-foreground">
+                                  Belum ada data pemeriksaan untuk kunjungan ini.
+                                </div>
+                              );
+                            }
+
+                            return (
                           <div className="grid grid-cols-1 gap-4">
-                            {(visit.examinations || []).map((exam, examIndex) => (
-                              <div key={examIndex} className="border rounded-lg p-4 hover:bg-muted/50">
+                            {visitExaminationItems.map(({ key, exam, badgeLabel, soapLabel }) => (
+                              <div key={key} className="border rounded-lg p-4 hover:bg-muted/50">
                                 <div className="flex flex-col space-y-4">
-                                  <div className="flex items-center justify-between border-b pb-2">
-                                    <div className="flex items-center space-x-2">
+                                  <div className="flex flex-col gap-3 border-b pb-2 md:flex-row md:items-center md:justify-between">
+                                    <div className="flex flex-wrap items-center gap-2">
+                                      <Badge
+                                        variant="outline"
+                                        className={cn(
+                                          'border-0 px-2.5 py-1 text-[11px] font-semibold',
+                                          badgeLabel === 'IGD/Ralan'
+                                            ? 'bg-sky-100 text-sky-700 dark:bg-sky-900/70 dark:text-sky-100'
+                                            : 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/70 dark:text-emerald-100'
+                                        )}
+                                      >
+                                        {badgeLabel}
+                                      </Badge>
                                       <CalendarDays className="h-4 w-4 text-muted-foreground" />
                                       <span className="font-medium">{formatDateSafe(exam.tanggal)}</span>
                                       <User className="h-4 w-4 text-muted-foreground" />
-                                      <span className="font-medium">{exam.pegawai}</span>                                      
+                                      <span className="font-medium">{exam.pegawai}</span>
                                     </div>
                                     <div className="flex items-center space-x-2">
                                       <FileText className="h-4 w-4 text-muted-foreground" />
@@ -10278,7 +10548,7 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
                                     <div className="space-y-3">
                                       <h4 className="font-medium flex items-center">
                                         <ClipboardList className="h-4 w-4 mr-2" />
-                                        SOAPIE
+                                        {soapLabel}
                                       </h4>
                                       <div className="space-y-2 text-sm">
                                         <div>
@@ -10304,6 +10574,8 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
                               </div>
                             ))}
                           </div>
+                            );
+                          })()}
                         </div>
                         ) : null}
 
@@ -10521,12 +10793,35 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
                             <Stethoscope className="h-5 w-5 mr-2" />
                             Pemeriksaan
                           </h3>
+                          {(() => {
+                            const visitExaminationItems = buildVisitExaminationItems(visit);
+
+                            if (!visitExaminationItems.length) {
+                              return (
+                                <div className="rounded-lg border border-dashed bg-white/70 px-4 py-5 text-sm text-muted-foreground">
+                                  Belum ada data pemeriksaan untuk kunjungan ini.
+                                </div>
+                              );
+                            }
+
+                            return (
                           <div className="grid grid-cols-1 gap-4">
-                            {(visit.examinations || []).map((exam, examIndex) => (
-                              <div key={examIndex} className="border rounded-lg p-4 hover:bg-muted/50">
+                            {visitExaminationItems.map(({ key, exam, badgeLabel, soapLabel }) => (
+                              <div key={key} className="border rounded-lg p-4 hover:bg-muted/50">
                                 <div className="flex flex-col space-y-4">
-                                  <div className="flex items-center justify-between border-b pb-2">
-                                    <div className="flex items-center space-x-2">
+                                  <div className="flex flex-col gap-3 border-b pb-2 md:flex-row md:items-center md:justify-between">
+                                    <div className="flex flex-wrap items-center gap-2">
+                                      <Badge
+                                        variant="outline"
+                                        className={cn(
+                                          'border-0 px-2.5 py-1 text-[11px] font-semibold',
+                                          badgeLabel === 'IGD/Ralan'
+                                            ? 'bg-sky-100 text-sky-700 dark:bg-sky-900/70 dark:text-sky-100'
+                                            : 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/70 dark:text-emerald-100'
+                                        )}
+                                      >
+                                        {badgeLabel}
+                                      </Badge>
                                       <CalendarDays className="h-4 w-4 text-muted-foreground" />
                                       <span className="font-medium">{formatDateSafe(exam.tanggal)}</span>
                                       <User className="h-4 w-4 text-muted-foreground" />
@@ -10571,7 +10866,7 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
                                     <div className="space-y-3">
                                       <h4 className="font-medium flex items-center">
                                         <ClipboardList className="h-4 w-4 mr-2" />
-                                        SOAPIE
+                                        {soapLabel}
                                       </h4>
                                       <div className="space-y-2 text-sm">
                                         <div>
@@ -10605,6 +10900,8 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
                               </div>
                             ))}
                           </div>
+                            );
+                          })()}
                         </div>
                         ) : null}
 
@@ -11701,7 +11998,7 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
 
                   <TabsContent value="outpatient">
                     {isFocusedExaminationsLoaded ? (
-                      rehabMedikAccess ? (
+                      echoCardiographyAccess || rehabMedikAccess ? (
                         <Tabs
                           value={outpatientExaminationSectionTab}
                           onValueChange={(value) => setOutpatientExaminationSectionTab(value as OutpatientExaminationSectionTabValue)}
@@ -11709,7 +12006,12 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
                         >
                           <TabsList>
                             <TabsTrigger value="examinations">Pemeriksaan</TabsTrigger>
-                            <TabsTrigger value="rehab-medik">Assesmen Rehab Medik</TabsTrigger>
+                            {echoCardiographyAccess && (
+                              <TabsTrigger value="echo-echocardiography">Echocardiography</TabsTrigger>
+                            )}
+                            {rehabMedikAccess && (
+                              <TabsTrigger value="rehab-medik">Assesmen Rehab Medik</TabsTrigger>
+                            )}
                           </TabsList>
 
                           <TabsContent value="examinations" className="space-y-4">
@@ -11717,9 +12019,17 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
                             {renderExaminationCards(filteredOutpatientExaminationHistory)}
                           </TabsContent>
 
-                          <TabsContent value="rehab-medik" className="space-y-4">
-                            {renderRehabMedikSection()}
-                          </TabsContent>
+                          {echoCardiographyAccess && (
+                            <TabsContent value="echo-echocardiography" className="space-y-4">
+                              {renderEchoCardiographySection()}
+                            </TabsContent>
+                          )}
+
+                          {rehabMedikAccess && (
+                            <TabsContent value="rehab-medik" className="space-y-4">
+                              {renderRehabMedikSection()}
+                            </TabsContent>
+                          )}
                         </Tabs>
                       ) : (
                         <div className="space-y-4">
@@ -13285,7 +13595,7 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
                   </div>
                   <div>
                     <Label htmlFor="lab-norawat">No. Rawat</Label>
-                    <Input id="lab-norawat" value={labFormNoRawat || formattedNoRawat} readOnly className="bg-muted" />
+                    <Input id="lab-norawat" value={effectiveLabFormNoRawat} readOnly className="bg-muted" />
                   </div>
                   <div>
                     <Label htmlFor="lab-status-rawat">Status Rawat</Label>
@@ -13315,8 +13625,28 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
 
                 <div className="space-y-4">
                   <h5 className="font-medium">Permintaan Pemeriksaan Laboratorium:</h5>
+                  {duplicateLabRequestWarnings.length > 0 ? (
+                    <div className="rounded-md border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800 dark:border-amber-800 dark:bg-amber-950/40 dark:text-amber-200">
+                      <div className="flex items-start gap-2">
+                        <BadgeAlert className="mt-0.5 h-4 w-4 shrink-0" />
+                        <div className="space-y-1">
+                          <p className="font-medium">Notifikasi pemeriksaan laboratorium yang sudah dilakukan</p>
+                          {duplicateLabRequestWarnings.map((item) => (
+                            <p key={item.kode}>
+                              - "{item.nama}" sudah dilakukan
+                              {item.tanggal ? ` pada ${formatDateSafe(item.tanggal)}` : ''}
+                              .
+                            </p>
+                          ))}
+                          <br />
+                          <p className="text-xs">Notifikasi ini hanya pengingat. proses order tetap bisa simpan</p>
+                        </div>
+                      </div>
+                    </div>
+                  ) : null}
                   {labTests.map((test, index) => (
                     <div key={index} className="border rounded-lg p-4 bg-background">
+                      
                       <div className="flex justify-between items-center mb-4">
                         <h6 className="font-medium">Pemeriksaan {index + 1}</h6>
                         {labTests.length > 1 && (
@@ -13767,7 +14097,7 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
                       </div>
                       <div>
                         <Label htmlFor="rad-norawat">No. Rawat</Label>
-                        <Input id="rad-norawat" value={radiologyFormNoRawat || formattedNoRawat} readOnly className="bg-muted" />
+                        <Input id="rad-norawat" value={effectiveRadiologyFormNoRawat} readOnly className="bg-muted" />
                       </div>
                       <div>
                         <Label htmlFor="rad-status-rawat">Status Rawat</Label>
@@ -13795,6 +14125,25 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
                         placeholder="Masukkan keterangan klinis"
                       />
                     </div>
+
+                    {duplicateRadiologyRequestWarnings.length > 0 ? (
+                      <div className="rounded-md border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800 dark:border-amber-800 dark:bg-amber-950/40 dark:text-amber-200">
+                        <div className="flex items-start gap-2">
+                          <BadgeAlert className="mt-0.5 h-4 w-4 shrink-0" />
+                          <div className="space-y-1">
+                            <p className="font-medium">Notifikasi pemeriksaan radiologi yang sudah dilakukan</p>
+                            {duplicateRadiologyRequestWarnings.map((item) => (
+                              <p key={item.kode}>
+                                Pemeriksaan "{item.nama}" sudah dilakukan
+                                {item.tanggal ? ` pada ${formatDateSafe(item.tanggal)}` : ''}
+                                .
+                              </p>
+                            ))}
+                            <p className="text-xs">Notifikasi ini tidak menghalangi penyimpanan permintaan radiologi.</p>
+                          </div>
+                        </div>
+                      </div>
+                    ) : null}
 
                     {radiologies.map((radiology, index) => (
                       <div key={index} className="border rounded-lg p-4 mb-4 bg-background">
@@ -13825,10 +14174,10 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
                                   role="combobox"
                                   aria-expanded={!!radiologySearchOpen[index]}
                                   className="w-full justify-between"
-                                  disabled={!formattedNoRawat}
+                                disabled={!effectiveRadiologyFormNoRawat}
                                 >
                                   <span className="truncate text-left">
-                                    {radiology.pemeriksaan || (formattedNoRawat ? 'Cari dan pilih pemeriksaan radiologi' : 'Pilih kunjungan/no_rawat dulu')}
+                                    {radiology.pemeriksaan || (effectiveRadiologyFormNoRawat ? 'Cari dan pilih pemeriksaan radiologi' : 'Pilih kunjungan/no_rawat dulu')}
                                   </span>
                                   <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
                                 </Button>
