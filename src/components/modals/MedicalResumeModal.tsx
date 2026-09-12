@@ -1162,7 +1162,7 @@ export const MedicalResumeModal: React.FC<MedicalResumeModalProps> = ({
                         subtitle: item.pegawai || 'IGD',
                         description: item.s,
                         value: item.s,
-                        badgeLabel: 'IGD',
+                        badgeLabel: 'IGD/Ralan',
                         badgeClassName: 'bg-red-500/15 text-red-700 border border-red-200'
                       }
                     })),
@@ -1221,7 +1221,7 @@ export const MedicalResumeModal: React.FC<MedicalResumeModalProps> = ({
                         subtitle: item.pegawai || 'IGD',
                         description: [item.o, buildVitalsText(item)].filter(Boolean).join('\n'),
                         value: [item.o, buildVitalsText(item)].filter(Boolean).join('\n'),
-                        badgeLabel: 'IGD',
+                        badgeLabel: 'IGD/Ralan',
                         badgeClassName: 'bg-red-500/15 text-red-700 border border-red-200'
                       }
                     })),
@@ -1294,7 +1294,7 @@ export const MedicalResumeModal: React.FC<MedicalResumeModalProps> = ({
                           item.a ? `A: ${item.a}` : '',
                           item.p ? `P: ${item.p}` : ''
                         ].filter(Boolean).join('\n'),
-                        badgeLabel: 'IGD',
+                        badgeLabel: 'IGD/Ralan',
                         badgeClassName: 'bg-red-500/15 text-red-700 border border-red-200'
                       }
                     })),

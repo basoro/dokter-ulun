@@ -2200,6 +2200,8 @@ class GetMedicalRecordService {
 
       return {
         no_rawat: row.no_rawat || '',
+        kd_jenis_prw: row.kd_jenis_prw || '',
+        nm_perawatan: row.nm_perawatan || '',
         tanggal: this.formatDateOnly(row.tgl_periksa) + ' ' + row.jam,
         tgl_periksa: this.formatDateOnly(row.tgl_periksa),
         pemeriksaan: row.nm_perawatan || row.judul || '',
@@ -2528,6 +2530,7 @@ class GetMedicalRecordService {
   static async buildInpatientVisit(visit, inpatientDetail, patientNote = null) {
     const isIgdVisit = this.isIgdVisitByKdPoli(visit.kd_poli);
     const [
+      outpatientExaminations,
       examinations,
       procedures,
       medications,
@@ -2542,6 +2545,7 @@ class GetMedicalRecordService {
       icd10Map,
       icdDetails
     ] = await Promise.all([
+      this.fetchExaminations(visit.no_rawat, 'ralan'),
       this.fetchExaminations(visit.no_rawat, 'ranap'),
       this.fetchProcedures(visit.no_rawat, 'ranap'),
       this.fetchMedications(visit.no_rawat, 'ranap'),
@@ -2574,6 +2578,7 @@ class GetMedicalRecordService {
       cara_keluar: inpatientDetail?.stts_pulang || '',
       diagnosa_akhir: inpatientDetail?.diagnosa_akhir || '',
       patient_note: this.buildPatientNoteSummary(patientNote),
+      outpatientExaminations,
       examinations,
       procedures,
       medicationsRequest: medicationsRequestRanap,
