@@ -125,6 +125,41 @@ class GetMedicalRecordService {
     return this.getIgdPoliCodes().includes(String(kdPoli || '').trim());
   }
 
+  static getPsikologNips() {
+    const rawValue = String(process.env.PSIKOLOG_ROLE || '').trim();
+    if (!rawValue) {
+      return [];
+    }
+
+    let parsed = null;
+    try {
+      parsed = JSON.parse(rawValue);
+    } catch (error) {
+      parsed = null;
+    }
+
+    if (!Array.isArray(parsed)) {
+      parsed = rawValue.replace(/[\[\]"']/g, '').split(',');
+    }
+
+    return [...new Set(
+      parsed
+        .map((nip) => String(nip || '').trim().replace(/^["']|["']$/g, ''))
+        .filter(Boolean)
+    )];
+  }
+
+  static buildPsikologRoleClause(column = 'p1.nip', params = []) {
+    const psikologNips = this.getPsikologNips();
+    if (!psikologNips.length) {
+      return '';
+    }
+
+    const placeholders = psikologNips.map(() => '?').join(', ');
+    params.push(...psikologNips);
+    return `WHEN ${column} IN (${placeholders}) THEN 'psikolog' `;
+  }
+
   static getEnvValue(key) {
     const upper = String(key || '').trim();
     if (!upper) {
@@ -998,20 +1033,75 @@ class GetMedicalRecordService {
     }
   }
 
+  static async fetchAutoStopOrders(noRawats) {
+    const normalizedNoRawats = [...new Set(
+      (Array.isArray(noRawats) ? noRawats : [noRawats])
+        .map((value) => String(value || '').trim())
+        .filter(Boolean)
+    )];
+
+    if (!normalizedNoRawats.length) {
+      return [];
+    }
+
+    const placeholders = normalizedNoRawats.map(() => '?').join(', ');
+    const [rows] = await db.execute(
+      `
+        SELECT
+          aso.id,
+          aso.no_rawat,
+          aso.tgl_perawatan,
+          aso.jam_rawat,
+          aso.nip,
+          aso.kode_barang,
+          aso.tgl_berakhir,
+          aso.created_by,
+          COALESCE(TRIM(db.nama_brng), '') AS nama_brng
+        FROM mlite_auto_stop_order aso
+        LEFT JOIN databarang db ON TRIM(db.kode_brng) = TRIM(aso.kode_barang)
+        WHERE TRIM(aso.no_rawat) IN (${placeholders})
+        ORDER BY aso.tgl_perawatan ASC, aso.jam_rawat ASC, aso.id ASC
+      `,
+      normalizedNoRawats
+    );
+
+    return rows.map((row) => ({
+      id: row.id,
+      no_rawat: String(row.no_rawat || '').trim(),
+      tgl_perawatan: this.formatDateOnly(row.tgl_perawatan),
+      jam_rawat: String(row.jam_rawat || ''),
+      nip: String(row.nip || '').trim(),
+      kode_barang: String(row.kode_barang || '').trim(),
+      nama_brng: String(row.nama_brng || '').trim(),
+      tgl_berakhir: this.formatDateOnly(row.tgl_berakhir),
+      created_by: String(row.created_by || '').trim()
+    }));
+  }
+
   // Helper function to fetch examinations
   static async fetchExaminations(noRawat, type) {
     const table = type === 'ralan' ? 'pemeriksaan_ralan' : 'pemeriksaan_ranap';
+    const psikologRoleParams = [];
+    const psikologRoleClause = this.buildPsikologRoleClause('p1.nip', psikologRoleParams);
     const examQuery = `
       SELECT
         p1.*,
         p2.nama,
         CASE
+          ${psikologRoleClause}
           WHEN LOWER(COALESCE(TRIM(mu.role), '')) = 'paramedis'
             AND LOWER(COALESCE(TRIM(p3.bidang), '')) = 'irsyad' THEN 'terapis'
           WHEN COALESCE(TRIM(mu.role), '') <> '' THEN TRIM(mu.role)
           WHEN LOWER(COALESCE(p2.nama, '')) LIKE '%dr.%' THEN 'medis'
           ELSE ''
-        END AS role
+        END AS role,
+        EXISTS (
+          SELECT 1
+          FROM mlite_auto_stop_order aso
+          WHERE TRIM(aso.no_rawat) = TRIM(p1.no_rawat)
+            AND aso.tgl_perawatan = p1.tgl_perawatan
+            AND TRIM(aso.nip) = TRIM(p1.nip)
+        ) AS auto_stop_order
       FROM ${table} p1
       LEFT JOIN pegawai p2 ON p2.nik = p1.nip
       LEFT JOIN mlite_users mu ON TRIM(mu.username) = TRIM(p1.nip)
@@ -1019,7 +1109,17 @@ class GetMedicalRecordService {
       WHERE p1.no_rawat = ?
       ORDER BY p1.tgl_perawatan DESC, p1.jam_rawat DESC
     `;
-    const [rows] = await db.execute(examQuery, [noRawat]);
+    const [rows] = await db.execute(examQuery, [...psikologRoleParams, noRawat]);
+
+    let autoStopOrders = [];
+    if (rows.some((row) => Number(row.auto_stop_order) === 1)) {
+      try {
+        autoStopOrders = await this.fetchAutoStopOrders(noRawat);
+      } catch (error) {
+        console.error('Error fetching auto stop orders:', error);
+        autoStopOrders = [];
+      }
+    }
     
     return rows.map(row => ({
       tanggal: this.formatDateOnly(row.tgl_perawatan) + ' ' + row.jam_rawat,
@@ -1027,6 +1127,13 @@ class GetMedicalRecordService {
       jam_rawat: row.jam_rawat,
       nip: row.nip || '',
       role: row.role || '',
+      auto_stop_order: Number(row.auto_stop_order) === 1,
+      auto_stop_orders: Number(row.auto_stop_order) === 1
+        ? autoStopOrders.filter((item) =>
+            item.tgl_perawatan === this.formatDateOnly(row.tgl_perawatan)
+            && item.nip === String(row.nip || '').trim()
+          )
+        : [],
       tekanan_darah: row.tensi || '',
       nadi: row.nadi || '',
       respirasi: row.respirasi || '',
@@ -2630,6 +2737,8 @@ class GetMedicalRecordService {
     const offset = (page - 1) * limit;
     const focusFilter = focusNoRawat ? ' AND r.no_rawat = ? ' : '';
     const params = focusNoRawat ? [no_rm, statusLanjut, focusNoRawat] : [no_rm, statusLanjut];
+    const psikologRoleParams = [];
+    const psikologRoleClause = this.buildPsikologRoleClause('p1.nip', psikologRoleParams);
 
     const [[countRow]] = await db.execute(
       `
@@ -2647,12 +2756,20 @@ class GetMedicalRecordService {
           p1.*,
           p2.nama,
           CASE
+            ${psikologRoleClause}
             WHEN LOWER(COALESCE(TRIM(mu.role), '')) = 'paramedis'
               AND LOWER(COALESCE(TRIM(p3.bidang), '')) = 'irsyad' THEN 'terapis'
             WHEN COALESCE(TRIM(mu.role), '') <> '' THEN TRIM(mu.role)
             WHEN LOWER(COALESCE(p2.nama, '')) LIKE '%dr.%' THEN 'medis'
             ELSE ''
           END AS role,
+          EXISTS (
+            SELECT 1
+            FROM mlite_auto_stop_order aso
+            WHERE TRIM(aso.no_rawat) = TRIM(p1.no_rawat)
+              AND aso.tgl_perawatan = p1.tgl_perawatan
+              AND TRIM(aso.nip) = TRIM(p1.nip)
+          ) AS auto_stop_order,
           r.no_rawat,
           r.status_lanjut
         FROM ${table} p1
@@ -2664,8 +2781,19 @@ class GetMedicalRecordService {
         ORDER BY p1.tgl_perawatan DESC, p1.jam_rawat DESC
         LIMIT ? OFFSET ?
       `,
-      [...params, limit, offset]
+      [...psikologRoleParams, ...params, limit, offset]
     );
+
+    const matchingStopOrderRows = rows.filter((row) => Number(row.auto_stop_order) === 1);
+    let autoStopOrders = [];
+    if (matchingStopOrderRows.length) {
+      try {
+        autoStopOrders = await this.fetchAutoStopOrders(matchingStopOrderRows.map((row) => row.no_rawat));
+      } catch (error) {
+        console.error('Error fetching auto stop orders:', error);
+        autoStopOrders = [];
+      }
+    }
 
     return {
       rows: rows.map((exam, examIndex) => {
@@ -2675,10 +2803,22 @@ class GetMedicalRecordService {
           ? new Date(`${examDate}T${examTime.length === 5 ? `${examTime}:00` : examTime}`).getTime()
           : 0;
 
+        const examAutoStopOrders = Number(exam.auto_stop_order) === 1
+          ? autoStopOrders.filter((item) =>
+              item.no_rawat === String(exam.no_rawat || '').trim()
+              && item.tgl_perawatan === this.formatDateOnly(examDate)
+              && item.nip === String(exam.nip || '').trim()
+            )
+          : [];
+
         return {
           key: `${type}-${exam.no_rawat}-${examDate}-${examTime}-${examIndex}`,
           visit: { no_rawat: exam.no_rawat, status_lanjut: statusLanjut },
-          exam,
+          exam: {
+            ...exam,
+            auto_stop_order: Number(exam.auto_stop_order) === 1,
+            auto_stop_orders: examAutoStopOrders
+          },
           rawatType: statusLanjut,
           timestamp: Number.isNaN(parsedDate) ? 0 : parsedDate
         };

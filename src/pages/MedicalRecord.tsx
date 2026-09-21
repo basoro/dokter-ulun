@@ -453,7 +453,7 @@ const PAGE_SIZE = 5;
 type VisitHistoryTabValue = 'outpatient' | 'inpatient';
 type ExaminationHistoryTabValue = 'outpatient' | 'inpatient';
 type CareSectionTabValue = 'outpatient' | 'inpatient';
-type ExaminationRoleFilterValue = 'all' | 'medis' | 'paramedis' | 'apoteker' | 'gizi' | 'terapis';
+type ExaminationRoleFilterValue = 'all' | 'medis' | 'paramedis' | 'apoteker' | 'gizi' | 'terapis' | 'psikolog';
 type ExaminationRoleValue = Exclude<ExaminationRoleFilterValue, 'all'>;
 type MedicationRequestFilterValue = 'all' | 'umum' | 'racikan' | 'pulang' | 'ibs' | 'package';
 type MedicalRecordFetchOptions = {
@@ -505,7 +505,8 @@ const EXAMINATION_ROLE_OPTIONS: Array<{ value: ExaminationRoleFilterValue; label
   { value: 'paramedis', label: 'Perawat' },
   { value: 'apoteker', label: 'Farmasi' },
   { value: 'gizi', label: 'Gizi' },
-  { value: 'terapis', label: 'Terapis' }
+  { value: 'terapis', label: 'Terapis' },
+  { value: 'psikolog', label: 'Psikolog' }
 ];
 
 const resolveExaminationRole = (...values: Array<string | null | undefined>): ExaminationRoleValue | '' => {
@@ -514,7 +515,7 @@ const resolveExaminationRole = (...values: Array<string | null | undefined>): Ex
     .filter(Boolean);
 
   const explicitRole = normalizedValues.find(
-    (value) => value === 'medis' || value === 'paramedis' || value === 'apoteker' || value === 'gizi' || value === 'terapis'
+    (value) => value === 'medis' || value === 'paramedis' || value === 'apoteker' || value === 'gizi' || value === 'terapis' || value === 'psikolog'
   );
 
   if (
@@ -522,7 +523,8 @@ const resolveExaminationRole = (...values: Array<string | null | undefined>): Ex
     explicitRole === 'paramedis' ||
     explicitRole === 'apoteker' ||
     explicitRole === 'gizi' ||
-    explicitRole === 'terapis'
+    explicitRole === 'terapis' ||
+    explicitRole === 'psikolog'
   ) {
     return explicitRole;
   }
@@ -541,7 +543,8 @@ const normalizeExaminationRole = (value?: string | null): ExaminationRoleValue |
     normalized === 'paramedis' ||
     normalized === 'apoteker' ||
     normalized === 'gizi' ||
-    normalized === 'terapis'
+    normalized === 'terapis' ||
+    normalized === 'psikolog'
   ) {
     return normalized;
   }
@@ -560,6 +563,8 @@ const getExaminationRoleLabel = (value?: string | null) => {
       return 'Gizi';
     case 'terapis':
       return 'Terapis';
+    case 'psikolog':
+      return 'Psikolog';
     default:
       return 'Tanpa Role';
   }
@@ -591,6 +596,11 @@ const getExaminationRoleStyles = (value?: string | null) => {
       return {
         badge: 'border-rose-200 bg-rose-100 text-rose-700 dark:border-rose-700 dark:bg-rose-900 dark:text-rose-100',
         soap: 'border-rose-200 bg-rose-50/80 dark:border-rose-800 dark:bg-rose-950'
+      };
+    case 'psikolog':
+      return {
+        badge: 'border-pink-200 bg-pink-100 text-pink-700 dark:border-pink-700 dark:bg-pink-900 dark:text-pink-100',
+        soap: 'border-pink-200 bg-pink-50/80 dark:border-pink-800 dark:bg-pink-950'
       };
     default:
       return {
@@ -1153,6 +1163,34 @@ const buildExaminationHistory = (visits: any[] = [], rawatType: 'Ralan' | 'Ranap
       })
     )
     .sort((a, b) => b.timestamp - a.timestamp);
+};
+
+const renderAutoStopOrderStamp = (exam: any) => {
+  const items = Array.isArray(exam?.auto_stop_orders) ? exam.auto_stop_orders : [];
+  if (!items.length) {
+    return null;
+  }
+
+  return (
+    <div className="self-start space-y-1.5 rounded-md border-2 border-dashed border-rose-500/70 bg-rose-50/60 px-3 py-2 dark:border-rose-400/70 dark:bg-rose-950/40">
+      <p className="flex items-center gap-1.5 text-xs font-bold uppercase tracking-widest text-rose-600 dark:text-rose-300">
+        <BadgeAlert className="h-4 w-4 shrink-0" />
+        Automatic Stop Order
+      </p>
+      {items.map((item: any, index: number) => (
+        <div key={item?.id ?? index} className="flex flex-wrap items-center justify-between gap-x-4 gap-y-0.5 text-xs">
+          <p className="text-rose-700 dark:text-rose-200">
+            <span className="font-semibold">Obat:</span> {item?.nama_brng || item?.kode_barang || '-'}
+            <br />
+            {item?.tgl_berakhir ? ` • Tgl. Berakhir: ${formatUIDate(item.tgl_berakhir)}` : ''}
+          </p>
+          {item?.created_by ? (
+            <span className="font-medium italic text-rose-600/90 dark:text-rose-300/90">{item.created_by}</span>
+          ) : null}
+        </div>
+      ))}
+    </div>
+  );
 };
 
 const getExaminationTimestamp = (exam: any) => {
@@ -3432,6 +3470,7 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
               </div>
             )}
             <p className="text-sm"><strong>Petugas:</strong> {exam.pegawai || exam.nip || '-'}</p>
+            {resolvedRole === 'apoteker' && Boolean(exam?.auto_stop_order) ? renderAutoStopOrderStamp(exam) : null}
             {rawatType === 'Ranap' && isVerified ? (
               <p className="text-sm text-emerald-700 dark:text-emerald-300">
                 <strong>Waktu Verifikasi:</strong> {formatUIDateTime(exam.verified_at)}
@@ -10567,6 +10606,7 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
                                           <span className="font-medium">P (Planning):</span>
                                           <p className="mt-1 whitespace-pre-line break-words text-muted-foreground">{formatMultilineText(exam.p)}</p>
                                         </div>
+                                        {resolveExaminationRole(exam.role, exam.pegawai, visit.dokter, visit.nm_dokter) === 'apoteker' && Boolean(exam?.auto_stop_order) ? renderAutoStopOrderStamp(exam) : null}
                                       </div>
                                     </div>
                                   </div>
@@ -10893,6 +10933,7 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
                                           <span className="font-medium">E (Evaluation):</span>
                                           <p className="mt-1 whitespace-pre-line break-words text-muted-foreground">{formatMultilineText(exam.e)}</p>
                                         </div>
+                                        {resolveExaminationRole(exam.role, exam.pegawai, visit.dokter, visit.nm_dokter) === 'apoteker' && Boolean(exam?.auto_stop_order) ? renderAutoStopOrderStamp(exam) : null}
                                       </div>
                                     </div>
                                   </div>
