@@ -1184,6 +1184,7 @@ const renderAutoStopOrderStamp = (exam: any) => {
             <br />
             {item?.tgl_berakhir ? ` • Tgl. Berakhir: ${formatUIDate(item.tgl_berakhir)}` : ''}
           </p>
+          <br />
           {item?.created_by ? (
             <span className="font-medium italic text-rose-600/90 dark:text-rose-300/90">{item.created_by}</span>
           ) : null}
