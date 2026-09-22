@@ -26,6 +26,47 @@ class EchoCardiographyService {
     return ['1', 'true', 'yes', 'checked', 'on'].includes(normalized);
   }
 
+  static normalizeEditDate(value) {
+    const normalized = String(value || '').trim();
+    if (!normalized) {
+      return '';
+    }
+
+    const dateOnlyMatch = normalized.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+    if (dateOnlyMatch) {
+      return `${dateOnlyMatch[1]}-${dateOnlyMatch[2]}-${dateOnlyMatch[3]}`;
+    }
+
+    // Tangani ISO string hasil serialisasi Date (mis. 2026-09-20T17:00:00.000Z)
+    // dengan mengonversinya kembali ke tanggal lokal.
+    const parsed = new Date(normalized);
+    if (!Number.isNaN(parsed.getTime())) {
+      const year = parsed.getFullYear();
+      const month = String(parsed.getMonth() + 1).padStart(2, '0');
+      const day = String(parsed.getDate()).padStart(2, '0');
+      return `${year}-${month}-${day}`;
+    }
+
+    return normalized;
+  }
+
+  static normalizeEditTime(value) {
+    const normalized = String(value || '').trim();
+    if (!normalized) {
+      return '';
+    }
+
+    const timeMatch = normalized.match(/^(\d{1,2}):(\d{2})(?::(\d{2}))?/);
+    if (timeMatch) {
+      const hours = timeMatch[1].padStart(2, '0');
+      const minutes = timeMatch[2];
+      const seconds = timeMatch[3] || '00';
+      return `${hours}:${minutes}:${seconds}`;
+    }
+
+    return normalized;
+  }
+
   static getCurrentSystemDateTime() {
     const now = new Date();
     const year = now.getFullYear();
@@ -49,20 +90,20 @@ class EchoCardiographyService {
       const [rows] = await connection.execute(
         `
           SELECT
-            hr.no_rawat,
-            hr.tgl_periksa,
-            hr.jam,
+            skr.no_rawat,
+            DATE_FORMAT(skr.tgl_periksa, '%Y-%m-%d') AS tgl_periksa,
+            TIME_FORMAT(skr.jam, '%H:%i:%s') AS jam,
             hr.hasil,
             skr.saran,
             skr.kesan
-          FROM hasil_radiologi hr
-          INNER JOIN saran_kesan_rad skr
+          FROM saran_kesan_rad skr
+          LEFT JOIN hasil_radiologi hr
             ON hr.no_rawat = skr.no_rawat
             AND hr.tgl_periksa = skr.tgl_periksa
             AND hr.jam = skr.jam
-          WHERE hr.no_rawat = ?
+          WHERE skr.no_rawat = ?
             AND skr.judul = ?
-          ORDER BY hr.tgl_periksa DESC, hr.jam DESC
+          ORDER BY skr.tgl_periksa DESC, skr.jam DESC
         `,
         [normalizedNoRawat, this.ECHO_TITLE]
       );
@@ -88,8 +129,8 @@ class EchoCardiographyService {
     const addBilling = this.normalizeBoolean(payload.add_billing);
     const mode = String(payload.mode || '').trim().toLowerCase() === 'edit' ? 'edit' : 'create';
     const kdDokter = this.normalizeText(payload.kd_dokter);
-    const editTanggal = this.normalizeText(payload.tgl_periksa);
-    const editJam = this.normalizeText(payload.jam);
+    const editTanggal = this.normalizeEditDate(payload.tgl_periksa);
+    const editJam = this.normalizeEditTime(payload.jam);
 
     const connection = await getConnection();
 
@@ -104,7 +145,7 @@ class EchoCardiographyService {
           throw new Error('Data echo yang akan diedit tidak valid');
         }
 
-        await connection.execute(
+        const [updateSaranResult] = await connection.execute(
           `
             UPDATE saran_kesan_rad
             SET saran = ?, kesan = ?
@@ -116,7 +157,13 @@ class EchoCardiographyService {
           [saran, kesan, noRawat, tanggal, jam, this.ECHO_TITLE]
         );
 
-        await connection.execute(
+        if (!updateSaranResult || Number(updateSaranResult.affectedRows) === 0) {
+          throw new Error(
+            'Data echo yang akan diedit tidak ditemukan. Muat ulang riwayat lalu coba lagi.'
+          );
+        }
+
+        const [updateHasilResult] = await connection.execute(
           `
             UPDATE hasil_radiologi
             SET hasil = ?
@@ -126,6 +173,20 @@ class EchoCardiographyService {
           `,
           [hasil, noRawat, tanggal, jam]
         );
+
+        if ((!updateHasilResult || Number(updateHasilResult.affectedRows) === 0) && hasil) {
+          await connection.execute(
+            `
+              INSERT INTO hasil_radiologi (
+                no_rawat,
+                tgl_periksa,
+                jam,
+                hasil
+              ) VALUES (?, ?, ?, ?)
+            `,
+            [noRawat, tanggal, jam, hasil]
+          );
+        }
       } else {
         const currentSystemDateTime = this.getCurrentSystemDateTime();
         tanggal = currentSystemDateTime.date;
@@ -214,6 +275,66 @@ class EchoCardiographyService {
         message: mode === 'edit'
           ? 'Echocardiography berhasil diperbarui'
           : 'Echocardiography berhasil disimpan',
+        data: {
+          no_rawat: noRawat,
+          tgl_periksa: tanggal,
+          jam
+        }
+      };
+    } catch (error) {
+      await connection.rollback();
+      throw error;
+    } finally {
+      connection.release();
+    }
+  }
+
+  static async delete(payload = {}) {
+    const noRawat = this.normalizeNoRawat(payload.no_rawat);
+    const tanggal = this.normalizeEditDate(payload.tgl_periksa);
+    const jam = this.normalizeEditTime(payload.jam);
+
+    if (!tanggal || !jam) {
+      throw new Error('Tanggal dan jam data yang akan dihapus tidak valid');
+    }
+
+    const connection = await getConnection();
+
+    try {
+      await connection.beginTransaction();
+
+      const [deleteSaranResult] = await connection.execute(
+        `
+          DELETE FROM saran_kesan_rad
+          WHERE no_rawat = ?
+            AND tgl_periksa = ?
+            AND jam = ?
+            AND judul = ?
+        `,
+        [noRawat, tanggal, jam, this.ECHO_TITLE]
+      );
+
+      if (!deleteSaranResult || Number(deleteSaranResult.affectedRows) === 0) {
+        throw new Error(
+          'Data echo yang akan dihapus tidak ditemukan. Muat ulang riwayat lalu coba lagi.'
+        );
+      }
+
+      await connection.execute(
+        `
+          DELETE FROM hasil_radiologi
+          WHERE no_rawat = ?
+            AND tgl_periksa = ?
+            AND jam = ?
+        `,
+        [noRawat, tanggal, jam]
+      );
+
+      await connection.commit();
+
+      return {
+        success: true,
+        message: 'Echocardiography berhasil dihapus',
         data: {
           no_rawat: noRawat,
           tgl_periksa: tanggal,
