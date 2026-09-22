@@ -1726,6 +1726,7 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
   const [echoCardiographyEntries, setEchoCardiographyEntries] = useState<EchoCardiographyEntry[]>([]);
   const [echoCardiographyLoading, setEchoCardiographyLoading] = useState(false);
   const [savingEchoCardiography, setSavingEchoCardiography] = useState(false);
+  const [deletingEchoCardiography, setDeletingEchoCardiography] = useState(false);
   const [selectedEchoCardiographyKey, setSelectedEchoCardiographyKey] = useState<string | null>(null);
   const [echoCardiographyForm, setEchoCardiographyForm] = useState(getDefaultEchoCardiographyForm);
 
@@ -3911,35 +3912,6 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
 
           <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
             <div>
-              <Label htmlFor="echo-no-rawat">No. Rawat</Label>
-              <Input id="echo-no-rawat" value={formattedNoRawat} readOnly className="bg-muted" />
-            </div>
-            <div>
-              <Label htmlFor="echo-mode">Status Form</Label>
-              <Input
-                id="echo-mode"
-                value={selectedEchoCardiographyEntry ? 'Edit data tersimpan' : 'Input data baru'}
-                readOnly
-                className="bg-muted"
-              />
-            </div>
-            <div>
-              <Label htmlFor="echo-last-update">Data Tersimpan</Label>
-              <Input
-                id="echo-last-update"
-                value={
-                  selectedEchoCardiographyEntry
-                    ? formatDateSafe(`${selectedEchoCardiographyEntry.tgl_periksa} ${selectedEchoCardiographyEntry.jam}`)
-                    : '-'
-                }
-                readOnly
-                className="bg-muted"
-              />
-            </div>
-          </div>
-
-          <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
-            <div>
               <Label htmlFor="echo-hasil">Hasil</Label>
               <Textarea
                 id="echo-hasil"
@@ -4058,22 +4030,33 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
                         <td className="px-3 py-2 whitespace-pre-line min-w-[180px]">{entry.kesan || '-'}</td>
                         <td className="px-3 py-2 whitespace-pre-line min-w-[180px]">{entry.saran || '-'}</td>
                         <td className="px-3 py-2">
-                          <Button
-                            type="button"
-                            size="sm"
-                            variant={selectedEchoCardiographyKey === entryKey ? 'default' : 'outline'}
-                            onClick={() => {
-                              setSelectedEchoCardiographyKey(entryKey);
-                              setEchoCardiographyForm({
-                                hasil: entry.hasil || '',
-                                kesan: entry.kesan || '',
-                                saran: entry.saran || '',
-                                addBilling: false
-                              });
-                            }}
-                          >
-                            {selectedEchoCardiographyKey === entryKey ? 'Dipilih' : 'Edit'}
-                          </Button>
+                          <div className="flex items-center gap-2">
+                            <Button
+                              type="button"
+                              size="sm"
+                              variant={selectedEchoCardiographyKey === entryKey ? 'default' : 'outline'}
+                              onClick={() => {
+                                setSelectedEchoCardiographyKey(entryKey);
+                                setEchoCardiographyForm({
+                                  hasil: entry.hasil || '',
+                                  kesan: entry.kesan || '',
+                                  saran: entry.saran || '',
+                                  addBilling: false
+                                });
+                              }}
+                            >
+                              {selectedEchoCardiographyKey === entryKey ? 'Dipilih' : 'Edit'}
+                            </Button>
+                            <Button
+                              type="button"
+                              size="sm"
+                              variant="destructive"
+                              onClick={() => void handleDeleteEchoCardiography(entry)}
+                              disabled={deletingEchoCardiography}
+                            >
+                              {deletingEchoCardiography ? 'Menghapus...' : 'Hapus'}
+                            </Button>
+                          </div>
                         </td>
                       </tr>
                     );
@@ -7684,6 +7667,66 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
     selectedEchoCardiographyEntry,
     toast,
     user?.kd_dokter
+  ]);
+
+  const handleDeleteEchoCardiography = useCallback(async (entry: EchoCardiographyEntry) => {
+    if (!formattedNoRawat) {
+      return;
+    }
+
+    if (!confirm('Apakah Anda yakin ingin menghapus data Echocardiography ini?')) {
+      return;
+    }
+
+    try {
+      setDeletingEchoCardiography(true);
+      const response = await fetch(API_URLS.ECHOCARDIOGRAPHY, {
+        method: 'DELETE',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          no_rawat: formattedNoRawat,
+          username: currentUsername,
+          tgl_periksa: entry.tgl_periksa,
+          jam: entry.jam
+        })
+      });
+
+      const responseJson = await response.json().catch(() => null);
+      if (!response.ok || !responseJson?.success) {
+        throw new Error(
+          responseJson?.error || `HTTP error! status: ${response.status}`
+        );
+      }
+
+      toast({
+        title: "Berhasil",
+        description: responseJson?.message || 'Echocardiography berhasil dihapus'
+      });
+
+      if (selectedEchoCardiographyKey === `${entry.tgl_periksa}|${entry.jam}`) {
+        setSelectedEchoCardiographyKey(null);
+        setEchoCardiographyForm(getDefaultEchoCardiographyForm());
+      }
+      await fetchEchoCardiography();
+    } catch (error) {
+      console.error('Error deleting echocardiography:', error);
+      const message = error instanceof Error ? error.message : 'Gagal menghapus Echocardiography';
+      toast({
+        title: "Error",
+        description: message,
+        variant: "destructive"
+      });
+    } finally {
+      setDeletingEchoCardiography(false);
+    }
+  }, [
+    currentUsername,
+    fetchEchoCardiography,
+    formattedNoRawat,
+    selectedEchoCardiographyKey,
+    toast
   ]);
 
   useEffect(() => {

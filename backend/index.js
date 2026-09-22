@@ -1380,6 +1380,23 @@ app.get('/api/echocardiography/:no_rawat', async (req, res) => {
   }
 });
 
+app.delete('/api/echocardiography', async (req, res) => {
+  try {
+    const username = String(req.body?.username || req.body?.kd_dokter || '').trim();
+    DiagnosticAccessService.ensureAccess('echocardiography', username);
+    const result = await EchoCardiographyService.delete(req.body);
+    await auditCrudSuccess(req, 'echocardiography', 'delete', result);
+    res.json(result);
+  } catch (error) {
+    await auditCrudFailure(req, 'echocardiography', 'delete', error);
+    console.error('Error in echocardiography DELETE endpoint:', error);
+    res.status(error.statusCode || 400).json({
+      success: false,
+      error: error.message
+    });
+  }
+});
+
 app.post('/api/echocardiography', async (req, res) => {
   try {
     const username = String(req.body?.username || req.body?.kd_dokter || '').trim();
