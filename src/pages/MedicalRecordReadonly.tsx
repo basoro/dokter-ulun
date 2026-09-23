@@ -9,6 +9,7 @@ import {
   ChevronUp,
   ClipboardList,
   FileText,
+  Heart,
   Loader2,
   Pill,
   Radio,
@@ -405,6 +406,7 @@ const MedicalRecordReadonly: React.FC<MedicalRecordReadonlyProps> = ({
           const isExpanded = Boolean(expandedVisitKeys[visit.no_rawat]);
           const isDetailLoading = Boolean(loadingVisitDetailsKeys[visit.no_rawat]);
           const examinations = Array.isArray(visit.examinations) ? visit.examinations : [];
+          const heartExaminations = Array.isArray(visit.heart_examinations) ? visit.heart_examinations : [];
           const procedures = Array.isArray(visit.procedures) ? visit.procedures : [];
           const medications = Array.isArray(visit.medications) ? visit.medications : [];
           const medicationDischargeRequests = Array.isArray(visit.medicationsRequestPulang) ? visit.medicationsRequestPulang : [];
@@ -501,6 +503,39 @@ const MedicalRecordReadonly: React.FC<MedicalRecordReadonlyProps> = ({
                           {tab === 'inpatient' && (exam.e || exam.evaluasi) ? (
                             <p className="whitespace-pre-wrap">
                               <span className="font-medium">E (Evaluasi):</span>{'\n'}{exam.e || exam.evaluasi}
+                            </p>
+                          ) : null}
+                        </div>
+                      </div>
+                    ))}
+                  </SectionCard>
+
+                  <SectionCard
+                    title="Pemeriksaan Jantung"
+                    icon={<Heart className="h-4 w-4 text-rose-600" />}
+                    emptyMessage="Belum ada bacaan pemeriksaan jantung."
+                    hasData={heartExaminations.length > 0}
+                  >
+                    {heartExaminations.map((heartExam: any, index: number) => (
+                      <div key={`${visit.no_rawat}-heart-${index}`} className="rounded-md border px-3 py-3">
+                        <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+                          <p className="text-sm font-medium">{heartExam.judul || 'Echocardiography'}</p>
+                          <p className="text-xs text-muted-foreground">{formatDateTime(heartExam.tanggal || `${heartExam.tgl_periksa} ${heartExam.jam}`)}</p>
+                        </div>
+                        <div className="mt-2 space-y-2 text-sm">
+                          {heartExam.hasil ? (
+                            <p className="whitespace-pre-wrap">
+                              <span className="font-medium">Hasil:</span>{'\n'}{heartExam.hasil}
+                            </p>
+                          ) : null}
+                          {heartExam.kesan ? (
+                            <p className="whitespace-pre-wrap">
+                              <span className="font-medium">Kesan:</span>{'\n'}{heartExam.kesan}
+                            </p>
+                          ) : null}
+                          {heartExam.saran ? (
+                            <p className="whitespace-pre-wrap">
+                              <span className="font-medium">Saran:</span>{'\n'}{heartExam.saran}
                             </p>
                           ) : null}
                         </div>
