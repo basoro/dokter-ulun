@@ -356,7 +356,7 @@ type LabStatusRawat = 'Ralan' | 'Ranap' | 'IGD';
 type RadiologyStatusRawat = 'Ralan' | 'Ranap' | 'IGD';
 type OutpatientExaminationSectionTabValue = 'examinations' | 'echo-echocardiography' | 'rehab-medik';
 type InpatientExaminationSectionTabValue = 'examinations' | 'balance-cairan' | 'ventilator' | 'ekstrapiramidal' | 'echo-echocardiography' | 'rehab-medik';
-type VisitDetailSectionFilterValue = 'all' | 'triase' | 'catatan' | 'pemeriksaan' | 'diagnosa' | 'tindakan' | 'resep' | 'laboratorium' | 'radiologi';
+type VisitDetailSectionFilterValue = 'all' | 'triase' | 'catatan' | 'pemeriksaan' | 'diagnosa' | 'tindakan' | 'resep' | 'laboratorium' | 'radiologi' | 'pemeriksaan-jantung';
 
 interface MedicalRecordData {
   patient: {
@@ -2509,6 +2509,9 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
       ...(hasPatientNote ? [{ value: 'catatan' as VisitDetailSectionFilterValue, label: 'Catatan Pasien' }] : []),
       ...(Array.isArray(visit?.examinations) && visit.examinations.length > 0
         ? [{ value: 'pemeriksaan' as VisitDetailSectionFilterValue, label: 'Pemeriksaan' }]
+        : []),
+      ...(Array.isArray(visit?.heart_examinations) && visit.heart_examinations.length > 0
+        ? [{ value: 'pemeriksaan-jantung' as VisitDetailSectionFilterValue, label: 'Pemeriksaan Jantung' }]
         : []),
       ...(hasDiagnosa ? [{ value: 'diagnosa' as VisitDetailSectionFilterValue, label: 'Diagnosa' }] : []),
       ...(Array.isArray(visit?.procedures) && visit.procedures.length > 0
@@ -4965,6 +4968,52 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
         {noteMeta ? (
           <p className="mt-3 text-xs text-muted-foreground">{noteMeta}</p>
         ) : null}
+      </div>
+    );
+  };
+  const renderVisitHeartExaminations = (items: any[]) => {
+    const normalizedItems = Array.isArray(items) ? items : [];
+
+    if (normalizedItems.length === 0) {
+      return <p className="text-sm italic text-muted-foreground">Belum ada data pemeriksaan jantung.</p>;
+    }
+
+    return (
+      <div className="space-y-3">
+        {normalizedItems.map((item, itemIndex) => (
+          <div key={`${item.no_rawat}-${item.tgl_periksa}-${item.jam}-${itemIndex}`} className="border rounded-lg p-4 hover:bg-muted/50">
+            <div className="space-y-4">
+              <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
+                <div>
+                  <p className="text-sm text-muted-foreground">Tanggal</p>
+                  <p className="font-medium">{formatDateSafe(item.tanggal || `${item.tgl_periksa} ${item.jam}`)}</p>
+                </div>
+                <div>
+                  <p className="text-sm text-muted-foreground">Judul</p>
+                  <p className="font-medium">{item.judul || '-'}</p>
+                </div>
+                <div>
+                  <p className="text-sm text-muted-foreground">No. Rawat</p>
+                  <p className="font-medium">{item.no_rawat || '-'}</p>
+                </div>
+              </div>
+              <div>
+                <p className="text-sm text-muted-foreground">Hasil</p>
+                <p className="font-medium whitespace-pre-wrap break-words">{item.hasil || '-'}</p>
+              </div>
+              <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+                <div>
+                  <p className="text-sm text-muted-foreground">Saran</p>
+                  <p className="font-medium whitespace-pre-wrap break-words">{item.saran || '-'}</p>
+                </div>
+                <div>
+                  <p className="text-sm text-muted-foreground">Kesan</p>
+                  <p className="font-medium whitespace-pre-wrap break-words">{item.kesan || '-'}</p>
+                </div>
+              </div>
+            </div>
+          </div>
+        ))}
       </div>
     );
   };
@@ -10708,6 +10757,19 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
                         </div>
                         ) : null}
 
+                        {/* Pemeriksaan Jantung */}
+                        {isVisitDetailSectionVisible(visit.no_rawat, 'pemeriksaan-jantung') ? (
+                        <div className="border rounded-lg p-2">
+                          <h3 className="text-lg font-semibold mb-3 flex items-center">
+                            <Heart className="h-5 w-5 mr-2" />
+                            Pemeriksaan Jantung
+                          </h3>
+                          <div className="grid grid-cols-1 gap-4">
+                            {renderVisitHeartExaminations(visit.heart_examinations || [])}
+                          </div>
+                        </div>
+                        ) : null}
+
                         {isVisitDetailSectionVisible(visit.no_rawat, 'diagnosa') ? renderVisitIcdDetails(visit) : null}
 
                         {/* Tindakan */}
@@ -11032,6 +11094,19 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
                           </div>
                             );
                           })()}
+                        </div>
+                        ) : null}
+
+                        {/* Pemeriksaan Jantung */}
+                        {isVisitDetailSectionVisible(visit.no_rawat, 'pemeriksaan-jantung') ? (
+                        <div className="border rounded-lg p-2">
+                          <h3 className="text-lg font-semibold mb-3 flex items-center">
+                            <Heart className="h-5 w-5 mr-2" />
+                            Pemeriksaan Jantung
+                          </h3>
+                          <div className="grid grid-cols-1 gap-4">
+                            {renderVisitHeartExaminations(visit.heart_examinations || [])}
+                          </div>
                         </div>
                         ) : null}
 
