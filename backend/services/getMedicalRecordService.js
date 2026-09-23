@@ -2321,6 +2321,48 @@ class GetMedicalRecordService {
     });
   }
 
+  static async fetchHeartExaminations(noRawat) {
+    const titles = [
+      'Echocardiography',
+      'Holter Monitoring',
+      'Treadmill Test',
+      'Kateterisasi Jantung'
+    ];
+    const judulPlaceholders = titles.map(() => '?').join(', ');
+    const [rows] = await db.execute(
+      `
+        SELECT
+          skr.no_rawat,
+          DATE_FORMAT(skr.tgl_periksa, '%Y-%m-%d') AS tgl_periksa,
+          TIME_FORMAT(skr.jam, '%H:%i:%s') AS jam,
+          skr.judul,
+          hr.hasil,
+          skr.saran,
+          skr.kesan
+        FROM saran_kesan_rad skr
+        LEFT JOIN hasil_radiologi hr
+          ON hr.no_rawat = skr.no_rawat
+          AND hr.tgl_periksa = skr.tgl_periksa
+          AND hr.jam = skr.jam
+        WHERE skr.no_rawat = ?
+          AND skr.judul IN (${judulPlaceholders})
+        ORDER BY skr.tgl_periksa DESC, skr.jam DESC
+      `,
+      [noRawat, ...titles]
+    );
+
+    return rows.map((row) => ({
+      no_rawat: row.no_rawat || '',
+      tgl_periksa: row.tgl_periksa || '',
+      jam: row.jam || '',
+      judul: row.judul || '',
+      tanggal: this.formatDateOnly(row.tgl_periksa) + ' ' + row.jam,
+      hasil: row.hasil || '',
+      saran: row.saran || '',
+      kesan: row.kesan || ''
+    }));
+  }
+
   static async fetchOperationReports(noRawat) {
     const operationQuery = `
       SELECT
@@ -2592,6 +2634,7 @@ class GetMedicalRecordService {
       laboratoryRequest,
       radiology,
       radiologyRequest,
+      heartExaminations,
       triaseIgd,
       icd10Map,
       icdDetails
@@ -2604,6 +2647,7 @@ class GetMedicalRecordService {
       this.fetchLaboratoryRequest(visit.no_rawat, 'ralan'),
       this.fetchRadiology(visit.no_rawat),
       this.fetchRadiologyRequest(visit.no_rawat, 'ralan'),
+      this.fetchHeartExaminations(visit.no_rawat),
       isIgdVisit ? this.fetchTriageIgd(visit.no_rawat) : Promise.resolve(null),
       this.fetchIcd10DiagnosesMap([visit.no_rawat], 'Ralan'),
       this.fetchIcdDetailsByNoRawat(visit.no_rawat, 'Ralan')
@@ -2629,6 +2673,7 @@ class GetMedicalRecordService {
       laboratory,
       radiology,
       radiologyRequest,
+      heart_examinations: heartExaminations,
       triase_igd: triaseIgd,
       details_loaded: true
     };
@@ -2649,6 +2694,7 @@ class GetMedicalRecordService {
       radiology,
       radiologyRequest,
       operationReports,
+      heartExaminations,
       icd10Map,
       icdDetails
     ] = await Promise.all([
@@ -2664,6 +2710,7 @@ class GetMedicalRecordService {
       this.fetchRadiology(visit.no_rawat),
       this.fetchRadiologyRequest(visit.no_rawat, 'ranap'),
       this.fetchOperationReports(visit.no_rawat),
+      this.fetchHeartExaminations(visit.no_rawat),
       this.fetchIcd10DiagnosesMap([visit.no_rawat], 'Ranap'),
       this.fetchIcdDetailsByNoRawat(visit.no_rawat, 'Ranap')
     ]);
@@ -2698,6 +2745,7 @@ class GetMedicalRecordService {
       radiology,
       radiologyRequest,
       operationReports,
+      heart_examinations: heartExaminations,
       details_loaded: true
     };
   }
