@@ -1,8 +1,33 @@
 import { getConnection } from '../config/database.js';
 
 class EchoCardiographyService {
-  static ECHO_TITLE = 'Echocardiography';
+  static ALLOWED_TITLES = [
+    'Echocardiography',
+    'Holter Monitoring',
+    'Treadmill Test',
+    'Kateterisasi Jantung'
+  ];
+  static DEFAULT_TITLE = 'Echocardiography';
   static RANAP_TINDAKAN_KODE = 'RI98227';
+
+  static normalizeTitle(value) {
+    const normalized = String(value || '').trim();
+    if (!normalized) {
+      return this.DEFAULT_TITLE;
+    }
+
+    const matched = this.ALLOWED_TITLES.find(
+      (title) => title.toLowerCase() === normalized.toLowerCase()
+    );
+
+    if (!matched) {
+      throw new Error(
+        `Judul tidak valid. Pilihan judul: ${this.ALLOWED_TITLES.join(', ')}`
+      );
+    }
+
+    return matched;
+  }
 
   static normalizeNoRawat(noRawat) {
     const normalized = String(noRawat || '').trim();
@@ -82,17 +107,21 @@ class EchoCardiographyService {
     };
   }
 
-  static async list(noRawat) {
-    const normalizedNoRawat = this.normalizeNoRawat(noRawat);
+  static async list(payload = {}) {
+    const normalizedNoRawat = this.normalizeNoRawat(
+      typeof payload === 'string' ? payload : payload?.no_rawat
+    );
     const connection = await getConnection();
 
     try {
+      const judulPlaceholders = this.ALLOWED_TITLES.map(() => '?').join(', ');
       const [rows] = await connection.execute(
         `
           SELECT
             skr.no_rawat,
             DATE_FORMAT(skr.tgl_periksa, '%Y-%m-%d') AS tgl_periksa,
             TIME_FORMAT(skr.jam, '%H:%i:%s') AS jam,
+            skr.judul,
             hr.hasil,
             skr.saran,
             skr.kesan
@@ -102,16 +131,17 @@ class EchoCardiographyService {
             AND hr.tgl_periksa = skr.tgl_periksa
             AND hr.jam = skr.jam
           WHERE skr.no_rawat = ?
-            AND skr.judul = ?
+            AND skr.judul IN (${judulPlaceholders})
           ORDER BY skr.tgl_periksa DESC, skr.jam DESC
         `,
-        [normalizedNoRawat, this.ECHO_TITLE]
+        [normalizedNoRawat, ...this.ALLOWED_TITLES]
       );
 
       return rows.map((row) => ({
         no_rawat: row.no_rawat || '',
         tgl_periksa: row.tgl_periksa || '',
         jam: row.jam || '',
+        judul: row.judul || '',
         hasil: row.hasil || '',
         kesan: row.kesan || '',
         saran: row.saran || ''
@@ -131,6 +161,7 @@ class EchoCardiographyService {
     const kdDokter = this.normalizeText(payload.kd_dokter);
     const editTanggal = this.normalizeEditDate(payload.tgl_periksa);
     const editJam = this.normalizeEditTime(payload.jam);
+    const judul = this.normalizeTitle(payload.judul);
 
     const connection = await getConnection();
 
@@ -154,7 +185,7 @@ class EchoCardiographyService {
               AND jam = ?
               AND judul = ?
           `,
-          [saran, kesan, noRawat, tanggal, jam, this.ECHO_TITLE]
+          [saran, kesan, noRawat, tanggal, jam, judul]
         );
 
         if (!updateSaranResult || Number(updateSaranResult.affectedRows) === 0) {
@@ -203,7 +234,7 @@ class EchoCardiographyService {
               kesan
             ) VALUES (?, ?, ?, ?, ?, ?)
           `,
-          [noRawat, tanggal, jam, this.ECHO_TITLE, saran, kesan]
+          [noRawat, tanggal, jam, judul, saran, kesan]
         );
 
         await connection.execute(
@@ -273,12 +304,13 @@ class EchoCardiographyService {
       return {
         success: true,
         message: mode === 'edit'
-          ? 'Echocardiography berhasil diperbarui'
-          : 'Echocardiography berhasil disimpan',
+          ? `${judul} berhasil diperbarui`
+          : `${judul} berhasil disimpan`,
         data: {
           no_rawat: noRawat,
           tgl_periksa: tanggal,
-          jam
+          jam,
+          judul
         }
       };
     } catch (error) {
@@ -293,6 +325,7 @@ class EchoCardiographyService {
     const noRawat = this.normalizeNoRawat(payload.no_rawat);
     const tanggal = this.normalizeEditDate(payload.tgl_periksa);
     const jam = this.normalizeEditTime(payload.jam);
+    const judul = this.normalizeTitle(payload.judul);
 
     if (!tanggal || !jam) {
       throw new Error('Tanggal dan jam data yang akan dihapus tidak valid');
@@ -311,12 +344,12 @@ class EchoCardiographyService {
             AND jam = ?
             AND judul = ?
         `,
-        [noRawat, tanggal, jam, this.ECHO_TITLE]
+        [noRawat, tanggal, jam, judul]
       );
 
       if (!deleteSaranResult || Number(deleteSaranResult.affectedRows) === 0) {
         throw new Error(
-          'Data echo yang akan dihapus tidak ditemukan. Muat ulang riwayat lalu coba lagi.'
+          'Data yang akan dihapus tidak ditemukan. Muat ulang riwayat lalu coba lagi.'
         );
       }
 
@@ -334,11 +367,12 @@ class EchoCardiographyService {
 
       return {
         success: true,
-        message: 'Echocardiography berhasil dihapus',
+        message: `${judul} berhasil dihapus`,
         data: {
           no_rawat: noRawat,
           tgl_periksa: tanggal,
-          jam
+          jam,
+          judul
         }
       };
     } catch (error) {
