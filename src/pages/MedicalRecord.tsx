@@ -262,10 +262,18 @@ interface VentilatorEntry {
   created_at?: string;
 }
 
+const ECHO_CARDIOGRAPHY_TITLE_OPTIONS = [
+  'Echocardiography',
+  'Holter Monitoring',
+  'Treadmill Test',
+  'Kateterisasi Jantung'
+] as const;
+
 interface EchoCardiographyEntry {
   no_rawat: string;
   tgl_periksa: string;
   jam: string;
+  judul: string;
   hasil: string;
   kesan: string;
   saran: string;
@@ -758,6 +766,7 @@ const getDefaultEkstrapiramidalForm = () => ({
 });
 
 const getDefaultEchoCardiographyForm = () => ({
+  judul: 'Echocardiography',
   hasil: '',
   kesan: '',
   saran: '',
@@ -3868,7 +3877,7 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
     if (echoCardiographyAccessLoading) {
       return (
         <div className="border border-dashed rounded-lg p-6 text-sm text-muted-foreground bg-muted/20">
-          Memuat akses Echocardiography...
+          Memuat akses Pemeriksaan Jantung...
         </div>
       );
     }
@@ -3876,7 +3885,7 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
     if (!echoCardiographyAccess) {
       return (
         <div className="border border-dashed rounded-lg p-6 text-sm text-muted-foreground bg-muted/20">
-          Anda tidak memiliki akses ke Echocardiography.
+          Anda tidak memiliki akses ke Pemeriksaan Jantung.
         </div>
       );
     }
@@ -3884,7 +3893,7 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
     if (!formattedNoRawat) {
       return (
         <div className="border border-dashed rounded-lg p-6 text-sm text-muted-foreground bg-muted/20">
-          Pilih kunjungan pasien terlebih dahulu untuk melihat data Echocardiography.
+          Pilih kunjungan pasien terlebih dahulu untuk melihat data Pemeriksaan Jantung.
         </div>
       );
     }
@@ -3894,9 +3903,9 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
         <div className="border rounded-lg p-4 bg-muted/30 space-y-4">
           <div className="flex items-center justify-between gap-3">
             <div>
-              <h4 className="font-medium">Form Echocardiography</h4>
+              <h4 className="font-medium">Form Pemeriksaan Jantung</h4>
               <p className="text-sm text-muted-foreground">
-                Input hasil, kesan, dan saran pemeriksaan Echocardiography.
+                Pilih judul pemeriksaan, lalu input hasil, kesan, dan saran.
               </p>
             </div>
             <Button
@@ -3910,25 +3919,53 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
             </Button>
           </div>
 
+          <div className="max-w-md">
+            <Label htmlFor="echo-judul">Judul Pemeriksaan</Label>
+            <Select
+              value={echoCardiographyForm.judul}
+              onValueChange={(value) => setEchoCardiographyForm((previous) => ({
+                ...previous,
+                judul: value
+              }))}
+              disabled={!!selectedEchoCardiographyEntry}
+            >
+              <SelectTrigger id="echo-judul" className="w-full">
+                <SelectValue placeholder="Pilih judul" />
+              </SelectTrigger>
+              <SelectContent>
+                {ECHO_CARDIOGRAPHY_TITLE_OPTIONS.map((option) => (
+                  <SelectItem key={option} value={option}>
+                    {option}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            {selectedEchoCardiographyEntry ? (
+              <p className="mt-1 text-xs text-muted-foreground">
+                Judul tidak dapat diubah saat mode edit.
+              </p>
+            ) : null}
+          </div>
+
           <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
             <div>
               <Label htmlFor="echo-hasil">Hasil</Label>
               <Textarea
                 id="echo-hasil"
-                rows={6}
+                rows={8}
                 value={echoCardiographyForm.hasil}
                 onChange={(event) => setEchoCardiographyForm((previous) => ({
                   ...previous,
                   hasil: event.target.value
                 }))}
-                placeholder="Masukkan hasil echo"
+                placeholder="Masukkan hasil pemeriksaan"
               />
             </div>
             <div>
               <Label htmlFor="echo-kesan">Kesan</Label>
               <Textarea
                 id="echo-kesan"
-                rows={4}
+                rows={8}
                 value={echoCardiographyForm.kesan}
                 onChange={(event) => setEchoCardiographyForm((previous) => ({
                   ...previous,
@@ -3937,21 +3974,24 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
                 placeholder="Masukkan kesan"
               />
             </div>
-            <div className="space-y-4">
-              <div>
-                <Label htmlFor="echo-saran">Saran</Label>
-                <Textarea
-                  id="echo-saran"
-                  rows={4}
-                  value={echoCardiographyForm.saran}
-                  onChange={(event) => setEchoCardiographyForm((previous) => ({
-                    ...previous,
-                    saran: event.target.value
-                  }))}
-                  placeholder="Masukkan saran"
-                />
-              </div>
-              <label className="flex items-center gap-2 rounded-md border bg-background px-3 py-2 text-sm">
+            <div>
+              <Label htmlFor="echo-saran">Saran</Label>
+              <Textarea
+                id="echo-saran"
+                rows={8}
+                value={echoCardiographyForm.saran}
+                onChange={(event) => setEchoCardiographyForm((previous) => ({
+                  ...previous,
+                  saran: event.target.value
+                }))}
+                placeholder="Masukkan saran"
+              />
+            </div>
+          </div>
+
+          <div className="flex flex-col gap-3 border-t pt-4 md:flex-row md:items-center md:justify-between">
+            <div className="flex flex-col gap-2 md:flex-row md:items-center">
+              <label className="flex w-fit items-center gap-2 rounded-md border bg-background px-3 py-2 text-sm">
                 <input
                   type="checkbox"
                   className="h-4 w-4"
@@ -3970,48 +4010,48 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
                 </p>
               ) : null}
             </div>
-          </div>
-
-          <div className="flex justify-end gap-2">
-            <Button
-              type="button"
-              variant="outline"
-              onClick={() => {
-                setSelectedEchoCardiographyKey(null);
-                setEchoCardiographyForm(getDefaultEchoCardiographyForm());
-              }}
-              disabled={savingEchoCardiography}
-            >
-              {selectedEchoCardiographyEntry ? 'Batal Edit' : 'Reset'}
-            </Button>
-            <Button
-              type="button"
-              onClick={() => void handleSaveEchoCardiography()}
-              disabled={savingEchoCardiography}
-            >
-              {savingEchoCardiography
-                ? 'Menyimpan...'
-                : selectedEchoCardiographyEntry
-                  ? 'Update Echocardiography'
-                  : 'Simpan Echocardiography'}
-            </Button>
+            <div className="flex justify-end gap-2">
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => {
+                  setSelectedEchoCardiographyKey(null);
+                  setEchoCardiographyForm(getDefaultEchoCardiographyForm());
+                }}
+                disabled={savingEchoCardiography}
+              >
+                {selectedEchoCardiographyEntry ? 'Batal Edit' : 'Reset'}
+              </Button>
+              <Button
+                type="button"
+                onClick={() => void handleSaveEchoCardiography()}
+                disabled={savingEchoCardiography}
+              >
+                {savingEchoCardiography
+                  ? 'Menyimpan...'
+                  : selectedEchoCardiographyEntry
+                    ? 'Update Pemeriksaan Jantung'
+                    : 'Simpan Pemeriksaan Jantung'}
+              </Button>
+            </div>
           </div>
         </div>
 
         <div className="border rounded-lg">
           <div className="border-b p-4">
-            <h4 className="font-medium">Riwayat Echocardiography</h4>
+            <h4 className="font-medium">Riwayat Pemeriksaan Jantung</h4>
           </div>
           {echoCardiographyLoading ? (
-            <div className="p-6 text-sm text-muted-foreground">Memuat data Echocardiography...</div>
+            <div className="p-6 text-sm text-muted-foreground">Memuat data Pemeriksaan Jantung...</div>
           ) : echoCardiographyEntries.length === 0 ? (
-            <div className="p-6 text-sm text-muted-foreground">Belum ada data Echocardiography untuk nomor rawat ini.</div>
+            <div className="p-6 text-sm text-muted-foreground">Belum ada data Pemeriksaan Jantung untuk nomor rawat ini.</div>
           ) : (
             <div className="overflow-x-auto">
               <table className="w-full text-sm">
                 <thead className="bg-muted/40">
                   <tr className="text-left">
                     <th className="px-3 py-2 font-medium">Tanggal / Jam</th>
+                    <th className="px-3 py-2 font-medium">Judul</th>
                     <th className="px-3 py-2 font-medium">Hasil</th>
                     <th className="px-3 py-2 font-medium">Kesan</th>
                     <th className="px-3 py-2 font-medium">Saran</th>
@@ -4026,6 +4066,7 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
                         <td className="px-3 py-2 whitespace-nowrap">
                           {formatDateSafe(`${entry.tgl_periksa} ${entry.jam}`)}
                         </td>
+                        <td className="px-3 py-2 whitespace-nowrap">{entry.judul || '-'}</td>
                         <td className="px-3 py-2 whitespace-pre-line min-w-[240px]">{entry.hasil || '-'}</td>
                         <td className="px-3 py-2 whitespace-pre-line min-w-[180px]">{entry.kesan || '-'}</td>
                         <td className="px-3 py-2 whitespace-pre-line min-w-[180px]">{entry.saran || '-'}</td>
@@ -4038,6 +4079,7 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
                               onClick={() => {
                                 setSelectedEchoCardiographyKey(entryKey);
                                 setEchoCardiographyForm({
+                                  judul: entry.judul || 'Echocardiography',
                                   hasil: entry.hasil || '',
                                   kesan: entry.kesan || '',
                                   saran: entry.saran || '',
@@ -7619,6 +7661,7 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
         body: JSON.stringify({
           no_rawat: formattedNoRawat,
           username: currentUsername,
+          judul: echoCardiographyForm.judul,
           hasil: echoCardiographyForm.hasil,
           kesan: echoCardiographyForm.kesan,
           saran: echoCardiographyForm.saran,
@@ -7639,7 +7682,7 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
 
       toast({
         title: "Berhasil",
-        description: responseJson?.message || 'Echocardiography berhasil disimpan'
+        description: responseJson?.message || 'Pemeriksaan Jantung berhasil disimpan'
       });
 
       setSelectedEchoCardiographyKey(null);
@@ -7647,7 +7690,7 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
       await fetchEchoCardiography();
     } catch (error) {
       console.error('Error saving echocardiography:', error);
-      const message = error instanceof Error ? error.message : 'Gagal menyimpan Echocardiography';
+      const message = error instanceof Error ? error.message : 'Gagal menyimpan Pemeriksaan Jantung';
       toast({
         title: "Error",
         description: message,
@@ -7660,6 +7703,7 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
     currentUsername,
     echoCardiographyForm.addBilling,
     echoCardiographyForm.hasil,
+    echoCardiographyForm.judul,
     echoCardiographyForm.kesan,
     echoCardiographyForm.saran,
     fetchEchoCardiography,
@@ -7674,7 +7718,7 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
       return;
     }
 
-    if (!confirm('Apakah Anda yakin ingin menghapus data Echocardiography ini?')) {
+    if (!confirm('Apakah Anda yakin ingin menghapus data Pemeriksaan Jantung ini?')) {
       return;
     }
 
@@ -7688,6 +7732,7 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
         body: JSON.stringify({
           no_rawat: formattedNoRawat,
           username: currentUsername,
+          judul: entry.judul || 'Echocardiography',
           tgl_periksa: entry.tgl_periksa,
           jam: entry.jam
         })
@@ -7702,7 +7747,7 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
 
       toast({
         title: "Berhasil",
-        description: responseJson?.message || 'Echocardiography berhasil dihapus'
+        description: responseJson?.message || 'Pemeriksaan Jantung berhasil dihapus'
       });
 
       if (selectedEchoCardiographyKey === `${entry.tgl_periksa}|${entry.jam}`) {
@@ -7712,7 +7757,7 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
       await fetchEchoCardiography();
     } catch (error) {
       console.error('Error deleting echocardiography:', error);
-      const message = error instanceof Error ? error.message : 'Gagal menghapus Echocardiography';
+      const message = error instanceof Error ? error.message : 'Gagal menghapus Pemeriksaan Jantung';
       toast({
         title: "Error",
         description: message,
@@ -12092,7 +12137,7 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
                           <TabsList>
                             <TabsTrigger value="examinations">Pemeriksaan</TabsTrigger>
                             {echoCardiographyAccess && (
-                              <TabsTrigger value="echo-echocardiography">Echocardiography</TabsTrigger>
+                              <TabsTrigger value="echo-echocardiography">Pemeriksaan Jantung</TabsTrigger>
                             )}
                             {rehabMedikAccess && (
                               <TabsTrigger value="rehab-medik">Assesmen Rehab Medik</TabsTrigger>
@@ -12138,7 +12183,7 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
                           <TabsTrigger value="ventilator">Ventilator</TabsTrigger>
                           <TabsTrigger value="ekstrapiramidal">Ekstrapiramidal</TabsTrigger>
                           {echoCardiographyAccess && (
-                            <TabsTrigger value="echo-echocardiography">Echocardiography</TabsTrigger>
+                            <TabsTrigger value="echo-echocardiography">Pemeriksaan Jantung</TabsTrigger>
                           )}
                           {rehabMedikAccess && (
                             <TabsTrigger value="rehab-medik">Assesmen Rehab Medik</TabsTrigger>

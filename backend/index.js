@@ -1366,7 +1366,7 @@ app.get('/api/echocardiography/:no_rawat', async (req, res) => {
     const { no_rawat } = req.params;
     const username = String(req.query.username || '').trim();
     DiagnosticAccessService.ensureAccess('echocardiography', username);
-    const data = await EchoCardiographyService.list(no_rawat);
+    const data = await EchoCardiographyService.list({ no_rawat });
     res.json({
       success: true,
       data
