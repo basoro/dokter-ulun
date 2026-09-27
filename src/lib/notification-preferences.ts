@@ -1,9 +1,10 @@
-export type NotificationPreferenceType = 'prescription' | 'laboratory' | 'radiology';
+export type NotificationPreferenceType = 'prescription' | 'laboratory' | 'radiology' | 'auto_stop_order';
 
 export interface NotificationPreferences {
   prescription: boolean;
   laboratory: boolean;
   radiology: boolean;
+  auto_stop_order: boolean;
   sound: boolean;
   otpLogin: boolean;
 }
@@ -16,6 +17,7 @@ export const DEFAULT_NOTIFICATION_PREFERENCES: NotificationPreferences = {
   prescription: true,
   laboratory: true,
   radiology: true,
+  auto_stop_order: true,
   sound: true,
   otpLogin: false
 };

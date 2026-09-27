@@ -405,6 +405,18 @@ const Settings: React.FC = () => {
                 </div>
                 <div className="flex items-center justify-between rounded-lg border p-4">
                   <div>
+                    <p className="font-medium">Notifikasi Automatic Stop Order</p>
+                    <p className="text-sm text-muted-foreground">
+                      Tampilkan pemberitahuan ketika obat pasien mendapat automatic stop order.
+                    </p>
+                  </div>
+                  <Switch
+                    checked={preferences.auto_stop_order}
+                    onCheckedChange={(checked) => handlePreferenceChange('auto_stop_order', checked)}
+                  />
+                </div>
+                <div className="flex items-center justify-between rounded-lg border p-4">
+                  <div>
                     <p className="font-medium">Suara Alert</p>
                     <p className="text-sm text-muted-foreground">
                       Putar bunyi saat ada pembaruan proses atau hasil pemeriksaan baru.

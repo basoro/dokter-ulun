@@ -1,6 +1,6 @@
 
 import React from 'react';
-import { Bell, BellOff, BellRing, FlaskConical, Loader2, Menu, Moon, Pill, Radio, Search, Settings as SettingsIcon, Sun, User, LogOut } from 'lucide-react';
+import { Bell, BellOff, BellRing, FlaskConical, Loader2, Menu, Moon, Pill, Radio, Search, Settings as SettingsIcon, ShieldAlert, Sun, User, LogOut } from 'lucide-react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { toast } from 'sonner';
 import { API_URLS } from '@/config/api';
@@ -32,7 +32,7 @@ interface HeaderProps {
 
 interface DoctorNotificationItem {
   id: string;
-  type: 'prescription' | 'laboratory' | 'radiology';
+  type: 'prescription' | 'laboratory' | 'radiology' | 'auto_stop_order';
   title: string;
   status: 'menunggu' | 'diproses' | 'selesai';
   status_label: string;
@@ -45,6 +45,8 @@ interface DoctorNotificationItem {
   sampled_at?: string;
   result_at?: string;
   processed_at?: string;
+  end_at?: string;
+  created_by?: string;
 }
 
 interface NotificationLabResult {
@@ -78,9 +80,10 @@ interface DoctorNotificationSummary {
   prescription: number;
   laboratory: number;
   radiology: number;
+  auto_stop_order: number;
 }
 
-type NotificationTab = 'prescription' | 'laboratory' | 'radiology';
+type NotificationTab = 'prescription' | 'laboratory' | 'radiology' | 'auto_stop_order';
 type NotificationFilter = 'all' | 'active' | 'ready';
 
 const formatNotificationTime = (value?: string) => {
@@ -100,6 +103,8 @@ const getNotificationTypeLabel = (type: DoctorNotificationItem['type']) => {
       return 'Lab';
     case 'radiology':
       return 'Radiologi';
+    case 'auto_stop_order':
+      return 'Stop Order';
     default:
       return 'Proses';
   }
@@ -113,6 +118,8 @@ const getNotificationTypeIcon = (type: DoctorNotificationItem['type']) => {
       return FlaskConical;
     case 'radiology':
       return Radio;
+    case 'auto_stop_order':
+      return ShieldAlert;
     default:
       return Bell;
   }
@@ -139,6 +146,8 @@ const getTabLabel = (tab: NotificationTab) => {
       return 'Lab';
     case 'radiology':
       return 'Rad';
+    case 'auto_stop_order':
+      return 'Stop Order';
     default:
       return '';
   }
@@ -152,6 +161,10 @@ const isResultReadyNotification = (item: DoctorNotificationItem) =>
   (item.type === 'laboratory' || item.type === 'radiology') && item.status === 'selesai';
 
 const getNotificationPriorityScore = (item: DoctorNotificationItem) => {
+  if (item.type === 'auto_stop_order') {
+    return 500;
+  }
+
   if (isResultReadyNotification(item)) {
     return 400;
   }
@@ -168,6 +181,10 @@ const getNotificationPriorityScore = (item: DoctorNotificationItem) => {
 };
 
 const getNotificationPriorityLabel = (item: DoctorNotificationItem) => {
+  if (item.type === 'auto_stop_order') {
+    return 'Stop Order';
+  }
+
   if (isResultReadyNotification(item)) {
     return 'Hasil Siap';
   }
@@ -196,6 +213,10 @@ const sortNotificationsByPriority = (items: DoctorNotificationItem[]) => {
 };
 
 const getNotificationAccentClassName = (item: DoctorNotificationItem) => {
+  if (item.type === 'auto_stop_order') {
+    return 'border-rose-200 bg-rose-50/70 hover:bg-rose-100/70 focus:bg-rose-100/70 dark:border-rose-500/30 dark:bg-rose-500/10 dark:hover:bg-rose-500/15 dark:focus:bg-rose-500/15';
+  }
+
   if (isResultReadyNotification(item)) {
     return 'border-emerald-200 bg-emerald-50/70 hover:bg-emerald-100/70 focus:bg-emerald-100/70 dark:border-emerald-500/30 dark:bg-emerald-500/10 dark:hover:bg-emerald-500/15 dark:focus:bg-emerald-500/15';
   }
@@ -250,7 +271,8 @@ const buildNotificationSummary = (items: DoctorNotificationItem[]): DoctorNotifi
   selesai: items.filter((item) => item.status === 'selesai').length,
   prescription: items.filter((item) => item.type === 'prescription' && item.status !== 'selesai').length,
   laboratory: items.filter((item) => item.type === 'laboratory' && item.status !== 'selesai').length,
-  radiology: items.filter((item) => item.type === 'radiology' && item.status !== 'selesai').length
+  radiology: items.filter((item) => item.type === 'radiology' && item.status !== 'selesai').length,
+  auto_stop_order: items.filter((item) => item.type === 'auto_stop_order').length
 });
 
 const getNotificationResultTimestamp = (value?: string) => {
@@ -329,11 +351,13 @@ const Header: React.FC<HeaderProps> = ({
   const [tabFilters, setTabFilters] = React.useState<Record<NotificationTab, NotificationFilter>>({
     prescription: 'all',
     laboratory: 'all',
-    radiology: 'all'
+    radiology: 'all',
+    auto_stop_order: 'all'
   });
   const [notificationPreferences, setNotificationPreferences] = React.useState<NotificationPreferences>(() => loadNotificationPreferences());
   const previousActiveSignatureRef = React.useRef('');
   const previousResultReadySignatureRef = React.useRef('');
+  const previousStopOrderSignatureRef = React.useRef('');
   const hasLoadedNotificationsRef = React.useRef(false);
   const fetchNotificationsRef = React.useRef<((showLoading?: boolean) => Promise<void>) | null>(null);
   const audioContextRef = React.useRef<AudioContext | null>(null);
@@ -376,7 +400,7 @@ const Header: React.FC<HeaderProps> = ({
     };
   }, []);
 
-  const playNotificationSound = React.useCallback((variant: 'update' | 'lab-ready' | 'radiology-ready') => {
+  const playNotificationSound = React.useCallback((variant: 'update' | 'lab-ready' | 'radiology-ready' | 'stop-order') => {
     if (!soundEnabled || typeof window === 'undefined') {
       return;
     }
@@ -405,7 +429,9 @@ const Header: React.FC<HeaderProps> = ({
           ? [880, 1174]
           : variant === 'radiology-ready'
             ? [740, 988]
-            : [659, 784];
+            : variant === 'stop-order'
+              ? [523, 659, 523]
+              : [659, 784];
       const startAt = context.currentTime + 0.02;
 
       tones.forEach((frequency, index) => {
@@ -474,6 +500,18 @@ const Header: React.FC<HeaderProps> = ({
           .join('|');
         const readyItems = effectiveNextNotifications.filter((item: DoctorNotificationItem) => isResultReadyNotification(item));
         const latestReadyItem = readyItems[0];
+        const nextStopOrderSignature = effectiveNextNotifications
+          .filter((item: DoctorNotificationItem) => item.type === 'auto_stop_order')
+          .map((item: DoctorNotificationItem) => `${item.id}:${item.no_rawat}:${item.end_at || item.created_at}`)
+          .join('|');
+        const stopOrderItems = effectiveNextNotifications.filter((item: DoctorNotificationItem) => item.type === 'auto_stop_order');
+        const latestStopOrderItem = stopOrderItems[0];
+
+        const hasNewStopOrder =
+          hasLoadedNotificationsRef.current &&
+          nextStopOrderSignature &&
+          nextStopOrderSignature !== previousStopOrderSignatureRef.current &&
+          !previousStopOrderSignatureRef.current.includes(latestStopOrderItem?.id || '__none__');
 
         const hasNewResultReady =
           hasLoadedNotificationsRef.current &&
@@ -492,6 +530,13 @@ const Header: React.FC<HeaderProps> = ({
             [nextPreferredTab]: 'ready'
           }));
           playNotificationSound(latestReadyItem?.type === 'radiology' ? 'radiology-ready' : 'lab-ready');
+        } else if (hasNewStopOrder) {
+          const stopOrderCount = stopOrderItems.length;
+          toast.warning(`Ada ${stopOrderCount} automatic stop order untuk pasien Anda`, {
+            description: `Obat: ${latestStopOrderItem?.description || '-'} • No. RM ${latestStopOrderItem?.no_rkm_medis || '-'}`
+          });
+          setActiveTab('auto_stop_order');
+          playNotificationSound('stop-order');
         } else if (
           hasLoadedNotificationsRef.current &&
           nextActiveSignature &&
@@ -505,6 +550,7 @@ const Header: React.FC<HeaderProps> = ({
 
         previousActiveSignatureRef.current = nextActiveSignature;
         previousResultReadySignatureRef.current = nextResultReadySignature;
+        previousStopOrderSignatureRef.current = nextStopOrderSignature;
         hasLoadedNotificationsRef.current = true;
         setNotifications(nextNotifications);
       } catch (error) {
@@ -547,6 +593,17 @@ const Header: React.FC<HeaderProps> = ({
   );
 
   const handleOpenNotification = (item: DoctorNotificationItem) => {
+    if (item.type === 'auto_stop_order') {
+      if (item.no_rkm_medis) {
+        navigate(`/rekam-medik/${item.no_rkm_medis}`, {
+          state: {
+            backgroundLocation: location
+          }
+        });
+      }
+      return;
+    }
+
     if (item.type === 'laboratory' || item.type === 'radiology') {
       setNotificationResultItem(item);
       setNotificationResultOpen(true);
@@ -635,13 +692,15 @@ const Header: React.FC<HeaderProps> = ({
   const notificationsByTab = React.useMemo<Record<NotificationTab, DoctorNotificationItem[]>>(() => ({
     prescription: sortNotificationsByPriority(effectiveNotifications.filter((item) => item.type === 'prescription')),
     laboratory: sortNotificationsByPriority(effectiveNotifications.filter((item) => item.type === 'laboratory')),
-    radiology: sortNotificationsByPriority(effectiveNotifications.filter((item) => item.type === 'radiology'))
+    radiology: sortNotificationsByPriority(effectiveNotifications.filter((item) => item.type === 'radiology')),
+    auto_stop_order: sortNotificationsByPriority(effectiveNotifications.filter((item) => item.type === 'auto_stop_order'))
   }), [effectiveNotifications]);
 
   const filteredNotificationsByTab = React.useMemo<Record<NotificationTab, DoctorNotificationItem[]>>(() => ({
     prescription: filterNotifications(notificationsByTab.prescription, tabFilters.prescription, 'prescription'),
     laboratory: filterNotifications(notificationsByTab.laboratory, tabFilters.laboratory, 'laboratory'),
-    radiology: filterNotifications(notificationsByTab.radiology, tabFilters.radiology, 'radiology')
+    radiology: filterNotifications(notificationsByTab.radiology, tabFilters.radiology, 'radiology'),
+    auto_stop_order: filterNotifications(notificationsByTab.auto_stop_order, tabFilters.auto_stop_order, 'auto_stop_order')
   }), [notificationsByTab, tabFilters]);
 
   const tabStats = React.useMemo<Record<NotificationTab, { total: number; menunggu: number; diproses: number; selesai: number; active: number; readyResults: number }>>(() => {
@@ -657,7 +716,8 @@ const Header: React.FC<HeaderProps> = ({
     return {
       prescription: buildStats(notificationsByTab.prescription),
       laboratory: buildStats(notificationsByTab.laboratory),
-      radiology: buildStats(notificationsByTab.radiology)
+      radiology: buildStats(notificationsByTab.radiology),
+      auto_stop_order: buildStats(notificationsByTab.auto_stop_order)
     };
   }, [notificationsByTab]);
 
@@ -674,6 +734,7 @@ const Header: React.FC<HeaderProps> = ({
       const TypeIcon = getNotificationTypeIcon(item.type);
       const priorityLabel = getNotificationPriorityLabel(item);
       const isResultReady = isResultReadyNotification(item);
+      const isStopOrder = item.type === 'auto_stop_order';
 
       return [
         <DropdownMenuItem
@@ -685,7 +746,10 @@ const Header: React.FC<HeaderProps> = ({
           onClick={() => handleOpenNotification(item)}
         >
           <div className="flex items-start gap-3">
-            <div className="mt-0.5 rounded-full bg-primary/10 p-2 text-primary">
+            <div className={cn(
+              'mt-0.5 rounded-full p-2',
+              isStopOrder ? 'bg-rose-500/10 text-rose-600 dark:text-rose-300' : 'bg-primary/10 text-primary'
+            )}>
               <TypeIcon className="h-4 w-4" />
             </div>
             <div className="min-w-0 flex-1">
@@ -706,7 +770,11 @@ const Header: React.FC<HeaderProps> = ({
                 <div className="mt-2 flex flex-wrap items-center gap-2">
                   <span className={cn(
                     'rounded-full px-2 py-1 text-[10px] font-bold uppercase tracking-wide',
-                    isResultReady ? 'bg-emerald-600 text-white' : 'bg-slate-800 text-white'
+                    isResultReady
+                      ? 'bg-emerald-600 text-white'
+                      : isStopOrder
+                        ? 'bg-rose-600 text-white'
+                        : 'bg-slate-800 text-white'
                   )}>
                     {priorityLabel}
                   </span>
@@ -722,7 +790,13 @@ const Header: React.FC<HeaderProps> = ({
               </p>
               <div className="mt-2 flex flex-wrap gap-x-3 gap-y-1 text-[11px] text-muted-foreground">
                 <span>No. RM {item.no_rkm_medis || '-'}</span>
-                <span>{getNotificationTimeText(item)}</span>
+                {isStopOrder && item.end_at ? (
+                  <span className="font-semibold text-rose-600 dark:text-rose-300">
+                    Tgl. Berakhir {formatNotificationTime(item.end_at)}
+                  </span>
+                ) : (
+                  <span>{getNotificationTimeText(item)}</span>
+                )}
               </div>
             </div>
           </div>
@@ -1001,7 +1075,7 @@ const Header: React.FC<HeaderProps> = ({
               </div>
               <Tabs value={activeTab} onValueChange={(value) => setActiveTab(value as NotificationTab)} className="w-full">
                 <div className="px-2 pt-2">
-                  <TabsList className="grid w-full grid-cols-3">
+                  <TabsList className="grid w-full grid-cols-4">
                     <TabsTrigger value="prescription" className="gap-2 text-xs">
                       Resep
                       <span className="rounded-full bg-muted px-1.5 py-0.5 text-[10px]">
@@ -1009,21 +1083,30 @@ const Header: React.FC<HeaderProps> = ({
                       </span>
                     </TabsTrigger>
                     <TabsTrigger value="laboratory" className="gap-2 text-xs">
-                      Laboratorium
+                      Lab
                       <span className="rounded-full bg-muted px-1.5 py-0.5 text-[10px]">
                         {tabStats.laboratory.active}
                       </span>
                     </TabsTrigger>
                     <TabsTrigger value="radiology" className="gap-2 text-xs">
-                      Radiologi
+                      Rad
                       <span className="rounded-full bg-muted px-1.5 py-0.5 text-[10px]">
                         {tabStats.radiology.active}
+                      </span>
+                    </TabsTrigger>
+                    <TabsTrigger value="auto_stop_order" className="gap-2 text-xs">
+                      Stop Order
+                      <span className={cn(
+                        'rounded-full px-1.5 py-0.5 text-[10px]',
+                        tabStats.auto_stop_order.active > 0 ? 'bg-rose-500 text-white' : 'bg-muted'
+                      )}>
+                        {tabStats.auto_stop_order.active}
                       </span>
                     </TabsTrigger>
                   </TabsList>
                 </div>
 
-                {(['prescription', 'laboratory', 'radiology'] as NotificationTab[]).map((tab) => (
+                {(['prescription', 'laboratory', 'radiology', 'auto_stop_order'] as NotificationTab[]).map((tab) => (
                   <TabsContent key={tab} value={tab} className="mt-0">
                     <div className="px-2 pb-2">
                       <div className="grid grid-cols-3 gap-2 px-2 py-2 text-xs">
