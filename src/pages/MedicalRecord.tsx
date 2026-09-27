@@ -1772,6 +1772,7 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
   const [showAllInpatientLaboratoryHistory, setShowAllInpatientLaboratoryHistory] = useState(false);
   const [showAllOutpatientRadiologyHistory, setShowAllOutpatientRadiologyHistory] = useState(false);
   const [showAllInpatientRadiologyHistory, setShowAllInpatientRadiologyHistory] = useState(false);
+  const [radiologyHistoryCtFilter, setRadiologyHistoryCtFilter] = useState<'all' | 'ct' | 'non-ct'>('all');
   const [radiologyDataTab, setRadiologyDataTab] = useState<'current' | 'history'>('history');
   const [editingLabRequestNo, setEditingLabRequestNo] = useState<string | null>(null);
   const [labFormNoRawat, setLabFormNoRawat] = useState<string>('');
@@ -3012,6 +3013,42 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
         : radiologyHistoryInpatientView.slice(0, 1)
     ),
     [radiologyHistoryInpatientView, showAllInpatientRadiologyHistory]
+  );
+  const matchesRadiologyCtFilter = useCallback((rad: any) => {
+    if (radiologyHistoryCtFilter === 'all') {
+      return true;
+    }
+
+    const examinationName = String(
+      rad?.pemeriksaan || rad?.nm_perawatan || rad?.judul || ''
+    ).toUpperCase();
+    const isCtExamination = examinationName.includes('CT');
+
+    return radiologyHistoryCtFilter === 'ct' ? isCtExamination : !isCtExamination;
+  }, [radiologyHistoryCtFilter]);
+  const outpatientRadiologyHistoryCtFiltered = useMemo(
+    () => outpatientRadiologyHistory.filter(matchesRadiologyCtFilter),
+    [outpatientRadiologyHistory, matchesRadiologyCtFilter]
+  );
+  const inpatientRadiologyHistoryCtFiltered = useMemo(
+    () => radiologyHistoryInpatientView.filter(matchesRadiologyCtFilter),
+    [radiologyHistoryInpatientView, matchesRadiologyCtFilter]
+  );
+  const displayedOutpatientRadiologyHistoryCtFiltered = useMemo(
+    () => (
+      showAllOutpatientRadiologyHistory
+        ? outpatientRadiologyHistoryCtFiltered
+        : outpatientRadiologyHistoryCtFiltered.slice(0, 1)
+    ),
+    [outpatientRadiologyHistoryCtFiltered, showAllOutpatientRadiologyHistory]
+  );
+  const displayedInpatientRadiologyHistoryCtFiltered = useMemo(
+    () => (
+      showAllInpatientRadiologyHistory
+        ? inpatientRadiologyHistoryCtFiltered
+        : inpatientRadiologyHistoryCtFiltered.slice(0, 1)
+    ),
+    [inpatientRadiologyHistoryCtFiltered, showAllInpatientRadiologyHistory]
   );
   const getRadiologyHistoryCardObserverKey = useCallback((rad: any) => (
     getRadiologyPacsKey(rad) || [
@@ -14587,11 +14624,22 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
                           Rawat Inap
                         </TabsTrigger>
                       </TabsList>
+                      <Tabs
+                        value={radiologyHistoryCtFilter}
+                        onValueChange={(value) => setRadiologyHistoryCtFilter(value as 'all' | 'ct' | 'non-ct')}
+                        className="mb-4"
+                      >
+                        <TabsList>
+                          <TabsTrigger value="all">Semua</TabsTrigger>
+                          <TabsTrigger value="ct">CT</TabsTrigger>
+                          <TabsTrigger value="non-ct">Non-CT</TabsTrigger>
+                        </TabsList>
+                      </Tabs>
                       <TabsContent value="outpatient">
                         {isFocusedRadiologyLoaded ? (
                           <div className="space-y-4">
-                            {renderRadiologyHistoryCards(displayedOutpatientRadiologyHistory)}
-                            {!showAllOutpatientRadiologyHistory && outpatientRadiologyHistory.length > 1 ? (
+                            {renderRadiologyHistoryCards(displayedOutpatientRadiologyHistoryCtFiltered)}
+                            {!showAllOutpatientRadiologyHistory && outpatientRadiologyHistoryCtFiltered.length > 1 ? (
                               <div className="flex justify-center pt-2">
                                 <Button
                                   type="button"
@@ -14608,8 +14656,8 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
                       <TabsContent value="inpatient">
                         {isFocusedRadiologyLoaded ? (
                           <div className="space-y-4">
-                            {renderRadiologyHistoryCards(displayedInpatientRadiologyHistory)}
-                            {!showAllInpatientRadiologyHistory && radiologyHistoryInpatientView.length > 1 ? (
+                            {renderRadiologyHistoryCards(displayedInpatientRadiologyHistoryCtFiltered)}
+                            {!showAllInpatientRadiologyHistory && inpatientRadiologyHistoryCtFiltered.length > 1 ? (
                               <div className="flex justify-center pt-2">
                                 <Button
                                   type="button"

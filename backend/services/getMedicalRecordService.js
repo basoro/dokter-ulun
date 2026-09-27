@@ -2810,14 +2810,13 @@ class GetMedicalRecordService {
             WHEN COALESCE(TRIM(mu.role), '') <> '' THEN TRIM(mu.role)
             WHEN LOWER(COALESCE(p2.nama, '')) LIKE '%dr.%' THEN 'medis'
             ELSE ''
-          END AS role,
-          EXISTS (
-            SELECT 1
-            FROM mlite_auto_stop_order aso
-            WHERE TRIM(aso.no_rawat) = TRIM(p1.no_rawat)
-              AND aso.tgl_perawatan = p1.tgl_perawatan
-              AND TRIM(aso.nip) = TRIM(p1.nip)
-          ) AS auto_stop_order,
+          END AS role,        EXISTS (
+          SELECT 1
+          FROM mlite_auto_stop_order aso
+          WHERE TRIM(aso.no_rawat) = TRIM(p1.no_rawat)
+            AND aso.tgl_perawatan = p1.tgl_perawatan
+            AND TRIM(aso.nip) = TRIM(p1.nip)
+        ) AS auto_stop_order,
           r.no_rawat,
           r.status_lanjut
         FROM ${table} p1

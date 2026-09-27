@@ -501,6 +501,63 @@ class DoctorNotificationService {
     }
 
     throw new Error('Unsupported notification result type');
+  }  async getAutoStopOrderNotifications(doctorId, limit) {
+    const rows = await executeQuery(
+      `
+        SELECT
+          aso.id AS reference_id,
+          aso.no_rawat,
+          aso.tgl_perawatan,
+          aso.jam_rawat,
+          aso.tgl_berakhir,
+          aso.created_by,
+          rp.no_rkm_medis,
+          p.nm_pasien,
+          d.nm_dokter,
+          GROUP_CONCAT(DISTINCT COALESCE(NULLIF(TRIM(db.nama_brng), ''), TRIM(aso.kode_barang)) ORDER BY COALESCE(NULLIF(TRIM(db.nama_brng), ''), TRIM(aso.kode_barang)) SEPARATOR ', ') AS item_names
+        FROM mlite_auto_stop_order aso
+        INNER JOIN reg_periksa rp ON TRIM(rp.no_rawat) = TRIM(aso.no_rawat)
+        LEFT JOIN pasien p ON p.no_rkm_medis = rp.no_rkm_medis
+        LEFT JOIN dokter d ON d.kd_dokter = rp.kd_dokter
+        LEFT JOIN databarang db ON TRIM(db.kode_brng) = TRIM(aso.kode_barang)
+        WHERE TRIM(rp.kd_dokter) = TRIM(?)
+        GROUP BY
+          aso.id,
+          aso.no_rawat,
+          aso.tgl_perawatan,
+          aso.jam_rawat,
+          aso.tgl_berakhir,
+          aso.created_by,
+          rp.no_rkm_medis,
+          p.nm_pasien,
+          d.nm_dokter
+        ORDER BY aso.tgl_perawatan DESC, aso.jam_rawat DESC, aso.id DESC
+        LIMIT ?
+      `,
+      [doctorId, limit]
+    );
+
+    return rows.map((row) => {
+      const endDateTime = this.buildDateTime(row.tgl_berakhir, null);
+      const createdDateTime = this.buildDateTime(row.tgl_perawatan, row.jam_rawat);
+
+      return {
+        id: `auto-stop-order-${row.reference_id}`,
+        type: 'auto_stop_order',
+        title: 'Automatic Stop Order',
+        status: 'menunggu',
+        status_label: 'Stop Order Otomatis',
+        description: String(row.item_names || '').trim() || 'Automatic stop order obat pasien',
+        reference_id: String(row.reference_id || '').trim(),
+        no_rawat: String(row.no_rawat || '').trim(),
+        no_rkm_medis: String(row.no_rkm_medis || '').trim(),
+        patient_name: String(row.nm_pasien || '').trim(),
+        doctor_name: String(row.nm_dokter || '').trim(),
+        created_by: String(row.created_by || '').trim(),
+        end_at: endDateTime,
+        created_at: createdDateTime
+      };
+    });
   }
 
   async getDoctorNotifications(doctorId, limit = 8) {
@@ -511,13 +568,14 @@ class DoctorNotificationService {
 
     const normalizedLimit = Math.min(Math.max(Number(limit) || 8, 1), 20);
 
-    const [prescriptions, laboratories, radiologies] = await Promise.all([
+    const [prescriptions, laboratories, radiologies, autoStopOrders] = await Promise.all([
       this.getPrescriptionNotifications(normalizedDoctorId, normalizedLimit),
       this.getLaboratoryNotifications(normalizedDoctorId, normalizedLimit),
-      this.getRadiologyNotifications(normalizedDoctorId, normalizedLimit)
+      this.getRadiologyNotifications(normalizedDoctorId, normalizedLimit),
+      this.getAutoStopOrderNotifications(normalizedDoctorId, normalizedLimit)
     ]);
 
-    const notifications = [...prescriptions, ...laboratories, ...radiologies]
+    const notifications = [...prescriptions, ...laboratories, ...radiologies, ...autoStopOrders]
       .sort((a, b) => new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime())
       .slice(0, normalizedLimit * 3);
 
@@ -528,7 +586,8 @@ class DoctorNotificationService {
       selesai: notifications.filter((item) => item.status === 'selesai').length,
       prescription: notifications.filter((item) => item.type === 'prescription' && item.status !== 'selesai').length,
       laboratory: notifications.filter((item) => item.type === 'laboratory' && item.status !== 'selesai').length,
-      radiology: notifications.filter((item) => item.type === 'radiology' && item.status !== 'selesai').length
+      radiology: notifications.filter((item) => item.type === 'radiology' && item.status !== 'selesai').length,
+      auto_stop_order: notifications.filter((item) => item.type === 'auto_stop_order').length
     };
 
     return {
