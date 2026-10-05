@@ -49,6 +49,8 @@ import { getAuditHistory, getAuditHistoryAccessInfo, initCrudAuditStorage, logCr
 import statisticsDataRoutes from './routes/statisticsData.js';
 import updateExaminationRoute from './routes/updateExamination.js';
 import clinicalPathwayRoutes from './routes/clinicalPathway.js';
+import satuSehatRoutes from './routes/satuSehat.js';
+import patientNotesHistoryRoutes from './services/patientNotesHistoryService.js';
 
 import { executeQuery, testConnection } from './config/database.js';
 
@@ -338,6 +340,9 @@ app.get('/api/radiology-data/access/:username', async (req, res) => {
 console.log('🏥 Registering clinical-pathway routes at /api/clinical-pathway');
 app.use('/api/clinical-pathway', clinicalPathwayRoutes);
 console.log('✅ Clinical-pathway routes registered successfully');
+
+app.use('/api/patient-notes-history', patientNotesHistoryRoutes);
+console.log('✅ Patient-notes-history routes registered successfully');
 
 // Save Examination endpoints
 app.post('/api/save-examination', async (req, res) => {
@@ -2013,7 +2018,7 @@ app.post('/api/voice-to-soap', async (req, res) => {
 // Prescription Data endpoints
 app.get('/api/prescription-data', async (req, res) => {
   try {
-    const { action, no_rawat, no_resep, search, limit, package_id, prescription_status, no_rkm_medis } = req.query;
+    const { action, no_rawat, no_resep, search, limit, package_id, prescription_status, no_rkm_medis, kode_brng } = req.query;
     
     let result;
     
@@ -2073,11 +2078,21 @@ app.get('/api/prescription-data', async (req, res) => {
       case 'cek_obat_kronis':
         result = await PrescriptionDataService.checkChronicPrescriptionWarning(no_rkm_medis);
         break;
+
+      case 'check_chronic_medicine':
+        if (!no_rawat || !kode_brng) {
+          return res.status(400).json({
+            success: false,
+            error: 'no_rawat and kode_brng are required for check_chronic_medicine'
+          });
+        }
+        result = await PrescriptionDataService.checkChronicMedicineLimit(no_rawat, kode_brng, no_resep);
+        break;
         
       default:
         return res.status(400).json({
           success: false,
-          error: 'Invalid action. Supported actions: get_prescriptions, get_prescription_details, get_medicines, search_medicines, search_packages, get_package_items, get_compound_methods, cek_obat_kronis'
+          error: 'Invalid action. Supported actions: get_prescriptions, get_prescription_details, get_medicines, search_medicines, search_packages, get_package_items, get_compound_methods, cek_obat_kronis, check_chronic_medicine'
         });
     }
     
@@ -2807,6 +2822,11 @@ console.log('✅ Statistics-data routes registered successfully');
 console.log('📝 Registering update-examination routes at /api/update-examination');
 app.use('/api/update-examination', updateExaminationRoute);
 console.log('✅ Update-examination routes registered successfully');
+
+// Register Satu Sehat (RME Nasional) routes
+console.log('🏥 Registering satu-sehat routes at /api/satu-sehat');
+app.use('/api/satu-sehat', satuSehatRoutes);
+console.log('✅ Satu-sehat routes registered successfully');
 
 // 404 handler
 app.use((req, res) => {

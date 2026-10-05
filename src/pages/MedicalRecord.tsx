@@ -64,6 +64,17 @@ interface MedicineOption {
   kategori_ddd?: string;
 }
 
+interface ChronicMedicineLimit {
+  kode_brng: string;
+  restricted: boolean;
+  checking?: boolean;
+  previous_quantity?: number;
+  days_since?: number;
+  total_limit?: number;
+  already_on_visit?: number;
+  max_quantity?: number;
+}
+
 type AllergyCategory = 'Lingkungan' | 'Makanan' | 'Obat';
 
 interface AllergyOption {
@@ -1077,6 +1088,21 @@ const getRadiologyPacsKey = (rad: any) => {
   const examName = String(rad?.pemeriksaan || '').trim().toLowerCase();
   return [noRawat, examDate, examName].join('::');
 };
+const isCtRadiologyCandidate = (rad: {
+  pacs_modality?: unknown;
+  pemeriksaan?: unknown;
+  nm_perawatan?: unknown;
+  judul?: unknown;
+} | null | undefined) => {
+  const modality = String(rad?.pacs_modality || '').trim().toUpperCase();
+  if (modality) {
+    return modality === 'CT';
+  }
+
+  return /\bCT\b|computed tomography/i.test(
+    String(rad?.pemeriksaan || rad?.nm_perawatan || rad?.judul || '')
+  );
+};
 
 const mergeVisitsByNoRawat = (existingVisits: any[] = [], incomingVisits: any[] = []) => {
   const existingNoRawat = new Set(existingVisits.map((visit) => visit.no_rawat));
@@ -1672,6 +1698,7 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
   const [medicineSearchOpen, setMedicineSearchOpen] = useState<Record<string, boolean>>({});
   const [medicineSearchQuery, setMedicineSearchQuery] = useState<Record<string, string>>({});
   const [medicineSearchLoading, setMedicineSearchLoading] = useState<Record<string, boolean>>({});
+  const [chronicMedicineLimits, setChronicMedicineLimits] = useState<Record<string, ChronicMedicineLimit>>({});
 
   const [compoundPrescriptions, setCompoundPrescriptions] = useState<CompoundPrescription[]>([createDefaultCompoundPrescription()]);
   const [compoundMethods, setCompoundMethods] = useState<CompoundMethodOption[]>([]);
@@ -6311,9 +6338,65 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
     setMedicineSearchOpen({});
     setMedicineSearchQuery({});
     setMedicineSearchLoading({});
+    setChronicMedicineLimits({});
     setEditingPrescriptionNo(null);
     setPackageIsIbs(false);
   };
+
+  const checkChronicMedicineLimit = useCallback(async (
+    medIndex: number,
+    obatIndex: number,
+    kodeBrng: string,
+    excludedNoResep = ''
+  ) => {
+    const fieldKey = getMedicineFieldKey(medIndex, obatIndex);
+    const normalizedCode = String(kodeBrng || '').trim();
+
+    if (!formattedNoRawat || !normalizedCode) {
+      setChronicMedicineLimits((previous) => {
+        const next = { ...previous };
+        delete next[fieldKey];
+        return next;
+      });
+      return;
+    }
+
+    setChronicMedicineLimits((previous) => ({
+      ...previous,
+      [fieldKey]: { kode_brng: normalizedCode, restricted: false, checking: true }
+    }));
+
+    try {
+      const params = new URLSearchParams({
+        action: 'check_chronic_medicine',
+        no_rawat: formattedNoRawat,
+        kode_brng: normalizedCode,
+        no_resep: String(excludedNoResep || editingPrescriptionNo || '')
+      });
+      const response = await fetch(`${API_URLS.PRESCRIPTION_DATA}?${params.toString()}`);
+      const responseJson = await response.json().catch(() => null);
+
+      if (!response.ok || !responseJson?.success) {
+        throw new Error(responseJson?.error || `HTTP error! status: ${response.status}`);
+      }
+
+      setChronicMedicineLimits((previous) => ({
+        ...previous,
+        [fieldKey]: {
+          ...responseJson.data,
+          kode_brng: normalizedCode,
+          restricted: Boolean(responseJson.data?.restricted),
+          checking: false
+        }
+      }));
+    } catch (error) {
+      console.error('Error checking chronic medicine limit:', error);
+      setChronicMedicineLimits((previous) => ({
+        ...previous,
+        [fieldKey]: { kode_brng: normalizedCode, restricted: false, checking: false }
+      }));
+    }
+  }, [editingPrescriptionNo, formattedNoRawat]);
 
   const resetCompoundForm = () => {
     setCompoundPrescriptions([createDefaultCompoundPrescription()]);
@@ -6446,6 +6529,10 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
           stok: Number(item.stok) || 0
         }))
       }]);
+      setChronicMedicineLimits({});
+      detailMedicines.forEach((item: any, index: number) => {
+        void checkChronicMedicineLimit(0, index, String(item.kode_brng || '').trim(), med.no_resep);
+      });
       setMedicineOptions({});
       setMedicineSearchOpen({});
       setMedicineSearchQuery({});
@@ -9228,9 +9315,10 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
     const pendingItems = Array.from(new Map(
       [...displayedOutpatientRadiologyHistory, ...displayedInpatientRadiologyHistory]
         .map((rad) => [getRadiologyPacsKey(rad), rad] as const)
-        .filter(([pacsKey]) => (
+        .filter(([pacsKey, rad]) => (
           Boolean(pacsKey) &&
           pacsKey !== '::::' &&
+          !isCtRadiologyCandidate(rad) &&
           visibleRadiologyPacsCardKeys[pacsKey] === true &&
           !radiologyPacsByKey[pacsKey] &&
           !loadingRadiologyPacsKeys[pacsKey]
@@ -9244,13 +9332,21 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
     let cancelled = false;
 
     const preloadSummaryThumbnails = async () => {
-      for (const rad of pendingItems) {
-        if (cancelled) {
-          return;
-        }
+      let nextIndex = 0;
+      const worker = async () => {
+        while (!cancelled) {
+          const currentIndex = nextIndex++;
+          if (currentIndex >= pendingItems.length) {
+            return;
+          }
 
-        await ensureRadiologyPacsSummaryLoaded(rad);
-      }
+          await ensureRadiologyPacsSummaryLoaded(pendingItems[currentIndex]);
+        }
+      };
+
+      await Promise.all(
+        Array.from({ length: Math.min(3, pendingItems.length) }, () => worker())
+      );
     };
 
     void preloadSummaryThumbnails();
@@ -9462,7 +9558,9 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
                         ? pacsError
                         : hasLoadedPacs
                           ? 'Tidak ada gambar PACS yang cocok untuk pemeriksaan ini.'
-                          : 'Thumbnail PACS belum dimuat. Anda bisa memuat thumbnail ringkas tanpa membuka seluruh stack gambar.'}
+                          : isCtRadiologyCandidate(rad)
+                            ? 'Gambar CT belum dimuat.'
+                            : 'Thumbnail PACS belum dimuat. Anda bisa memuat thumbnail ringkas tanpa membuka seluruh stack gambar.'}
                   </p>
                 </div>
                 {!isLoadingPacs && !hasLoadedPacs ? (
@@ -9475,7 +9573,7 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
                       void ensureRadiologyPacsSummaryLoaded(rad);
                     }}
                   >
-                    Muat Thumbnail
+                    {isCtRadiologyCandidate(rad) ? 'Muat Gambar CT' : 'Muat Thumbnail'}
                   </Button>
                 ) : null}
               </div>
@@ -9524,7 +9622,7 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
           {displayImages.map((image: any, index: number) => {
             const previewUrl = getPacsImageUrl(image.instance_id, {
               modality,
-              width: 600,
+              width: 400,
               preferPreview: modality === 'CT'
             });
 
@@ -9539,6 +9637,7 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
                   src={previewUrl}
                   alt={`Foto Radiologi ${rad?.pemeriksaan || index + 1}`}
                   loading="lazy"
+                  decoding="async"
                   className="h-32 w-full object-cover transition-transform duration-200 group-hover:scale-105"
                 />
                 {modality === 'CT' && totalImages > 1 ? (
@@ -12980,6 +13079,15 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
                       <h5 className="font-medium">Daftar Obat:</h5>
                       {medication.obat.map((obat, obatIndex) => {
                         const fieldKey = getMedicineFieldKey(medIndex, obatIndex);
+                        const chronicLimit = chronicMedicineLimits[fieldKey]?.kode_brng === obat.kode_brng
+                          ? chronicMedicineLimits[fieldKey]
+                          : undefined;
+                        const requestedQuantity = Number(String(obat.jumlah || '').replace(',', '.'));
+                        const exceedsChronicLimit = Boolean(
+                          chronicLimit?.restricted &&
+                          Number.isFinite(requestedQuantity) &&
+                          requestedQuantity > Number(chronicLimit.max_quantity)
+                        );
 
                         return (
                           <div key={obatIndex} className="grid grid-cols-1 gap-4 p-3 border rounded bg-muted/20 md:grid-cols-4">
@@ -13047,6 +13155,7 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
                                                 stok: Number(option.stok) || 0,
                                                 kategori_ddd: option.kategori_ddd || ''
                                               });
+                                              void checkChronicMedicineLimit(medIndex, obatIndex, option.kode_brng);
                                               setMedicineSearchQuery((previous) => ({
                                                 ...previous,
                                                 [fieldKey]: option.nama_brng
@@ -13146,6 +13255,28 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
                                 )}
                               </div>
                             </div>
+                            {chronicLimit?.checking ? (
+                              <p className="md:col-span-4 text-xs text-muted-foreground" role="status">
+                                Memeriksa riwayat resep kronis...
+                              </p>
+                            ) : chronicLimit?.restricted ? (
+                              <div
+                                className={`md:col-span-4 flex items-start gap-2 rounded-md border p-3 text-sm ${
+                                  exceedsChronicLimit
+                                    ? 'border-red-300 bg-red-50 text-red-800 dark:border-red-900 dark:bg-red-950/30 dark:text-red-200'
+                                    : 'border-amber-300 bg-amber-50 text-amber-900 dark:border-amber-900 dark:bg-amber-950/30 dark:text-amber-200'
+                                }`}
+                                role="alert"
+                              >
+                                <BadgeAlert className="mt-0.5 h-4 w-4 shrink-0" />
+                                <span>
+                                  Obat kronis: sebelumnya diresepkan {chronicLimit.previous_quantity} unit, {chronicLimit.days_since} hari lalu.
+                                  {' '}Batas total sampai hari ke-31 adalah {chronicLimit.total_limit} unit;
+                                  {' '}Sisa maksimal yang boleh diresepkan {chronicLimit.max_quantity} unit.
+                                  {exceedsChronicLimit ? ' Jumlah yang dimasukkan melewati batas; kurangi jumlah sebelum menyimpan.' : ''}
+                                </span>
+                              </div>
+                            ) : null}
                           </div>
                         );
                       })}
