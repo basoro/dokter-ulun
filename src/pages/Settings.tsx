@@ -1,5 +1,5 @@
 import React from 'react';
-import { BellRing, Eye, EyeOff, KeyRound, Phone, Save, ShieldCheck, Smartphone, Stethoscope, UserRound } from 'lucide-react';
+import { BellRing, Eye, EyeOff, KeyRound, Phone, Save, ShieldCheck, Smartphone, Stethoscope, UserRound, Settings as SettingsIcon } from 'lucide-react';
 import { toast } from 'sonner';
 import { useAuth } from '@/contexts/AuthContext';
 import { API_URLS } from '@/config/api';
@@ -65,10 +65,100 @@ const Settings: React.FC = () => {
   });
   const [preferences, setPreferences] = React.useState<NotificationPreferences>(DEFAULT_NOTIFICATION_PREFERENCES);
   const [savingPassword, setSavingPassword] = React.useState(false);
+  const [canManageSsrmeButton, setCanManageSsrmeButton] = React.useState(false);
+  const [ssrmeButtonEnabled, setSsrmeButtonEnabled] = React.useState(false);
+  const [ssrmeButtonSettingsLoaded, setSsrmeButtonSettingsLoaded] = React.useState(false);
+  const [savingSsrmeButton, setSavingSsrmeButton] = React.useState(false);
+  const [canManageAlertKronis, setCanManageAlertKronis] = React.useState(false);
+  const [alertKronisEnabled, setAlertKronisEnabled] = React.useState(false);
+  const [alertKronisSettingsLoaded, setAlertKronisSettingsLoaded] = React.useState(false);
+  const [savingAlertKronis, setSavingAlertKronis] = React.useState(false);
 
   React.useEffect(() => {
     setPreferences(loadNotificationPreferences());
   }, []);
+
+  React.useEffect(() => {
+    if (!user?.username) {
+      return;
+    }
+
+    let isActive = true;
+    setSsrmeButtonSettingsLoaded(false);
+
+    const loadSsrmeButtonSettings = async () => {
+      try {
+        const response = await fetch(
+          `${API_URLS.SATU_SEHAT_BUTTON_SETTING}?username=${encodeURIComponent(user.username)}`
+        );
+        const result = await response.json().catch(() => null);
+
+        if (!response.ok || !result?.success) {
+          throw new Error(result?.message || 'Gagal memuat pengaturan Satu Sehat.');
+        }
+
+        if (isActive) {
+          setCanManageSsrmeButton(Boolean(result.can_manage));
+          setSsrmeButtonEnabled(Boolean(result.enabled));
+        }
+      } catch (error) {
+        if (isActive) {
+          setCanManageSsrmeButton(false);
+          toast.error(error instanceof Error ? error.message : 'Gagal memuat pengaturan Satu Sehat.');
+        }
+      } finally {
+        if (isActive) {
+          setSsrmeButtonSettingsLoaded(true);
+        }
+      }
+    };
+
+    void loadSsrmeButtonSettings();
+    return () => {
+      isActive = false;
+    };
+  }, [user?.username]);
+
+  React.useEffect(() => {
+    if (!user?.username) {
+      return;
+    }
+
+    let isActive = true;
+    setAlertKronisSettingsLoaded(false);
+
+    const loadAlertKronisSettings = async () => {
+      try {
+        const response = await fetch(
+          `${API_URLS.ALERT_KRONIS_SETTING}?username=${encodeURIComponent(user.username)}`
+        );
+        const result = await response.json().catch(() => null);
+
+        if (!response.ok || !result?.success) {
+          throw new Error(result?.message || 'Gagal memuat pengaturan Alert Obat Kronis.');
+        }
+
+        if (isActive) {
+          setCanManageAlertKronis(Boolean(result.can_manage));
+          setAlertKronisEnabled(Boolean(result.enabled));
+        }
+      } catch (error) {
+        if (isActive) {
+          setCanManageAlertKronis(false);
+          toast.error(error instanceof Error ? error.message : 'Gagal memuat pengaturan Alert Obat Kronis.');
+        }
+      } finally {
+        if (isActive) {
+          setAlertKronisSettingsLoaded(true);
+        }
+      }
+    };
+
+    void loadAlertKronisSettings();
+    return () => {
+      isActive = false;
+    };
+  }, [user?.username]);
 
   const handlePreferenceChange = (key: keyof NotificationPreferences, value: boolean) => {
     const nextPreferences = {
@@ -79,6 +169,60 @@ const Settings: React.FC = () => {
     setPreferences(nextPreferences);
     saveNotificationPreferences(nextPreferences);
     toast.success('Pengaturan notifikasi diperbarui');
+  };
+
+  const handleSsrmeButtonChange = async (enabled: boolean) => {
+    if (!user?.username) {
+      return;
+    }
+
+    try {
+      setSavingSsrmeButton(true);
+      const response = await fetch(API_URLS.SATU_SEHAT_BUTTON_SETTING, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ username: user.username, value: enabled ? 'on' : 'off' })
+      });
+      const result = await response.json().catch(() => null);
+
+      if (!response.ok || !result?.success) {
+        throw new Error(result?.message || 'Gagal menyimpan pengaturan Satu Sehat.');
+      }
+
+      setSsrmeButtonEnabled(Boolean(result.enabled));
+      toast.success('Pengaturan Satu Sehat Rekam Medis berhasil disimpan.');
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'Gagal menyimpan pengaturan Satu Sehat.');
+    } finally {
+      setSavingSsrmeButton(false);
+    }
+  };
+
+  const handleAlertKronisChange = async (enabled: boolean) => {
+    if (!user?.username) {
+      return;
+    }
+
+    try {
+      setSavingAlertKronis(true);
+      const response = await fetch(API_URLS.ALERT_KRONIS_SETTING, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ username: user.username, value: enabled ? 'on' : 'off' })
+      });
+      const result = await response.json().catch(() => null);
+
+      if (!response.ok || !result?.success) {
+        throw new Error(result?.message || 'Gagal menyimpan pengaturan Alert Obat Kronis.');
+      }
+
+      setAlertKronisEnabled(Boolean(result.enabled));
+      toast.success('Pengaturan Alert Obat Kronis berhasil disimpan.');
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'Gagal menyimpan pengaturan Alert Obat Kronis.');
+    } finally {
+      setSavingAlertKronis(false);
+    }
   };
 
   const handlePasswordSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
@@ -147,10 +291,13 @@ const Settings: React.FC = () => {
       </div>
 
       <Tabs defaultValue="profil" className="w-full">
-        <TabsList className="grid h-auto w-full grid-cols-2 gap-2 p-1 md:grid-cols-4">
+        <TabsList className={`grid h-auto w-full grid-cols-2 gap-2 p-1 ${canManageSsrmeButton || (canManageAlertKronis && alertKronisSettingsLoaded) ? 'md:grid-cols-4' : 'md:grid-cols-3'}`}>
           <TabsTrigger value="profil" className="gap-2">
             <UserRound className="h-4 w-4" />
             Profil
+          </TabsTrigger>            <TabsTrigger value="umum" className="gap-2">
+            <SettingsIcon className="h-4 w-4" />
+            Umum
           </TabsTrigger>
           <TabsTrigger value="keamanan" className="gap-2">
             <ShieldCheck className="h-4 w-4" />
@@ -431,6 +578,57 @@ const Settings: React.FC = () => {
             </CardContent>
           </Card>
         </TabsContent>
+
+        {canManageSsrmeButton && (
+          <TabsContent value="umum">
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2 text-xl">
+                  <SettingsIcon className="h-5 w-5 text-primary" />
+                  Pengaturan Umum
+                </CardTitle>
+                <CardDescription>
+                  Atur fitur sistem yang sering digunakan.
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div className="flex items-center justify-between rounded-lg border p-4">
+                  <div>
+                    <p className="font-medium">Satu Sehat Rekam Medis</p>
+                    <p className="text-sm text-muted-foreground">
+                      Aktifkan tombol Satu Sehat untuk rekam medis pasien.
+                    </p>
+                  </div>
+                  <Switch
+                    id="ssrme-button-toggle"
+                    checked={ssrmeButtonEnabled}
+                    onCheckedChange={(checked) => void handleSsrmeButtonChange(checked)}
+                    disabled={savingSsrmeButton}
+                    aria-label="Satu Sehat Rekam Medis ON | OFF"
+                  />
+                </div>
+
+                {canManageAlertKronis && (
+                  <div className="flex items-center justify-between rounded-lg border p-4">
+                    <div>
+                      <p className="font-medium">Alert Obat Kronis</p>
+                      <p className="text-sm text-muted-foreground">
+                        Aktifkan atau nonaktifkan fitur alert untuk obat kronis per item obat.
+                      </p>
+                    </div>
+                    <Switch
+                      id="alert-kronis-toggle"
+                      checked={alertKronisEnabled}
+                      onCheckedChange={(checked) => void handleAlertKronisChange(checked)}
+                      disabled={savingAlertKronis}
+                      aria-label="Alert Obat Kronis ON | OFF"
+                    />
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          </TabsContent>
+        )}
       </Tabs>
     </div>
   );

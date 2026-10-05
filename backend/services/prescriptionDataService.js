@@ -468,6 +468,7 @@ class PrescriptionDataService {
       return;
     }
 
+
     const bpjsMeta = await this.getPrescriptionBpjsMeta(connection, no_rawat);
     if (!bpjsMeta.no_rkm_medis) {
       return;
@@ -505,6 +506,161 @@ class PrescriptionDataService {
           kd_dokter
         ]
       );
+    }
+  }
+
+  async getChronicMedicineLimits(no_rawat, medicineCodes, connection = null, excludedNoResep = '') {
+    const normalizedNoRawat = String(no_rawat || '').trim();
+    const normalizedCodes = Array.from(new Set(
+      (Array.isArray(medicineCodes) ? medicineCodes : [])
+        .map((code) => String(code || '').trim())
+        .filter(Boolean)
+    ));
+
+    if (!normalizedNoRawat || normalizedCodes.length === 0) {
+      return new Map();
+    }
+
+    // Cek apakah fitur alert obat kronis diaktifkan di settings
+    const settingsRows = await executeQuery(
+      `SELECT value FROM mlite_settings WHERE module = 'settings' AND field = 'dokter_setkronis' LIMIT 1`
+    );
+    const alertKronisSetting = String(settingsRows?.[0]?.value || '').toLowerCase();
+    
+    // Jika setting 'off', tidak perlu mengecek batas kronis
+    if (alertKronisSetting === 'off') {
+      return new Map();
+    }
+
+    const placeholders = normalizedCodes.map(() => '?').join(', ');
+    const query = `
+      SELECT
+        rd.kode_brng,
+        rd.jml AS previous_quantity,
+        mv.no_rawat AS chronic_no_rawat,
+        DATEDIFF(DATE(current_visit.tgl_registrasi), DATE(mv.tgl_registrasi)) AS days_since
+      FROM reg_periksa current_visit
+      INNER JOIN mlite_veronisa mv
+        ON mv.no_rkm_medis = current_visit.no_rkm_medis
+       AND mv.no_rawat <> current_visit.no_rawat
+      INNER JOIN resep_obat ro ON ro.no_rawat = mv.no_rawat
+      INNER JOIN resep_dokter rd ON rd.no_resep = ro.no_resep
+      INNER JOIN mlite_apotek_online_maping_obat mao
+        ON mao.kode_brng = rd.kode_brng
+      WHERE current_visit.no_rawat = ?
+        AND rd.kode_brng IN (${placeholders})
+        AND CAST(rd.jml AS DECIMAL(12, 3)) >= 30
+        AND DATE(mv.tgl_registrasi) <= DATE(current_visit.tgl_registrasi)
+        AND DATEDIFF(DATE(current_visit.tgl_registrasi), DATE(mv.tgl_registrasi)) BETWEEN 0 AND 30
+      ORDER BY DATE(mv.tgl_registrasi) DESC, ro.tgl_peresepan DESC, ro.jam DESC, ro.no_resep DESC
+    `;
+    const queryParams = [normalizedNoRawat, ...normalizedCodes];
+    const chronicRows = connection
+      ? (await connection.execute(query, queryParams))[0]
+      : await executeQuery(query, queryParams);
+
+    const limits = new Map();
+    for (const row of Array.isArray(chronicRows) ? chronicRows : []) {
+      const code = String(row.kode_brng || '').trim();
+      const daysSince = Number(row.days_since);
+      if (!code || limits.has(code) || !Number.isFinite(daysSince)) {
+        continue;
+      }
+
+      limits.set(code, {
+        kode_brng: code,
+        chronic_no_rawat: String(row.chronic_no_rawat || '').trim(),
+        previous_quantity: Number(row.previous_quantity) || 0,
+        days_since: daysSince,
+        max_quantity: Math.max(0, 31 - daysSince)
+      });
+    }
+
+    if (limits.size === 0) {
+      return limits;
+    }
+
+    const excludedPrescription = String(excludedNoResep || '').trim();
+    const excludeCurrentPrescription = excludedPrescription ? 'AND ro.no_resep <> ?' : '';
+    const currentPrescriptionParams = [normalizedNoRawat, ...Array.from(limits.keys())];
+    if (excludedPrescription) {
+      currentPrescriptionParams.push(excludedPrescription);
+    }
+
+    const currentPrescriptionQuery = `
+      SELECT
+        rd.kode_brng,
+        SUM(CAST(rd.jml AS DECIMAL(12, 3))) AS already_on_visit
+      FROM resep_obat ro
+      INNER JOIN resep_dokter rd ON rd.no_resep = ro.no_resep
+      WHERE ro.no_rawat = ?
+        AND rd.kode_brng IN (${Array.from(limits.keys()).map(() => '?').join(', ')})
+        ${excludeCurrentPrescription}
+      GROUP BY rd.kode_brng
+    `;
+    const currentPrescriptionRows = connection
+      ? (await connection.execute(currentPrescriptionQuery, currentPrescriptionParams))[0]
+      : await executeQuery(currentPrescriptionQuery, currentPrescriptionParams);
+    const quantitiesOnVisit = new Map(
+      (Array.isArray(currentPrescriptionRows) ? currentPrescriptionRows : []).map((row) => [
+        String(row.kode_brng || '').trim(),
+        Number(row.already_on_visit) || 0
+      ])
+    );
+
+    for (const [code, limit] of limits.entries()) {
+      const totalLimit = limit.max_quantity;
+      const alreadyOnVisit = quantitiesOnVisit.get(code) || 0;
+      limits.set(code, {
+        ...limit,
+        total_limit: totalLimit,
+        already_on_visit: alreadyOnVisit,
+        max_quantity: Math.max(0, totalLimit - alreadyOnVisit)
+      });
+    }
+
+    return limits;
+  }
+
+  async checkChronicMedicineLimit(no_rawat, kode_brng, excludedNoResep = '') {
+    const code = String(kode_brng || '').trim();
+    const limits = await this.getChronicMedicineLimits(no_rawat, [code], null, excludedNoResep);
+    const limit = limits.get(code);
+
+    return {
+      success: true,
+      data: limit ? { restricted: true, ...limit } : { restricted: false, kode_brng: code }
+    };
+  }
+
+  async validateChronicPrescriptionMedicines(connection, no_rawat, medicines, excludedNoResep = '') {
+    const quantitiesByCode = new Map();
+    for (const medicine of Array.isArray(medicines) ? medicines : []) {
+      const code = String(medicine.kode_brng || '').trim();
+      if (!code) {
+        continue;
+      }
+
+      quantitiesByCode.set(
+        code,
+        (quantitiesByCode.get(code) || 0) + this.parseMedicineQty(medicine.jml)
+      );
+    }
+
+    const limits = await this.getChronicMedicineLimits(
+      no_rawat,
+      Array.from(quantitiesByCode.keys()),
+      connection,
+      excludedNoResep
+    );
+
+    for (const [code, quantity] of quantitiesByCode.entries()) {
+      const limit = limits.get(code);
+      if (limit && quantity > limit.max_quantity) {
+        throw new Error(
+          `Obat ${code} masih dalam masa resep kronis (${limit.days_since} hari). Jumlah maksimal saat ini ${limit.max_quantity} sampai hari ke-31.`
+        );
+      }
     }
   }
 
@@ -1112,6 +1268,8 @@ class PrescriptionDataService {
       const normalizedMedicines = await this.normalizeMedicines(medicines);
       const normalizedCompounds = await this.normalizeCompounds(connection, compounds);
 
+      await this.validateChronicPrescriptionMedicines(connection, no_rawat, normalizedMedicines);
+
       if (!normalizedMedicines.length && !normalizedCompounds.length) {
         throw new Error('Minimal satu obat atau satu racikan harus diisi');
       }
@@ -1366,6 +1524,7 @@ class PrescriptionDataService {
 
       const noRawatHeader = String(header.no_rawat || '').trim();
       const headerStatus = String(header.status || '').trim();
+      await this.validateChronicPrescriptionMedicines(connection, noRawatHeader, normalizedMedicines, no_resep);
       const resolvedStatus = normalizedPrescriptionStatus || (await this.resolvePrescriptionStatus(connection, noRawatHeader, headerStatus));
       const stockBangsalCode = await this.resolveStockBangsalCode(connection, noRawatHeader, resolvedStatus);
       const compoundMedicineRequests = normalizedCompounds.flatMap((compound) => (

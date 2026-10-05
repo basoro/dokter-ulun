@@ -248,10 +248,23 @@ const MedicalRecordReadonly: React.FC<MedicalRecordReadonlyProps> = ({
         throw new Error(responseJson?.error || `HTTP error ${response.status}`);
       }
 
-      const nextData = responseJson?.data;
+      const nextData = Array.isArray(responseJson) ? responseJson[0] : responseJson?.data;
       if (!nextData) {
         throw new Error('Data rekam medis tidak ditemukan');
       }
+
+      const nextPagination = Array.isArray(responseJson)
+        ? {
+            outpatient: {
+              ...DEFAULT_PAGINATION,
+              total: nextData.outpatient_visits?.length || 0
+            },
+            inpatient: {
+              ...DEFAULT_PAGINATION,
+              total: nextData.inpatient_visits?.length || 0
+            }
+          }
+        : responseJson?.pagination;
 
       setMedicalData((previous) => {
         if (!previous || reset) {
@@ -267,8 +280,8 @@ const MedicalRecordReadonly: React.FC<MedicalRecordReadonlyProps> = ({
       });
 
       setPagination((previous) => ({
-        outpatient: responseJson?.pagination?.outpatient || previous.outpatient,
-        inpatient: responseJson?.pagination?.inpatient || previous.inpatient
+        outpatient: nextPagination?.outpatient || previous.outpatient,
+        inpatient: nextPagination?.inpatient || previous.inpatient
       }));
     } catch (fetchError) {
       setError(fetchError instanceof Error ? fetchError.message : 'Gagal memuat rekam medis');
@@ -675,6 +688,7 @@ const MedicalRecordReadonly: React.FC<MedicalRecordReadonlyProps> = ({
                       ))}
                     </SectionCard>
                   ) : null}
+
                 </div>
               ) : null}
             </div>
