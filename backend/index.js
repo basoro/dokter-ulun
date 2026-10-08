@@ -50,7 +50,6 @@ import statisticsDataRoutes from './routes/statisticsData.js';
 import updateExaminationRoute from './routes/updateExamination.js';
 import clinicalPathwayRoutes from './routes/clinicalPathway.js';
 import satuSehatRoutes from './routes/satuSehat.js';
-import patientNotesHistoryRoutes from './services/patientNotesHistoryService.js';
 
 import { executeQuery, testConnection } from './config/database.js';
 
@@ -341,8 +340,6 @@ console.log('🏥 Registering clinical-pathway routes at /api/clinical-pathway')
 app.use('/api/clinical-pathway', clinicalPathwayRoutes);
 console.log('✅ Clinical-pathway routes registered successfully');
 
-app.use('/api/patient-notes-history', patientNotesHistoryRoutes);
-console.log('✅ Patient-notes-history routes registered successfully');
 
 // Save Examination endpoints
 app.post('/api/save-examination', async (req, res) => {
