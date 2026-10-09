@@ -3,6 +3,63 @@
 @tailwind components;
 @tailwind utilities;
 
+.audit-print-report {
+  display: none;
+}
+
+@media print {
+  @page {
+    size: A4 landscape;
+    margin: 12mm;
+  }
+
+  body > * {
+    display: none !important;
+  }
+
+  body > .audit-print-report {
+    display: block !important;
+    color: #111;
+    font-family: Arial, sans-serif;
+    font-size: 10pt;
+  }
+
+  .audit-print-report h1 {
+    margin: 0 0 8pt;
+    font-size: 18pt;
+  }
+
+  .audit-print-report h2 {
+    margin: 8pt 0 4pt;
+    font-size: 12pt;
+    break-after: avoid;
+  }
+
+  .audit-print-report p {
+    margin: 3pt 0;
+  }
+
+  .audit-print-entry {
+    padding: 4pt 0 8pt;
+    border-bottom: 1px solid #aaa;
+  }
+
+  .audit-print-payloads {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 12pt;
+    margin-top: 6pt;
+  }
+
+  .audit-print-report pre {
+    margin: 3pt 0;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+    word-break: break-word;
+    font: 8pt monospace;
+  }
+}
+
 @layer base {
   :root {
     --background: 0 0% 100%;
