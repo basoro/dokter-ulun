@@ -7,6 +7,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { useAuth } from '@/contexts/AuthContext';
 import { API_URLS } from '@/config/api';
 import { formatUIDateTime } from '@/lib/date-utils';
+import { Printer } from 'lucide-react';
+import { createPortal } from 'react-dom';
 import { Bar, BarChart, CartesianGrid, Cell, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
 
 interface AuditLogEntry {
@@ -457,7 +459,36 @@ const AuditHistory: React.FC = () => {
   }
 
   return (
-    <div className="space-y-4">
+    <>
+      {createPortal(
+        <section className="audit-print-report">
+          <h1>Riwayat Audit</h1>
+          <p>Periode: {startDate || '-'} s.d. {endDate || '-'}</p>
+          <p>Filter: pencarian {search || '-'} · aksi {action === 'all' ? 'semua' : getActionLabel(action)} · status {status === 'all' ? 'semua' : getStatusLabel(status)} · modul {entity || 'semua'}</p>
+          <p>Halaman {pagination.page} · Menampilkan {entries.length} dari {pagination.total} log</p>
+          {entries.map((entry) => (
+            <article className="audit-print-entry" key={entry.log_id}>
+              <h2>{getAuditSummary(entry)}</h2>
+              <p>{formatDateTime(entry.created_at)} · {getEntityLabel(entry.entity)} · {getActionLabel(entry.action)} · {getStatusLabel(entry.status)}</p>
+              <p>Aktor: {getAuditActorDisplay(entry)} · No. Rawat: {entry.no_rawat || '-'} · No. RM: {entry.no_rkm_medis || '-'} · Reference ID: {entry.reference_id || '-'}</p>
+              <p>Endpoint: {entry.method} {entry.endpoint}</p>
+              <div className="audit-print-payloads">
+                <div>
+                  <strong>Data yang dikirim</strong>
+                  <pre>{formatJson(entry.request_payload)}</pre>
+                </div>
+                <div>
+                  <strong>Hasil proses</strong>
+                  <pre>{formatJson(entry.response_payload)}</pre>
+                </div>
+              </div>
+              {entry.error_message ? <p>Pesan error: {entry.error_message}</p> : null}
+            </article>
+          ))}
+        </section>,
+        document.body
+      )}
+      <div className="space-y-4">
       <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <h1 className="text-2xl font-bold text-gray-900">Riwayat Audit</h1>
@@ -465,8 +496,14 @@ const AuditHistory: React.FC = () => {
             Menampilkan seluruh riwayat audit karena kode dokter Anda terdaftar pada konfigurasi akses audit.
           </p>
         </div>
-        <div className="text-sm text-muted-foreground">
-          Total log: <span className="font-medium text-foreground">{pagination.total}</span>
+        <div className="flex items-center gap-3">
+          <div className="text-sm text-muted-foreground">
+            Total log: <span className="font-medium text-foreground">{pagination.total}</span>
+          </div>
+          <Button type="button" variant="outline" disabled={loading || entries.length === 0} onClick={() => window.print()}>
+            <Printer className="mr-2 h-4 w-4" />
+            Cetak PDF
+          </Button>
         </div>
       </div>
 
@@ -765,7 +802,8 @@ const AuditHistory: React.FC = () => {
           </Button>
         </div>
       </div>
-    </div>
+      </div>
+    </>
   );
 };
 
