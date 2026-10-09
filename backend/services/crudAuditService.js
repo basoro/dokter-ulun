@@ -307,7 +307,7 @@ const isWithinDateRange = (value, startDateFilter, endDateFilter) => {
     return false;
   }
 
-  const dateOnly = date.toISOString().slice(0, 10);
+  const dateOnly = new Date(date.getTime() + (7 * 60 * 60 * 1000)).toISOString().slice(0, 10);
   if (startDateFilter && dateOnly < startDateFilter) {
     return false;
   }
