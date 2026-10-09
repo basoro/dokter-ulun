@@ -218,8 +218,8 @@ app.get('/api/clinical-pathway/access/:username', async (req, res) => {
 
 app.get('/api/audit-history', async (req, res) => {
   try {
-    const { username = '', page = '1', limit = '50', action = '', status = '', entity = '', search = '' } = req.query;
-    const result = await getAuditHistory(username, { page, limit, action, status, entity, search });
+    const { username = '', page = '1', limit = '50', action = '', status = '', entity = '', search = '', start_date = '', end_date = '' } = req.query;
+    const result = await getAuditHistory(username, { page, limit, action, status, entity, search, start_date, end_date });
 
     if (result?.success && Array.isArray(result?.data) && result.data.length > 0) {
       const actorIds = Array.from(
