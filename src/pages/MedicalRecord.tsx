@@ -305,6 +305,29 @@ interface RehabMedikAssessment {
   suspek_penyakit: string;
 }
 
+interface AsmedRalanForm {
+  keluhan_utama: string;
+  rw_penyakit_sekarang: string;
+  rw_alergi: string;
+  rw_penyakit_dahulu: string;
+  rw_pengobatan: string;
+  rw_penyakit_keluarga: string;
+  pemeriksaan: string;
+  diagnosa: string;
+  planning: string;
+  tindakan: string;
+}
+
+interface AsmedRalanAssessment extends AsmedRalanForm {
+  id: number | string;
+  no_rawat: string;
+  kategori: 'ralan' | 'ranap';
+  tanggal: string;
+  jam: string;
+  kd_dokter: string;
+  nm_dokter: string;
+}
+
 interface IgdTriageMasterOption {
   kd_level: string;
   nm_level: string;
@@ -365,8 +388,8 @@ interface ProcedureOption {
 type ProcedureStatusRawat = 'Ralan' | 'Ranap';
 type LabStatusRawat = 'Ralan' | 'Ranap' | 'IGD';
 type RadiologyStatusRawat = 'Ralan' | 'Ranap' | 'IGD';
-type OutpatientExaminationSectionTabValue = 'examinations' | 'echo-echocardiography' | 'rehab-medik';
-type InpatientExaminationSectionTabValue = 'examinations' | 'balance-cairan' | 'ventilator' | 'ekstrapiramidal' | 'echo-echocardiography' | 'rehab-medik';
+type OutpatientExaminationSectionTabValue = 'examinations' | 'asmed-ralan' | 'echo-echocardiography' | 'rehab-medik';
+type InpatientExaminationSectionTabValue = 'examinations' | 'asmed-ralan' | 'balance-cairan' | 'ventilator' | 'ekstrapiramidal' | 'echo-echocardiography' | 'rehab-medik';
 type VisitDetailSectionFilterValue = 'all' | 'triase' | 'catatan' | 'pemeriksaan' | 'diagnosa' | 'tindakan' | 'resep' | 'laboratorium' | 'radiologi' | 'pemeriksaan-jantung';
 
 interface MedicalRecordData {
@@ -760,6 +783,32 @@ const getDefaultRehabMedikForm = () => ({
   rekomendasi: '',
   suspek_penyakit: 'Tidak'
 });
+
+const getDefaultAsmedRalanForm = (): AsmedRalanForm => ({
+  keluhan_utama: '',
+  rw_penyakit_sekarang: '',
+  rw_alergi: '',
+  rw_penyakit_dahulu: '',
+  rw_pengobatan: '',
+  rw_penyakit_keluarga: '',
+  pemeriksaan: '',
+  diagnosa: '',
+  planning: '',
+  tindakan: ''
+});
+
+const ASMED_RALAN_FIELDS: Array<{ key: keyof AsmedRalanForm; label: string }> = [
+  { key: 'keluhan_utama', label: 'Keluhan Utama' },
+  { key: 'rw_penyakit_sekarang', label: 'Riwayat Penyakit Sekarang' },
+  { key: 'rw_alergi', label: 'Riwayat Alergi' },
+  { key: 'rw_penyakit_dahulu', label: 'Riwayat Penyakit Dahulu' },
+  { key: 'rw_pengobatan', label: 'Riwayat Pengobatan' },
+  { key: 'rw_penyakit_keluarga', label: 'Riwayat Penyakit Keluarga' },
+  { key: 'pemeriksaan', label: 'Pemeriksaan' },
+  { key: 'diagnosa', label: 'Diagnosa' },
+  { key: 'planning', label: 'Planning' },
+  { key: 'tindakan', label: 'Tindakan' }
+];
 
 const getDefaultEkstrapiramidalForm = () => ({
   piramidal1: '1',
@@ -1746,6 +1795,11 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
   const [savingRehabMedik, setSavingRehabMedik] = useState(false);
   const [deletingRehabMedik, setDeletingRehabMedik] = useState(false);
   const [rehabMedikForm, setRehabMedikForm] = useState(getDefaultRehabMedikForm);
+  const [asmedRalanForm, setAsmedRalanForm] = useState<AsmedRalanForm>(getDefaultAsmedRalanForm);
+  const [asmedRalanEntries, setAsmedRalanEntries] = useState<AsmedRalanAssessment[]>([]);
+  const [asmedRalanLoading, setAsmedRalanLoading] = useState(false);
+  const [savingAsmedRalan, setSavingAsmedRalan] = useState(false);
+  const [asmedRalanError, setAsmedRalanError] = useState('');
   const [balanceCairanEntries, setBalanceCairanEntries] = useState<BalanceCairanEntry[]>([]);
   const [balanceCairanLoading, setBalanceCairanLoading] = useState(false);
   const [selectedBalanceCairanId, setSelectedBalanceCairanId] = useState<number | null>(null);
@@ -2051,6 +2105,7 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
   const [activeTab, setActiveTab] = useState<MedicalRecordStageTab>(initialStageTab);
   const [visitHistoryTab, setVisitHistoryTab] = useState<VisitHistoryTabValue>('outpatient');
   const [examinationHistoryTab, setExaminationHistoryTab] = useState<ExaminationHistoryTabValue>('outpatient');
+  const asmedKategori = examinationHistoryTab === 'inpatient' ? 'ranap' : 'ralan';
   const [pagination, setPagination] = useState<MedicalRecordPagination>({
     outpatient: DEFAULT_PAGINATION_META,
     inpatient: DEFAULT_PAGINATION_META
@@ -3559,6 +3614,114 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
       </div>
     )});
   };
+  const renderAsmedRalanSection = (kategori: 'ralan' | 'ranap') => {
+    if (!formattedNoRawat) {
+      return (
+        <div className="border border-dashed rounded-lg p-6 text-sm text-muted-foreground bg-muted/20">
+          Pilih kunjungan terlebih dahulu untuk mengisi asesmen awal medis.
+        </div>
+      );
+    }
+
+    return (
+      <div className="space-y-4">
+        <div className="border rounded-lg p-4 bg-muted/30 space-y-4">
+          <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+            <div>
+              <h4 className="font-medium">Form Asesmen Awal Medis {kategori === 'ranap' ? 'Rawat Inap' : 'Rawat Jalan'}</h4>
+              <p className="text-sm text-muted-foreground">Nomor rawat: {formattedNoRawat}</p>
+              <p className="text-sm text-muted-foreground">{asmedRalanEntries.length} riwayat asesmen</p>
+            </div>
+            <Button type="button" variant="outline" size="sm" onClick={() => void fetchAsmedRalan()} disabled={asmedRalanLoading}>
+              {asmedRalanLoading ? 'Memuat...' : 'Refresh'}
+            </Button>
+          </div>
+
+          {asmedRalanError && (
+            <p role="alert" className="text-sm text-destructive">{asmedRalanError}</p>
+          )}
+
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+            {ASMED_RALAN_FIELDS.map(({ key, label }) => (
+              <div key={key} className="space-y-2">
+                <Label htmlFor={`asmed-ralan-${key}`}>{label}</Label>
+                <Textarea
+                  id={`asmed-ralan-${key}`}
+                  value={asmedRalanForm[key]}
+                  maxLength={500}
+                  rows={key === 'keluhan_utama' || key === 'pemeriksaan' ? 3 : 2}
+                  onChange={(event) => setAsmedRalanForm((prev) => ({ ...prev, [key]: event.target.value }))}
+                  disabled={asmedRalanLoading || savingAsmedRalan}
+                  placeholder={label}
+                />
+                <p className="text-right text-xs text-muted-foreground">{asmedRalanForm[key].length}/500</p>
+              </div>
+            ))}
+          </div>
+
+          <div className="flex flex-wrap justify-end gap-2">
+            <Button type="button" variant="outline" onClick={() => setAsmedRalanForm(getDefaultAsmedRalanForm())} disabled={savingAsmedRalan}>
+              Reset
+            </Button>
+            <Button type="button" onClick={() => void handleSaveAsmedRalan()} disabled={savingAsmedRalan || asmedRalanLoading}>
+              {savingAsmedRalan ? 'Menyimpan...' : 'Simpan Asesmen'}
+            </Button>
+          </div>
+        </div>
+
+        <div className="border rounded-lg p-4 space-y-4">
+          <h4 className="font-medium">Riwayat Asesmen Awal Medis</h4>
+          {asmedRalanLoading ? (
+            <p className="text-sm text-muted-foreground">Memuat riwayat asesmen...</p>
+          ) : asmedRalanEntries.length === 0 ? (
+            <div className="border border-dashed rounded-lg p-4 text-sm text-muted-foreground bg-muted/20">
+              Belum ada riwayat asesmen awal medis untuk kunjungan ini.
+            </div>
+          ) : (
+            <div className="space-y-3">
+              {asmedRalanEntries.map((item) => (
+                <article key={item.id} className="overflow-hidden rounded-lg border bg-background">
+                  <div className="flex flex-col gap-3 border-b bg-muted/20 px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
+                    <div className="min-w-0 space-y-1">
+                      <h5 className="truncate text-sm font-semibold">{item.nm_dokter || item.kd_dokter || 'Dokter tidak diketahui'}</h5>
+                      <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-muted-foreground">
+                        <span>Tanggal: {formatDateSafe(item.tanggal)}</span>
+                        <span>Jam: {item.jam || '-'}</span>
+                        <span className="rounded border px-2 py-0.5 font-medium text-foreground">{item.kategori || '-'}</span>
+                      </div>
+                    </div>
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      onClick={() => {
+                        const copiedForm = getDefaultAsmedRalanForm();
+                        ASMED_RALAN_FIELDS.forEach(({ key }) => {
+                          copiedForm[key] = item[key] || '';
+                        });
+                        setAsmedRalanForm(copiedForm);
+                      }}
+                    >
+                      Salin ke Form
+                    </Button>
+                  </div>
+                  <div className="grid grid-cols-1 gap-x-6 gap-y-4 p-4 text-sm md:grid-cols-2">
+                    {ASMED_RALAN_FIELDS.map(({ key, label }) => (
+                      <div key={key} className="min-w-0 space-y-1">
+                        <h6 className="text-xs font-semibold uppercase text-muted-foreground">{label}</h6>
+                        <p className="whitespace-pre-line break-words">{formatMultilineText(item[key] || '-')}</p>
+                      </div>
+                    ))}
+                  </div>
+                </article>
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
+    );
+  };
+
   const renderRehabMedikSection = () => {
     if (!formattedNoRawat) {
       return (
@@ -7425,6 +7588,71 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
     }
   }, [currentUsername, formattedNoRawat, rehabMedikAccess]);
 
+  const fetchAsmedRalan = useCallback(async () => {
+    if (!formattedNoRawat) {
+      setAsmedRalanEntries([]);
+      setAsmedRalanForm(getDefaultAsmedRalanForm());
+      return;
+    }
+
+    try {
+      setAsmedRalanLoading(true);
+      setAsmedRalanError('');
+      const params = new URLSearchParams({ kategori: asmedKategori });
+      const response = await fetch(`${API_URLS.ASMED_RALAN}/${encodeURIComponent(formattedNoRawat)}?${params.toString()}`);
+      const responseJson = await response.json().catch(() => null);
+      if (!response.ok || !responseJson?.success) {
+        throw new Error(responseJson?.error || `HTTP error! status: ${response.status}`);
+      }
+
+      setAsmedRalanEntries(Array.isArray(responseJson.data) ? responseJson.data : []);
+    } catch (error) {
+      console.error('Error fetching asesmen awal medis:', error);
+      setAsmedRalanError(error instanceof Error ? error.message : 'Gagal memuat asesmen awal medis');
+      setAsmedRalanEntries([]);
+    } finally {
+      setAsmedRalanLoading(false);
+    }
+  }, [asmedKategori, formattedNoRawat]);
+
+  const handleSaveAsmedRalan = useCallback(async () => {
+    if (!formattedNoRawat) {
+      toast({ title: 'Error', description: 'Pilih kunjungan terlebih dahulu', variant: 'destructive' });
+      return;
+    }
+
+    try {
+      setSavingAsmedRalan(true);
+      const response = await fetch(API_URLS.ASMED_RALAN, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          no_rawat: formattedNoRawat,
+          kategori: asmedKategori,
+          kd_dokter: String(user?.kd_dokter || currentUsername).trim(),
+          ...asmedRalanForm
+        })
+      });
+      const responseJson = await response.json().catch(() => null);
+      if (!response.ok || !responseJson?.success) {
+        throw new Error(responseJson?.error || `HTTP error! status: ${response.status}`);
+      }
+
+      toast({ title: 'Berhasil', description: responseJson.message || 'Asesmen awal medis berhasil disimpan' });
+      setAsmedRalanForm(getDefaultAsmedRalanForm());
+      await fetchAsmedRalan();
+    } catch (error) {
+      console.error('Error saving asesmen awal medis:', error);
+      toast({
+        title: 'Error',
+        description: error instanceof Error ? error.message : 'Gagal menyimpan asesmen awal medis',
+        variant: 'destructive'
+      });
+    } finally {
+      setSavingAsmedRalan(false);
+    }
+  }, [asmedKategori, asmedRalanForm, currentUsername, fetchAsmedRalan, formattedNoRawat, toast, user?.kd_dokter]);
+
   const handleCopyRehabMedik = useCallback((item: RehabMedikAssessment) => {
     setRehabMedikForm({
       anamnesa: item.anamnesa || '',
@@ -7974,6 +8202,14 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
 
     setRehabMedikForm(getDefaultRehabMedikForm());
   }, [formattedNoRawat]);
+
+  useEffect(() => {
+    setAsmedRalanForm(getDefaultAsmedRalanForm());
+  }, [asmedKategori, formattedNoRawat]);
+
+  useEffect(() => {
+    void fetchAsmedRalan();
+  }, [fetchAsmedRalan]);
 
   useEffect(() => {
     if (formattedNoRawat && rehabMedikAccess) {
@@ -12339,45 +12575,43 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
 
                   <TabsContent value="outpatient">
                     {isFocusedExaminationsLoaded ? (
-                      echoCardiographyAccess || rehabMedikAccess ? (
-                        <Tabs
-                          value={outpatientExaminationSectionTab}
-                          onValueChange={(value) => setOutpatientExaminationSectionTab(value as OutpatientExaminationSectionTabValue)}
-                          className="space-y-4"
-                        >
-                          <TabsList>
-                            <TabsTrigger value="examinations">Pemeriksaan</TabsTrigger>
-                            {echoCardiographyAccess && (
-                              <TabsTrigger value="echo-echocardiography">Pemeriksaan Jantung</TabsTrigger>
-                            )}
-                            {rehabMedikAccess && (
-                              <TabsTrigger value="rehab-medik">Assesmen Rehab Medik</TabsTrigger>
-                            )}
-                          </TabsList>
-
-                          <TabsContent value="examinations" className="space-y-4">
-                            {renderExaminationRoleFilter()}
-                            {renderExaminationCards(filteredOutpatientExaminationHistory)}
-                          </TabsContent>
-
+                      <Tabs
+                        value={outpatientExaminationSectionTab}
+                        onValueChange={(value) => setOutpatientExaminationSectionTab(value as OutpatientExaminationSectionTabValue)}
+                        className="space-y-4"
+                      >
+                        <TabsList>
+                          <TabsTrigger value="examinations">Pemeriksaan</TabsTrigger>
+                          <TabsTrigger value="asmed-ralan">Asesmen Awal Medis</TabsTrigger>
                           {echoCardiographyAccess && (
-                            <TabsContent value="echo-echocardiography" className="space-y-4">
-                              {renderEchoCardiographySection()}
-                            </TabsContent>
+                            <TabsTrigger value="echo-echocardiography">Pemeriksaan Jantung</TabsTrigger>
                           )}
-
                           {rehabMedikAccess && (
-                            <TabsContent value="rehab-medik" className="space-y-4">
-                              {renderRehabMedikSection()}
-                            </TabsContent>
+                            <TabsTrigger value="rehab-medik">Assesmen Rehab Medik</TabsTrigger>
                           )}
-                        </Tabs>
-                      ) : (
-                        <div className="space-y-4">
+                        </TabsList>
+
+                        <TabsContent value="examinations" className="space-y-4">
                           {renderExaminationRoleFilter()}
                           {renderExaminationCards(filteredOutpatientExaminationHistory)}
-                        </div>
-                      )
+                        </TabsContent>
+
+                        <TabsContent value="asmed-ralan" className="space-y-4">
+                          {renderAsmedRalanSection('ralan')}
+                        </TabsContent>
+
+                        {echoCardiographyAccess && (
+                          <TabsContent value="echo-echocardiography" className="space-y-4">
+                            {renderEchoCardiographySection()}
+                          </TabsContent>
+                        )}
+
+                        {rehabMedikAccess && (
+                          <TabsContent value="rehab-medik" className="space-y-4">
+                            {renderRehabMedikSection()}
+                          </TabsContent>
+                        )}
+                      </Tabs>
                     ) : renderDeferredTabState('pemeriksaan')}
                   </TabsContent>
 
@@ -12390,6 +12624,7 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
                       >
                         <TabsList>
                           <TabsTrigger value="examinations">Pemeriksaan</TabsTrigger>
+                          <TabsTrigger value="asmed-ralan">Asesmen Awal Medis</TabsTrigger>
                           <TabsTrigger value="balance-cairan">Balance Cairan</TabsTrigger>
                           <TabsTrigger value="ventilator">Ventilator</TabsTrigger>
                           <TabsTrigger value="ekstrapiramidal">Ekstrapiramidal</TabsTrigger>
@@ -12404,6 +12639,10 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
                         <TabsContent value="examinations" className="space-y-4">
                           {renderExaminationRoleFilter()}
                           {renderExaminationCards(filteredInpatientExaminationHistory)}
+                        </TabsContent>
+
+                        <TabsContent value="asmed-ralan" className="space-y-4">
+                          {renderAsmedRalanSection('ranap')}
                         </TabsContent>
 
                         <TabsContent value="balance-cairan" className="space-y-4">
