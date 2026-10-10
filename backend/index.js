@@ -10,6 +10,7 @@ import { DashboardService } from './services/dashboardService.js';
 import { AttendanceService } from './services/attendanceService.js';
 import AllergyDataService from './services/allergyDataService.js';
 import AssesmenRehabMedikService from './services/assesmenRehabMedikService.js';
+import AsmedRalanService from './services/asmedRalanService.js';
 import { BookingOperasiService } from './services/bookingOperasiService.js';
 import { BookingRegistrasiService } from './services/bookingRegistrasiService.js';
 import RawatJalanPatientsService from './services/rawatJalanPatientsService.js';
@@ -1180,6 +1181,39 @@ app.delete('/api/assesmen-rehab-medik/:no_rawat', async (req, res) => {
       success: false,
       error: error.message
     });
+  }
+});
+
+app.get('/api/asmed-ralan/:no_rawat', async (req, res) => {
+  try {
+    const result = await AsmedRalanService.getAssessment(req.params.no_rawat, req.query.kategori);
+    res.json(result);
+  } catch (error) {
+    const statusCode = Number(error?.statusCode) || 500;
+    console.error('Error fetching asesmen awal medis rawat jalan:', error);
+    res.status(statusCode).json({ success: false, error: error.message });
+  }
+});
+
+app.post('/api/asmed-ralan', async (req, res) => {
+  try {
+    const result = await AsmedRalanService.saveAssessment(req.body);
+    await auditCrudSuccess(
+      req,
+      'asmed_ralan',
+      String(result?.message || '').toLowerCase().includes('diperbarui') ? 'update' : 'create',
+      result,
+      { no_rawat: req.body?.no_rawat, reference_id: req.body?.no_rawat }
+    );
+    res.json(result);
+  } catch (error) {
+    await auditCrudFailure(req, 'asmed_ralan', 'upsert', error, {
+      no_rawat: req.body?.no_rawat,
+      reference_id: req.body?.no_rawat
+    });
+    const statusCode = Number(error?.statusCode) || 400;
+    console.error('Error saving asesmen awal medis rawat jalan:', error);
+    res.status(statusCode).json({ success: false, error: error.message });
   }
 });
 
