@@ -1217,6 +1217,27 @@ app.post('/api/asmed-ralan', async (req, res) => {
   }
 });
 
+app.delete('/api/asmed-ralan/:id', async (req, res) => {
+  const auditContext = {
+    no_rawat: req.query.no_rawat,
+    reference_id: req.params.id
+  };
+  try {
+    const result = await AsmedRalanService.deleteAssessment(
+      req.params.id,
+      req.query.no_rawat,
+      req.query.kategori
+    );
+    await auditCrudSuccess(req, 'asmed_ralan', 'delete', result, auditContext);
+    res.json(result);
+  } catch (error) {
+    await auditCrudFailure(req, 'asmed_ralan', 'delete', error, auditContext);
+    const statusCode = Number(error?.statusCode) || 400;
+    console.error('Error deleting asesmen awal medis:', error);
+    res.status(statusCode).json({ success: false, error: error.message });
+  }
+});
+
 app.get('/api/patient-notes/:no_rawat', async (req, res) => {
   try {
     const { no_rawat } = req.params;
