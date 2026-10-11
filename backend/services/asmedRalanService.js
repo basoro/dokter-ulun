@@ -91,6 +91,47 @@ class AsmedRalanService {
     const tanggal = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
     const jam = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}:${String(now.getSeconds()).padStart(2, '0')}`;
     const values = TEXT_FIELDS.map((field) => this.normalizeText(payload[field]));
+
+    if (payload.id !== undefined && payload.id !== null && String(payload.id).trim() !== '') {
+      const id = Number(payload.id);
+      if (!Number.isSafeInteger(id) || id <= 0) {
+        const error = new Error('id asesmen tidak valid');
+        error.statusCode = 400;
+        throw error;
+      }
+
+      const existingRows = await executeQuery(
+        `
+          SELECT id
+          FROM asmed_ralan
+          WHERE id = ? AND no_rawat = ? AND kategori = ?
+          LIMIT 1
+        `,
+        [id, noRawat, kategori]
+      );
+      if (!Array.isArray(existingRows) || !existingRows[0]) {
+        const error = new Error('Asesmen awal medis tidak ditemukan');
+        error.statusCode = 404;
+        throw error;
+      }
+
+      await executeQuery(
+        `
+          UPDATE asmed_ralan
+          SET keluhan_utama = ?, rw_penyakit_sekarang = ?, rw_alergi = ?,
+              rw_penyakit_dahulu = ?, rw_pengobatan = ?, rw_penyakit_keluarga = ?,
+              pemeriksaan = ?, diagnosa = ?, planning = ?, tindakan = ?
+          WHERE id = ? AND no_rawat = ? AND kategori = ?
+        `,
+        [...values, id, noRawat, kategori]
+      );
+
+      return {
+        success: true,
+        message: 'Asesmen awal medis berhasil diperbarui'
+      };
+    }
+
     await executeQuery(
       `
         INSERT INTO asmed_ralan (
@@ -105,6 +146,52 @@ class AsmedRalanService {
     return {
       success: true,
       message: 'Asesmen awal medis berhasil disimpan'
+    };
+  }
+
+  static async deleteAssessment(idValue, noRawatValue, kategoriValue) {
+    const id = Number(idValue);
+    const noRawat = String(noRawatValue || '').trim();
+    const kategori = String(kategoriValue || '').trim().toLowerCase();
+    if (!Number.isSafeInteger(id) || id <= 0) {
+      const error = new Error('id asesmen tidak valid');
+      error.statusCode = 400;
+      throw error;
+    }
+    if (!noRawat) {
+      const error = new Error('no_rawat wajib diisi');
+      error.statusCode = 400;
+      throw error;
+    }
+    if (!['ralan', 'ranap'].includes(kategori)) {
+      const error = new Error('kategori harus ralan atau ranap');
+      error.statusCode = 400;
+      throw error;
+    }
+
+    const existingRows = await executeQuery(
+      `
+        SELECT id
+        FROM asmed_ralan
+        WHERE id = ? AND no_rawat = ? AND kategori = ?
+        LIMIT 1
+      `,
+      [id, noRawat, kategori]
+    );
+    if (!Array.isArray(existingRows) || !existingRows[0]) {
+      const error = new Error('Asesmen awal medis tidak ditemukan');
+      error.statusCode = 404;
+      throw error;
+    }
+
+    await executeQuery(
+      'DELETE FROM asmed_ralan WHERE id = ? AND no_rawat = ? AND kategori = ?',
+      [id, noRawat, kategori]
+    );
+
+    return {
+      success: true,
+      message: 'Asesmen awal medis berhasil dihapus'
     };
   }
 }

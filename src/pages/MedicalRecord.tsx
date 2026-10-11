@@ -1799,6 +1799,9 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
   const [asmedRalanEntries, setAsmedRalanEntries] = useState<AsmedRalanAssessment[]>([]);
   const [asmedRalanLoading, setAsmedRalanLoading] = useState(false);
   const [savingAsmedRalan, setSavingAsmedRalan] = useState(false);
+  const asmedRalanFormRef = useRef<HTMLDivElement | null>(null);
+  const [editingAsmedRalanId, setEditingAsmedRalanId] = useState<number | string | null>(null);
+  const [deletingAsmedRalanId, setDeletingAsmedRalanId] = useState<number | string | null>(null);
   const [asmedRalanError, setAsmedRalanError] = useState('');
   const [balanceCairanEntries, setBalanceCairanEntries] = useState<BalanceCairanEntry[]>([]);
   const [balanceCairanLoading, setBalanceCairanLoading] = useState(false);
@@ -3625,10 +3628,10 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
 
     return (
       <div className="space-y-4">
-        <div className="border rounded-lg p-4 bg-muted/30 space-y-4">
+        <div ref={asmedRalanFormRef} className="border rounded-lg p-4 bg-muted/30 space-y-4">
           <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
             <div>
-              <h4 className="font-medium">Form Asesmen Awal Medis {kategori === 'ranap' ? 'Rawat Inap' : 'Rawat Jalan'}</h4>
+              <h4 className="font-medium">{editingAsmedRalanId !== null ? 'Edit Asesmen Awal Medis' : 'Form Asesmen Awal Medis'} {kategori === 'ranap' ? 'Rawat Inap' : 'Rawat Jalan'}</h4>
               <p className="text-sm text-muted-foreground">Nomor rawat: {formattedNoRawat}</p>
               <p className="text-sm text-muted-foreground">{asmedRalanEntries.length} riwayat asesmen</p>
             </div>
@@ -3660,11 +3663,25 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
           </div>
 
           <div className="flex flex-wrap justify-end gap-2">
-            <Button type="button" variant="outline" onClick={() => setAsmedRalanForm(getDefaultAsmedRalanForm())} disabled={savingAsmedRalan}>
-              Reset
-            </Button>
+            {editingAsmedRalanId !== null ? (
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => {
+                  setEditingAsmedRalanId(null);
+                  setAsmedRalanForm(getDefaultAsmedRalanForm());
+                }}
+                disabled={savingAsmedRalan}
+              >
+                Batal Edit
+              </Button>
+            ) : (
+              <Button type="button" variant="outline" onClick={() => setAsmedRalanForm(getDefaultAsmedRalanForm())} disabled={savingAsmedRalan}>
+                Reset
+              </Button>
+            )}
             <Button type="button" onClick={() => void handleSaveAsmedRalan()} disabled={savingAsmedRalan || asmedRalanLoading}>
-              {savingAsmedRalan ? 'Menyimpan...' : 'Simpan Asesmen'}
+              {savingAsmedRalan ? 'Menyimpan...' : editingAsmedRalanId !== null ? 'Simpan Perubahan' : 'Simpan Asesmen'}
             </Button>
           </div>
         </div>
@@ -3690,20 +3707,51 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
                         <span className="rounded border px-2 py-0.5 font-medium text-foreground">{item.kategori || '-'}</span>
                       </div>
                     </div>
-                    <Button
-                      type="button"
-                      size="sm"
-                      variant="outline"
-                      onClick={() => {
-                        const copiedForm = getDefaultAsmedRalanForm();
-                        ASMED_RALAN_FIELDS.forEach(({ key }) => {
-                          copiedForm[key] = item[key] || '';
-                        });
-                        setAsmedRalanForm(copiedForm);
-                      }}
-                    >
-                      Salin ke Form
-                    </Button>
+                    <div className="flex flex-wrap gap-2">
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="outline"
+                        onClick={() => {
+                          const copiedForm = getDefaultAsmedRalanForm();
+                          ASMED_RALAN_FIELDS.forEach(({ key }) => {
+                            copiedForm[key] = item[key] || '';
+                          });
+                          setEditingAsmedRalanId(null);
+                          setAsmedRalanForm(copiedForm);
+                        }}
+                      >
+                        Copy
+                      </Button>
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="outline"
+                        onClick={() => {
+                          const editForm = getDefaultAsmedRalanForm();
+                          ASMED_RALAN_FIELDS.forEach(({ key }) => {
+                            editForm[key] = item[key] || '';
+                          });
+                          setEditingAsmedRalanId(item.id);
+                          setAsmedRalanForm(editForm);
+                          asmedRalanFormRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                        }}
+                        disabled={savingAsmedRalan || deletingAsmedRalanId !== null}
+                      >
+                        <Pencil className="mr-2 h-4 w-4" />
+                        Edit
+                      </Button>
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="destructive"
+                        onClick={() => void handleDeleteAsmedRalan(item)}
+                        disabled={savingAsmedRalan || deletingAsmedRalanId !== null}
+                      >
+                        <Trash2 className="mr-2 h-4 w-4" />
+                        {deletingAsmedRalanId === item.id ? 'Menghapus...' : 'Hapus'}
+                      </Button>
+                    </div>
                   </div>
                   <div className="grid grid-cols-1 gap-x-6 gap-y-4 p-4 text-sm md:grid-cols-2">
                     {ASMED_RALAN_FIELDS.map(({ key, label }) => (
@@ -7627,6 +7675,7 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
+          ...(editingAsmedRalanId !== null ? { id: editingAsmedRalanId } : {}),
           no_rawat: formattedNoRawat,
           kategori: asmedKategori,
           kd_dokter: String(user?.kd_dokter || currentUsername).trim(),
@@ -7639,6 +7688,7 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
       }
 
       toast({ title: 'Berhasil', description: responseJson.message || 'Asesmen awal medis berhasil disimpan' });
+  setEditingAsmedRalanId(null);
       setAsmedRalanForm(getDefaultAsmedRalanForm());
       await fetchAsmedRalan();
     } catch (error) {
@@ -7651,7 +7701,41 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
     } finally {
       setSavingAsmedRalan(false);
     }
-  }, [asmedKategori, asmedRalanForm, currentUsername, fetchAsmedRalan, formattedNoRawat, toast, user?.kd_dokter]);
+  }, [asmedKategori, asmedRalanForm, currentUsername, editingAsmedRalanId, fetchAsmedRalan, formattedNoRawat, toast, user?.kd_dokter]);
+
+  const handleDeleteAsmedRalan = useCallback(async (item: AsmedRalanAssessment) => {
+    if (!confirm('Apakah Anda yakin ingin menghapus asesmen awal medis ini?')) {
+      return;
+    }
+
+    try {
+      setDeletingAsmedRalanId(item.id);
+      const params = new URLSearchParams({ no_rawat: item.no_rawat, kategori: item.kategori });
+      const response = await fetch(`${API_URLS.ASMED_RALAN}/${encodeURIComponent(String(item.id))}?${params.toString()}`, {
+        method: 'DELETE'
+      });
+      const responseJson = await response.json().catch(() => null);
+      if (!response.ok || !responseJson?.success) {
+        throw new Error(responseJson?.error || `HTTP error! status: ${response.status}`);
+      }
+
+      if (editingAsmedRalanId === item.id) {
+        setEditingAsmedRalanId(null);
+        setAsmedRalanForm(getDefaultAsmedRalanForm());
+      }
+      toast({ title: 'Berhasil', description: responseJson.message || 'Asesmen awal medis berhasil dihapus' });
+      await fetchAsmedRalan();
+    } catch (error) {
+      console.error('Error deleting asesmen awal medis:', error);
+      toast({
+        title: 'Error',
+        description: error instanceof Error ? error.message : 'Gagal menghapus asesmen awal medis',
+        variant: 'destructive'
+      });
+    } finally {
+      setDeletingAsmedRalanId(null);
+    }
+  }, [editingAsmedRalanId, fetchAsmedRalan, toast]);
 
   const handleCopyRehabMedik = useCallback((item: RehabMedikAssessment) => {
     setRehabMedikForm({
