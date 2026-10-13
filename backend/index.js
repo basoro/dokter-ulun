@@ -1640,12 +1640,14 @@ app.post('/api/delete-examination', async (req, res) => {
 
 app.post('/api/verify-examination', async (req, res) => {
   try {
-    const { no_rawat, tgl_perawatan, jam_rawat, username } = req.body || {};
+    const { no_rawat, tgl_perawatan, jam_rawat, username, kd_dokter, catatan } = req.body || {};
     const data = await VerifyExaminationService.verifyInpatientExamination(
       no_rawat,
       tgl_perawatan,
       jam_rawat,
-      username
+      username,
+      kd_dokter,
+      catatan
     );
     await auditCrudSuccess(req, 'examination', 'verify', data);
     res.json(data);
