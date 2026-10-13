@@ -1659,6 +1659,11 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
   const [isDpjpExpanded, setIsDpjpExpanded] = useState(false);
   const [editingExamination, setEditingExamination] = useState<any>(null);
   const [verifyingExaminationKey, setVerifyingExaminationKey] = useState<string | null>(null);
+  const [pendingVerification, setPendingVerification] = useState<{
+    examination: { tgl_perawatan: string; jam_rawat: string };
+    visit: { no_rawat: string };
+  } | null>(null);
+  const [verificationNote, setVerificationNote] = useState('');
   const [aiScribeModal, setAiScribeModal] = useState(false);
   const [aiScribeData, setAiScribeData] = useState<any>(null);
   const [aiScribeLoading, setAiScribeLoading] = useState(false);
@@ -9323,6 +9328,26 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
       return;
     }
 
+    setPendingVerification({ examination, visit });
+    setVerificationNote('');
+  };
+
+  const confirmVerifyExamination = async () => {
+    if (!pendingVerification) {
+      return;
+    }
+
+    const note = verificationNote.trim();
+    if (!note || note.length > 255) {
+      toast({
+        title: 'Catatan wajib diisi',
+        description: 'Catatan verifikasi harus berisi 1 sampai 255 karakter.',
+        variant: 'destructive'
+      });
+      return;
+    }
+
+    const { examination, visit } = pendingVerification;
     const examinationKey = getExaminationRecordKey(examination, visit);
 
     try {
@@ -9335,7 +9360,9 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
           no_rawat: visit.no_rawat,
           tgl_perawatan: examination.tgl_perawatan,
           jam_rawat: examination.jam_rawat,
-          username: currentUsername
+          username: currentUsername,
+          kd_dokter: String(user?.kd_dokter || currentUsername).trim(),
+          catatan: note
         })
       });
 
@@ -9353,6 +9380,8 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
         description: responseJson?.message || "SOAP harian rawat inap berhasil diverifikasi",
       });
 
+      setPendingVerification(null);
+      setVerificationNote('');
       await fetchMedicalRecord({ reset: true, outpatientPage: 1, inpatientPage: 1 });
     } catch (error) {
       console.error('Error verifying examination:', error);
@@ -15724,6 +15753,60 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
         </DialogContent>
       </Dialog>
       
+      <Dialog
+        open={pendingVerification !== null}
+        onOpenChange={(open) => {
+          if (!open && verifyingExaminationKey === null) {
+            setPendingVerification(null);
+            setVerificationNote('');
+          }
+        }}
+      >
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Verifikasi SOAP Rawat Inap</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <p className="text-sm text-muted-foreground">
+              Catatan ini akan disimpan bersama verifikasi SOAP untuk {pendingVerification?.visit?.no_rawat || '-'}.
+            </p>
+            <div className="space-y-2">
+              <Label htmlFor="verification-note">Catatan khusus</Label>
+              <Textarea
+                id="verification-note"
+                value={verificationNote}
+                onChange={(event) => setVerificationNote(event.target.value)}
+                maxLength={255}
+                rows={4}
+                placeholder="Tulis catatan verifikasi"
+                disabled={verifyingExaminationKey !== null}
+              />
+              <p className="text-right text-xs text-muted-foreground">{verificationNote.length}/255</p>
+            </div>
+            <div className="flex justify-end gap-2">
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => {
+                  setPendingVerification(null);
+                  setVerificationNote('');
+                }}
+                disabled={verifyingExaminationKey !== null}
+              >
+                Batal
+              </Button>
+              <Button
+                type="button"
+                onClick={() => void confirmVerifyExamination()}
+                disabled={verifyingExaminationKey !== null || !verificationNote.trim()}
+              >
+                {verifyingExaminationKey !== null ? 'Menyimpan...' : 'Verifikasi & Simpan Catatan'}
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
       {/* AI Scribe Modal */}
       <Dialog open={aiScribeModal} onOpenChange={setAiScribeModal}>
         <DialogContent className="max-w-5xl max-h-[85vh]">
