@@ -89,7 +89,20 @@ class AsmedRalanService {
 
     const now = new Date();
     const tanggal = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
-    const jam = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}:${String(now.getSeconds()).padStart(2, '0')}`;
+    const jamSelesai = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}:${String(now.getSeconds()).padStart(2, '0')}`;
+    const jamInput = String(payload.jam || '').trim();
+    const type = String(payload.type || '').trim();
+    if (!/^(?:[01]\d|2[0-3]):[0-5]\d(?::[0-5]\d)?$/.test(jamInput)) {
+      const error = new Error('jam harus diisi dengan format waktu yang valid');
+      error.statusCode = 400;
+      throw error;
+    }
+    if (!['Awal', 'Lanjutan'].includes(type)) {
+      const error = new Error('type harus Awal atau Lanjutan');
+      error.statusCode = 400;
+      throw error;
+    }
+    const jam = jamInput.length === 5 ? `${jamInput}:00` : jamInput;
     const values = TEXT_FIELDS.map((field) => this.normalizeText(payload[field]));
 
     if (payload.id !== undefined && payload.id !== null && String(payload.id).trim() !== '') {
@@ -118,12 +131,13 @@ class AsmedRalanService {
       await executeQuery(
         `
           UPDATE asmed_ralan
-          SET keluhan_utama = ?, rw_penyakit_sekarang = ?, rw_alergi = ?,
+          SET jam = ?, jam_selesai = ?, type = ?,
+              keluhan_utama = ?, rw_penyakit_sekarang = ?, rw_alergi = ?,
               rw_penyakit_dahulu = ?, rw_pengobatan = ?, rw_penyakit_keluarga = ?,
               pemeriksaan = ?, diagnosa = ?, planning = ?, tindakan = ?
           WHERE id = ? AND no_rawat = ? AND kategori = ?
         `,
-        [...values, id, noRawat, kategori]
+        [jam, jamSelesai, type, ...values, id, noRawat, kategori]
       );
 
       return {
@@ -135,12 +149,12 @@ class AsmedRalanService {
     await executeQuery(
       `
         INSERT INTO asmed_ralan (
-          no_rawat, kategori, tanggal, jam, keluhan_utama, rw_penyakit_sekarang, rw_alergi,
+          no_rawat, kategori, tanggal, jam, jam_selesai, type, keluhan_utama, rw_penyakit_sekarang, rw_alergi,
           rw_penyakit_dahulu, rw_pengobatan, rw_penyakit_keluarga, pemeriksaan,
           diagnosa, planning, tindakan, kd_dokter, nip
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `,
-      [noRawat, kategori, tanggal, jam, ...values, kdDokter, null]
+      [noRawat, kategori, tanggal, jam, jamSelesai, type, ...values, kdDokter, null]
     );
 
     return {
