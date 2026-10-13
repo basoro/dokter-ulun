@@ -306,6 +306,8 @@ interface RehabMedikAssessment {
 }
 
 interface AsmedRalanForm {
+  jam: string;
+  type: 'Awal' | 'Lanjutan';
   keluhan_utama: string;
   rw_penyakit_sekarang: string;
   rw_alergi: string;
@@ -323,7 +325,7 @@ interface AsmedRalanAssessment extends AsmedRalanForm {
   no_rawat: string;
   kategori: 'ralan' | 'ranap';
   tanggal: string;
-  jam: string;
+  jam_selesai?: string;
   kd_dokter: string;
   nm_dokter: string;
 }
@@ -785,6 +787,8 @@ const getDefaultRehabMedikForm = () => ({
 });
 
 const getDefaultAsmedRalanForm = (): AsmedRalanForm => ({
+  jam: new Date().toTimeString().slice(0, 5),
+  type: 'Awal',
   keluhan_utama: '',
   rw_penyakit_sekarang: '',
   rw_alergi: '',
@@ -797,7 +801,7 @@ const getDefaultAsmedRalanForm = (): AsmedRalanForm => ({
   tindakan: ''
 });
 
-const ASMED_RALAN_FIELDS: Array<{ key: keyof AsmedRalanForm; label: string }> = [
+const ASMED_RALAN_FIELDS: Array<{ key: Exclude<keyof AsmedRalanForm, 'jam' | 'type'>; label: string }> = [
   { key: 'keluhan_utama', label: 'Keluhan Utama' },
   { key: 'rw_penyakit_sekarang', label: 'Riwayat Penyakit Sekarang' },
   { key: 'rw_alergi', label: 'Riwayat Alergi' },
@@ -3621,7 +3625,7 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
     if (!formattedNoRawat) {
       return (
         <div className="border border-dashed rounded-lg p-6 text-sm text-muted-foreground bg-muted/20">
-          Pilih kunjungan terlebih dahulu untuk mengisi asesmen awal medis.
+          Pilih kunjungan terlebih dahulu untuk mengisi Assesmen Medis.
         </div>
       );
     }
@@ -3631,7 +3635,7 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
         <div ref={asmedRalanFormRef} className="border rounded-lg p-4 bg-muted/30 space-y-4">
           <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
             <div>
-              <h4 className="font-medium">{editingAsmedRalanId !== null ? 'Edit Asesmen Awal Medis' : 'Form Asesmen Awal Medis'} {kategori === 'ranap' ? 'Rawat Inap' : 'Rawat Jalan'}</h4>
+              <h4 className="font-medium">{editingAsmedRalanId !== null ? 'Edit Assesmen Medis' : 'Form Assesmen Medis'} {kategori === 'ranap' ? 'Rawat Inap' : 'Rawat Jalan'}</h4>
               <p className="text-sm text-muted-foreground">Nomor rawat: {formattedNoRawat}</p>
               <p className="text-sm text-muted-foreground">{asmedRalanEntries.length} riwayat asesmen</p>
             </div>
@@ -3645,6 +3649,32 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
           )}
 
           <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+            <div className="space-y-2">
+              <Label htmlFor="asmed-ralan-jam">Jam</Label>
+              <Input
+                id="asmed-ralan-jam"
+                type="time"
+                value={asmedRalanForm.jam}
+                onChange={(event) => setAsmedRalanForm((prev) => ({ ...prev, jam: event.target.value }))}
+                disabled={asmedRalanLoading || savingAsmedRalan}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="asmed-ralan-type">Kategori</Label>
+              <Select
+                value={asmedRalanForm.type}
+                onValueChange={(value: 'Awal' | 'Lanjutan') => setAsmedRalanForm((prev) => ({ ...prev, type: value }))}
+                disabled={asmedRalanLoading || savingAsmedRalan}
+              >
+                <SelectTrigger id="asmed-ralan-type">
+                  <SelectValue placeholder="Pilih kategori" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="Awal">Awal</SelectItem>
+                  <SelectItem value="Lanjutan">Lanjutan</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
             {ASMED_RALAN_FIELDS.map(({ key, label }) => (
               <div key={key} className="space-y-2">
                 <Label htmlFor={`asmed-ralan-${key}`}>{label}</Label>
@@ -3687,12 +3717,12 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
         </div>
 
         <div className="border rounded-lg p-4 space-y-4">
-          <h4 className="font-medium">Riwayat Asesmen Awal Medis</h4>
+          <h4 className="font-medium">Riwayat Assesmen Medis</h4>
           {asmedRalanLoading ? (
             <p className="text-sm text-muted-foreground">Memuat riwayat asesmen...</p>
           ) : asmedRalanEntries.length === 0 ? (
             <div className="border border-dashed rounded-lg p-4 text-sm text-muted-foreground bg-muted/20">
-              Belum ada riwayat asesmen awal medis untuk kunjungan ini.
+              Belum ada riwayat Assesmen Medis untuk kunjungan ini.
             </div>
           ) : (
             <div className="space-y-3">
@@ -3704,7 +3734,8 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
                       <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-muted-foreground">
                         <span>Tanggal: {formatDateSafe(item.tanggal)}</span>
                         <span>Jam: {item.jam || '-'}</span>
-                        <span className="rounded border px-2 py-0.5 font-medium text-foreground">{item.kategori || '-'}</span>
+                        <span className="rounded border px-2 py-0.5 font-medium text-foreground">{item.type || '-'}</span>
+                        <span>{item.kategori === 'ranap' ? 'Rawat Inap' : 'Rawat Jalan'}</span>
                       </div>
                     </div>
                     <div className="flex flex-wrap gap-2">
@@ -3717,6 +3748,8 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
                           ASMED_RALAN_FIELDS.forEach(({ key }) => {
                             copiedForm[key] = item[key] || '';
                           });
+                          copiedForm.jam = item.jam?.slice(0, 5) || copiedForm.jam;
+                          copiedForm.type = item.type || 'Awal';
                           setEditingAsmedRalanId(null);
                           setAsmedRalanForm(copiedForm);
                         }}
@@ -3732,6 +3765,8 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
                           ASMED_RALAN_FIELDS.forEach(({ key }) => {
                             editForm[key] = item[key] || '';
                           });
+                          editForm.jam = item.jam?.slice(0, 5) || editForm.jam;
+                          editForm.type = item.type || 'Awal';
                           setEditingAsmedRalanId(item.id);
                           setAsmedRalanForm(editForm);
                           asmedRalanFormRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
@@ -12666,7 +12701,7 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
                       >
                         <TabsList>
                           <TabsTrigger value="examinations">Pemeriksaan</TabsTrigger>
-                          <TabsTrigger value="asmed-ralan">Asesmen Awal Medis</TabsTrigger>
+                          <TabsTrigger value="asmed-ralan">Assesmen Medis</TabsTrigger>
                           {echoCardiographyAccess && (
                             <TabsTrigger value="echo-echocardiography">Pemeriksaan Jantung</TabsTrigger>
                           )}
@@ -12708,7 +12743,7 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
                       >
                         <TabsList>
                           <TabsTrigger value="examinations">Pemeriksaan</TabsTrigger>
-                          <TabsTrigger value="asmed-ralan">Asesmen Awal Medis</TabsTrigger>
+                          <TabsTrigger value="asmed-ralan">Assesmen Medis</TabsTrigger>
                           <TabsTrigger value="balance-cairan">Balance Cairan</TabsTrigger>
                           <TabsTrigger value="ventilator">Ventilator</TabsTrigger>
                           <TabsTrigger value="ekstrapiramidal">Ekstrapiramidal</TabsTrigger>
