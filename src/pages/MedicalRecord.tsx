@@ -32,6 +32,8 @@ import { cn } from "@/lib/utils";
 import { format } from "date-fns";
 import { API_CONFIG, API_URLS } from '@/config/api';
 import { DatePickerPopover } from '@/components/DatePickerPopover';
+import { NoteListToolbar } from '@/components/NoteListToolbar';
+import { handleNoteListKeyDown } from '@/lib/note-list';
 import logoImg from '@/assets/logo.png';
 
 const PacsPreviewViewer = React.lazy(() => import('@/components/pacs/PacsPreviewViewer'));
@@ -1664,6 +1666,8 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
     visit: { no_rawat: string };
   } | null>(null);
   const [verificationNote, setVerificationNote] = useState('');
+  const verificationNoteRef = useRef<HTMLTextAreaElement | null>(null);
+  const verificationNoteEditRef = useRef<HTMLTextAreaElement | null>(null);
   const [verificationNoteDetail, setVerificationNoteDetail] = useState<{
     no_rawat: string;
     tgl_perawatan: string;
@@ -1684,6 +1688,13 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
   const { toast } = useToast();
   const { user } = useAuth();
   const currentUsername = String(user?.username || '').trim();
+  const notifyVerificationNoteLimit = useCallback(() => {
+    toast({
+      title: 'Batas karakter',
+      description: 'Catatan verifikasi maksimal 255 karakter.',
+      variant: 'destructive'
+    });
+  }, [toast]);
   const allVisits = useMemo(
     () => [
       ...(medicalData?.outpatient_visits || []),
@@ -16099,11 +16110,28 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
               Catatan ini akan disimpan bersama verifikasi SOAP untuk {pendingVerification?.visit?.no_rawat || '-'}.
             </p>
             <div className="space-y-2">
-              <Label htmlFor="verification-note">Catatan khusus</Label>
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <Label htmlFor="verification-note">Catatan khusus</Label>
+                <NoteListToolbar
+                  textareaRef={verificationNoteRef}
+                  value={verificationNote}
+                  onChange={setVerificationNote}
+                  maxLength={255}
+                  onLimitExceeded={notifyVerificationNoteLimit}
+                  disabled={verifyingExaminationKey !== null}
+                />
+              </div>
               <Textarea
+                ref={verificationNoteRef}
                 id="verification-note"
                 value={verificationNote}
                 onChange={(event) => setVerificationNote(event.target.value)}
+                onKeyDown={(event) =>
+                  handleNoteListKeyDown(event, setVerificationNote, {
+                    maxLength: 255,
+                    onLimitExceeded: notifyVerificationNoteLimit
+                  })
+                }
                 maxLength={255}
                 rows={4}
                 placeholder="Tulis catatan verifikasi"
@@ -16179,9 +16207,26 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
               <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Catatan Verifikasi</p>
               {verificationNoteEditing ? (
                 <div className="space-y-2">
+                  <div className="flex items-center justify-end gap-2">
+                    <NoteListToolbar
+                      textareaRef={verificationNoteEditRef}
+                      value={verificationNoteEditValue}
+                      onChange={setVerificationNoteEditValue}
+                      maxLength={255}
+                      onLimitExceeded={notifyVerificationNoteLimit}
+                      disabled={verificationNoteSaving}
+                    />
+                  </div>
                   <Textarea
+                    ref={verificationNoteEditRef}
                     value={verificationNoteEditValue}
                     onChange={(event) => setVerificationNoteEditValue(event.target.value)}
+                    onKeyDown={(event) =>
+                      handleNoteListKeyDown(event, setVerificationNoteEditValue, {
+                        maxLength: 255,
+                        onLimitExceeded: notifyVerificationNoteLimit
+                      })
+                    }
                     maxLength={255}
                     rows={4}
                     placeholder="Tulis catatan verifikasi"
