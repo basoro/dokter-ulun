@@ -11,7 +11,7 @@ import {
   User, Calendar, Stethoscope, Syringe, Pill, FlaskConical, Radio,
   Activity, ClipboardList, BedDouble, UserCircle, Building, MapPin,
   Phone, Heart, CalendarDays, FileText, Plus, X, Trash2, Image as ImageIcon, Clock, CreditCard,
-  Copy, ChevronDown, ChevronUp, Brain, Check, ChevronsUpDown, Pencil, Play,
+  Copy, ChevronDown, ChevronUp, Brain, Check, CheckSquare, ChevronsUpDown, Pencil, Play,
   BadgeAlert, Maximize2, Mic, Square, Info, Loader2
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -1672,6 +1672,11 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
     catatan: string;
     verifikator: string;
   } | null>(null);
+  const [selectedVerificationKeys, setSelectedVerificationKeys] = useState<string[]>([]);
+  const [bulkVerifying, setBulkVerifying] = useState(false);
+  const [verificationNoteEditing, setVerificationNoteEditing] = useState(false);
+  const [verificationNoteEditValue, setVerificationNoteEditValue] = useState('');
+  const [verificationNoteSaving, setVerificationNoteSaving] = useState(false);
   const [aiScribeModal, setAiScribeModal] = useState(false);
   const [aiScribeData, setAiScribeData] = useState<any>(null);
   const [aiScribeLoading, setAiScribeLoading] = useState(false);
@@ -3450,6 +3455,143 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
       </div>
     </div>
   );
+  const getSelectableInpatientVerificationKeys = () =>
+    filteredInpatientExaminationHistory
+      .filter((item) => canVerifyExamination(item.exam, 'Ranap'))
+      .map((item) => getExaminationRecordKey(item.exam, item.visit));
+
+  const toggleVerificationSelection = (key: string, checked: boolean) => {
+    setSelectedVerificationKeys((prev) => {
+      if (checked) {
+        return prev.includes(key) ? prev : [...prev, key];
+      }
+
+      return prev.filter((item) => item !== key);
+    });
+  };
+
+  const handleToggleSelectAllInpatient = () => {
+    const selectableKeys = getSelectableInpatientVerificationKeys();
+    const allSelected = selectableKeys.length > 0 && selectableKeys.every((key) => selectedVerificationKeys.includes(key));
+
+    setSelectedVerificationKeys(allSelected ? [] : selectableKeys);
+  };
+
+  const handleBulkVerifyExaminations = async () => {
+    const selectedItems = filteredInpatientExaminationHistory.filter((item) =>
+      selectedVerificationKeys.includes(getExaminationRecordKey(item.exam, item.visit))
+    );
+
+    if (!selectedItems.length) {
+      toast({
+        title: 'Tidak ada SOAP dipilih',
+        description: 'Centang minimal satu SOAP harian rawat inap yang ingin diverifikasi.',
+        variant: 'destructive'
+      });
+      return;
+    }
+
+    const verifiableItems = selectedItems.filter((item) => canVerifyExamination(item.exam, item.rawatType));
+    if (!verifiableItems.length) {
+      toast({
+        title: 'Tidak dapat diverifikasi',
+        description: 'SOAP yang dipilih sudah diverifikasi atau tidak memenuhi syarat verifikasi.',
+        variant: 'destructive'
+      });
+      return;
+    }
+
+    try {
+      setBulkVerifying(true);
+
+      const response = await fetch(API_URLS.VERIFY_EXAMINATIONS_BATCH, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          items: verifiableItems.map((item) => ({
+            no_rawat: item.visit.no_rawat,
+            tgl_perawatan: item.exam.tgl_perawatan,
+            jam_rawat: item.exam.jam_rawat
+          })),
+          username: currentUsername,
+          kd_dokter: String(user?.kd_dokter || currentUsername).trim()
+        })
+      });
+
+      const responseJson = await response.json().catch(() => null);
+      if (!response.ok || !responseJson?.success) {
+        throw new Error(
+          responseJson?.details ||
+          responseJson?.error ||
+          `HTTP error! status: ${response.status}`
+        );
+      }
+
+      toast({
+        title: 'Berhasil',
+        description: responseJson?.message || 'SOAP terpilih berhasil diverifikasi tanpa catatan'
+      });
+
+      setSelectedVerificationKeys([]);
+      await fetchMedicalRecord({ reset: true, outpatientPage: 1, inpatientPage: 1 });
+    } catch (error) {
+      console.error('Error bulk verifying examinations:', error);
+      toast({
+        title: 'Error',
+        description: error instanceof Error ? error.message : 'Gagal memverifikasi SOAP harian rawat inap',
+        variant: 'destructive'
+      });
+    } finally {
+      setBulkVerifying(false);
+    }
+  };
+
+  const renderInpatientVerificationToolbar = () => {
+    if (!allowRanapVerification) {
+      return null;
+    }
+
+    const selectableKeys = getSelectableInpatientVerificationKeys();
+    const allSelected = selectableKeys.length > 0 && selectableKeys.every((key) => selectedVerificationKeys.includes(key));
+    const selectedCount = selectableKeys.filter((key) => selectedVerificationKeys.includes(key)).length;
+
+    return (
+      <div className="rounded-lg border bg-muted/20 p-3">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <p className="text-sm font-medium">Verifikasi Massal SOAP</p>
+            <p className="text-xs text-muted-foreground">
+              {selectableKeys.length === 0
+                ? 'Tidak ada SOAP harian rawat inap yang belum diverifikasi.'
+                : `${selectedCount} dari ${selectableKeys.length} SOAP belum diverifikasi dipilih. Verifikasi massal tidak menyimpan catatan.`}
+            </p>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              onClick={handleToggleSelectAllInpatient}
+              disabled={selectableKeys.length === 0 || bulkVerifying}
+            >
+              <CheckSquare className="mr-1 h-4 w-4" />
+              {allSelected ? 'Batal Pilih Semua' : 'Pilih Semua'}
+            </Button>
+            <Button
+              type="button"
+              size="sm"
+              onClick={() => void handleBulkVerifyExaminations()}
+              disabled={selectedCount === 0 || bulkVerifying}
+            >
+              {bulkVerifying ? <Loader2 className="mr-1 h-4 w-4 animate-spin" /> : <Check className="mr-1 h-4 w-4" />}
+              {bulkVerifying ? 'Memverifikasi...' : 'Verifikasi'}
+            </Button>
+          </div>
+        </div>
+      </div>
+    );
+  };
+
   const renderExaminationCards = (history: Array<{ key: string; visit: any; exam: any; rawatType: 'Ralan' | 'Ranap' }>) => {
     if (history.length === 0) {
       return (
@@ -3473,9 +3615,23 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
       const roleStyles = getExaminationRoleStyles(resolvedRole);
       const roleLabel = getExaminationRoleLabel(resolvedRole);
       const examinationDateTime = [exam?.tgl_perawatan, exam?.jam_rawat].filter(Boolean).join(' ');
+      const isSelectedForVerification = selectedVerificationKeys.includes(examinationKey);
 
       return (
       <div key={key} className="border rounded-lg p-4">
+            {canVerify && (
+              <div className="mb-3 flex items-center gap-2 rounded-lg border border-dashed bg-muted/20 px-3 py-2">
+                <Checkbox
+                  id={`select-verif-${key}`}
+                  checked={isSelectedForVerification}
+                  onCheckedChange={(checked) => toggleVerificationSelection(examinationKey, checked === true)}
+                  disabled={bulkVerifying}
+                />
+                <Label htmlFor={`select-verif-${key}`} className="cursor-pointer text-sm font-medium">
+                  Pilih
+                </Label>
+              </div>
+            )}
             <div className="mb-4 flex flex-col-reverse gap-3 xl:flex-row xl:items-start xl:justify-between">
               <div className="grid flex-1 grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">
             <div>
@@ -9371,6 +9527,136 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
       catatan: String(examination?.verification_note || '').trim(),
       verifikator: String(examination?.verification_by || '').trim()
     });
+    setVerificationNoteEditing(false);
+    setVerificationNoteEditValue('');
+  };
+
+  const closeVerificationNoteDetail = () => {
+    if (verificationNoteSaving) {
+      return;
+    }
+
+    setVerificationNoteDetail(null);
+    setVerificationNoteEditing(false);
+    setVerificationNoteEditValue('');
+  };
+
+  const startVerificationNoteEdit = () => {
+    if (!verificationNoteDetail) {
+      return;
+    }
+
+    setVerificationNoteEditValue(verificationNoteDetail.catatan || '');
+    setVerificationNoteEditing(true);
+  };
+
+  const cancelVerificationNoteEdit = () => {
+    setVerificationNoteEditing(false);
+    setVerificationNoteEditValue('');
+  };
+
+  const saveVerificationNoteDetail = async () => {
+    if (!verificationNoteDetail) {
+      return;
+    }
+
+    const note = verificationNoteEditValue.trim();
+    if (!note || note.length > 255) {
+      toast({
+        title: 'Catatan wajib diisi',
+        description: 'Catatan verifikasi harus berisi 1 sampai 255 karakter.',
+        variant: 'destructive'
+      });
+      return;
+    }
+
+    try {
+      setVerificationNoteSaving(true);
+
+      const response = await fetch(API_URLS.VERIFY_EXAMINATION_NOTE, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          no_rawat: verificationNoteDetail.no_rawat,
+          tgl_perawatan: verificationNoteDetail.tgl_perawatan,
+          jam_rawat: verificationNoteDetail.jam_rawat,
+          catatan: note,
+          kd_dokter: String(user?.kd_dokter || currentUsername).trim()
+        })
+      });
+
+      const responseJson = await response.json().catch(() => null);
+      if (!response.ok || !responseJson?.success) {
+        throw new Error(responseJson?.error || `HTTP error! status: ${response.status}`);
+      }
+
+      toast({
+        title: 'Berhasil',
+        description: responseJson?.message || 'Catatan verifikasi berhasil disimpan'
+      });
+
+      setVerificationNoteDetail((prev) => (prev ? { ...prev, catatan: note } : prev));
+      setVerificationNoteEditing(false);
+      setVerificationNoteEditValue('');
+      await fetchMedicalRecord({ reset: true, outpatientPage: 1, inpatientPage: 1 });
+    } catch (error) {
+      console.error('Error saving verification note:', error);
+      toast({
+        title: 'Error',
+        description: error instanceof Error ? error.message : 'Gagal menyimpan catatan verifikasi',
+        variant: 'destructive'
+      });
+    } finally {
+      setVerificationNoteSaving(false);
+    }
+  };
+
+  const deleteVerificationNoteDetail = async () => {
+    if (!verificationNoteDetail) {
+      return;
+    }
+
+    if (!confirm('Apakah Anda yakin ingin menghapus catatan verifikasi ini?')) {
+      return;
+    }
+
+    try {
+      setVerificationNoteSaving(true);
+
+      const response = await fetch(API_URLS.DELETE_VERIFY_EXAMINATION_NOTE, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          no_rawat: verificationNoteDetail.no_rawat,
+          tgl_perawatan: verificationNoteDetail.tgl_perawatan,
+          jam_rawat: verificationNoteDetail.jam_rawat
+        })
+      });
+
+      const responseJson = await response.json().catch(() => null);
+      if (!response.ok || !responseJson?.success) {
+        throw new Error(responseJson?.error || `HTTP error! status: ${response.status}`);
+      }
+
+      toast({
+        title: 'Berhasil',
+        description: responseJson?.message || 'Catatan verifikasi berhasil dihapus'
+      });
+
+      setVerificationNoteDetail((prev) => (prev ? { ...prev, catatan: '' } : prev));
+      setVerificationNoteEditing(false);
+      setVerificationNoteEditValue('');
+      await fetchMedicalRecord({ reset: true, outpatientPage: 1, inpatientPage: 1 });
+    } catch (error) {
+      console.error('Error deleting verification note:', error);
+      toast({
+        title: 'Error',
+        description: error instanceof Error ? error.message : 'Gagal menghapus catatan verifikasi',
+        variant: 'destructive'
+      });
+    } finally {
+      setVerificationNoteSaving(false);
+    }
   };
 
   const confirmVerifyExamination = async () => {
@@ -12827,6 +13113,7 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
 
                         <TabsContent value="examinations" className="space-y-4">
                           {renderExaminationRoleFilter()}
+                          {renderInpatientVerificationToolbar()}
                           {renderExaminationCards(filteredInpatientExaminationHistory)}
                         </TabsContent>
 
@@ -15852,7 +16139,7 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
         open={verificationNoteDetail !== null}
         onOpenChange={(open) => {
           if (!open) {
-            setVerificationNoteDetail(null);
+            closeVerificationNoteDetail();
           }
         }}
       >
@@ -15890,14 +16177,68 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
             </div>
             <div className="space-y-1">
               <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Catatan Verifikasi</p>
-              <div className="whitespace-pre-line break-words rounded-lg border bg-muted/30 p-3 text-sm">
-                {verificationNoteDetail?.catatan || 'Catatan verifikasi tidak tersedia untuk SOAP ini.'}
-              </div>
+              {verificationNoteEditing ? (
+                <div className="space-y-2">
+                  <Textarea
+                    value={verificationNoteEditValue}
+                    onChange={(event) => setVerificationNoteEditValue(event.target.value)}
+                    maxLength={255}
+                    rows={4}
+                    placeholder="Tulis catatan verifikasi"
+                    disabled={verificationNoteSaving}
+                  />
+                  <p className="text-right text-xs text-muted-foreground">{verificationNoteEditValue.length}/255</p>
+                </div>
+              ) : (
+                <div className="whitespace-pre-line break-words rounded-lg border bg-muted/30 p-3 text-sm">
+                  {verificationNoteDetail?.catatan || 'Catatan verifikasi tidak tersedia untuk SOAP ini.'}
+                </div>
+              )}
             </div>
-            <div className="flex justify-end">
-              <Button type="button" variant="secondary" onClick={() => setVerificationNoteDetail(null)}>
-                Tutup
-              </Button>
+            <div className="flex flex-wrap justify-end gap-2">
+              {verificationNoteEditing ? (
+                <>
+                  <Button type="button" variant="outline" onClick={cancelVerificationNoteEdit} disabled={verificationNoteSaving}>
+                    Batal
+                  </Button>
+                  <Button
+                    type="button"
+                    onClick={() => void saveVerificationNoteDetail()}
+                    disabled={verificationNoteSaving || !verificationNoteEditValue.trim()}
+                  >
+                    {verificationNoteSaving ? <Loader2 className="mr-1 h-4 w-4 animate-spin" /> : null}
+                    {verificationNoteSaving ? 'Menyimpan...' : 'Simpan'}
+                  </Button>
+                </>
+              ) : (
+                <>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={startVerificationNoteEdit}
+                    disabled={verificationNoteSaving}
+                  >
+                    {Boolean((verificationNoteDetail?.catatan || '').trim())
+                      ? <Pencil className="mr-1 h-4 w-4" />
+                      : <Plus className="mr-1 h-4 w-4" />}
+                    {Boolean((verificationNoteDetail?.catatan || '').trim()) ? 'Edit' : 'Tambah Catatan'}
+                  </Button>
+                  {Boolean((verificationNoteDetail?.catatan || '').trim()) && (
+                    <Button
+                      type="button"
+                      variant="destructive"
+                      onClick={() => void deleteVerificationNoteDetail()}
+                      disabled={verificationNoteSaving}
+                    >
+                      <Trash2 className="mr-1 h-4 w-4" />
+                      Hapus
+                    </Button>
+                  )}
+                  <Button type="button" variant="secondary" onClick={closeVerificationNoteDetail} disabled={verificationNoteSaving}>
+                    Tutup
+                  </Button>
+                </>
+              )}
             </div>
           </div>
         </DialogContent>
