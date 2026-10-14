@@ -1661,6 +1661,76 @@ app.post('/api/verify-examination', async (req, res) => {
   }
 });
 
+app.post('/api/verify-examinations-batch', async (req, res) => {
+  try {
+    const { items, username, kd_dokter } = req.body || {};
+    const data = await VerifyExaminationService.bulkVerifyInpatientExaminations(
+      items,
+      username,
+      kd_dokter
+    );
+    await auditCrudSuccess(req, 'examination', 'verify', data, { reference_id: Array.isArray(items) ? items.length : 0 });
+    res.json(data);
+  } catch (error) {
+    await auditCrudFailure(req, 'examination', 'verify', error, {
+      reference_id: Array.isArray(req.body?.items) ? req.body.items.length : 0
+    });
+    console.error('Bulk verify examination error:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message
+    });
+  }
+});
+
+app.post('/api/verify-examination-note', async (req, res) => {
+  try {
+    const { no_rawat, tgl_perawatan, jam_rawat, catatan, kd_dokter } = req.body || {};
+    const data = await VerifyExaminationService.saveVerificationNote(
+      no_rawat,
+      tgl_perawatan,
+      jam_rawat,
+      catatan,
+      kd_dokter
+    );
+    await auditCrudSuccess(req, 'examination', data.action_type || 'update', data, {
+      reference_id: no_rawat
+    });
+    res.json(data);
+  } catch (error) {
+    await auditCrudFailure(req, 'examination', 'update', error, {
+      reference_id: req.body?.no_rawat
+    });
+    console.error('Save verification note error:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message
+    });
+  }
+});
+
+app.post('/api/delete-verify-examination-note', async (req, res) => {
+  try {
+    const { no_rawat, tgl_perawatan, jam_rawat } = req.body || {};
+    const data = await VerifyExaminationService.deleteVerificationNote(
+      no_rawat,
+      tgl_perawatan,
+      jam_rawat
+    );
+    await auditCrudSuccess(req, 'examination', 'delete', data, { reference_id: no_rawat });
+    res.json(data);
+  } catch (error) {
+    await auditCrudFailure(req, 'examination', 'delete', error, {
+      reference_id: req.body?.no_rawat
+    });
+    console.error('Delete verification note error:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message
+    });
+  }
+});
+
 // ICD data endpoint
 app.post('/api/icd-data', async (req, res) => {
   try {
