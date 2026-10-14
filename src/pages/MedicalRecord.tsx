@@ -1664,6 +1664,14 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
     visit: { no_rawat: string };
   } | null>(null);
   const [verificationNote, setVerificationNote] = useState('');
+  const [verificationNoteDetail, setVerificationNoteDetail] = useState<{
+    no_rawat: string;
+    tgl_perawatan: string;
+    jam_rawat: string;
+    verified_at: string | null;
+    catatan: string;
+    verifikator: string;
+  } | null>(null);
   const [aiScribeModal, setAiScribeModal] = useState(false);
   const [aiScribeData, setAiScribeData] = useState<any>(null);
   const [aiScribeLoading, setAiScribeLoading] = useState(false);
@@ -3460,7 +3468,7 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
       const isVerifying = verifyingExaminationKey === examinationKey;
       const editLabel = isVerified ? 'Sudah Diverifikasi' : canEdit ? 'Edit' : 'Bukan Data Anda';
       const deleteLabel = isVerified ? 'Sudah Diverifikasi' : allowedToDelete ? 'Hapus' : 'Bukan Data Anda';
-      const verifyLabel = isVerified ? 'Sudah Diverifikasi' : canVerify ? 'Verifikasi' : 'Bukan Data Anda';
+      const verifyLabel = isVerified ? 'Lihat Catatan Verifikasi' : canVerify ? 'Verifikasi' : 'Bukan Data Anda';
       const resolvedRole = resolveExaminationRole(exam?.role, exam?.pegawai, exam?.nama, visit?.dokter, visit?.nm_dokter);
       const roleStyles = getExaminationRoleStyles(resolvedRole);
       const roleLabel = getExaminationRoleLabel(resolvedRole);
@@ -3547,9 +3555,16 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
               <Button
                 size="sm"
                 variant={isVerified ? 'secondary' : 'default'}
-                onClick={() => handleVerifyExamination(exam, visit)}
-                disabled={!canVerify || isVerifying}
-                className="h-9 w-9 p-0 sm:w-auto sm:px-3"
+                onClick={() => {
+                  if (isVerified) {
+                    handleShowVerificationNote(exam, visit);
+                    return;
+                  }
+
+                  void handleVerifyExamination(exam, visit);
+                }}
+                disabled={isVerified ? false : (!canVerify || isVerifying)}
+                className={cn('h-9 w-9 p-0 sm:w-auto sm:px-3', isVerified && 'cursor-pointer')}
                 aria-label={verifyLabel}
                 title={verifyLabel}
               >
@@ -3579,10 +3594,15 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
                   {roleLabel}
                 </span>
                 {rawatType === 'Ranap' && isVerified ? (
-                  <span className="inline-flex items-center rounded-full border border-emerald-200 bg-emerald-50 px-2.5 py-1 text-xs font-medium text-emerald-700 dark:border-emerald-900/60 dark:bg-emerald-950/40 dark:text-emerald-300">
+                  <button
+                    type="button"
+                    onClick={() => handleShowVerificationNote(exam, visit)}
+                    title="Lihat catatan verifikasi"
+                    className="inline-flex cursor-pointer items-center rounded-full border border-emerald-200 bg-emerald-50 px-2.5 py-1 text-xs font-medium text-emerald-700 transition-colors hover:bg-emerald-100 dark:border-emerald-900/60 dark:bg-emerald-950/40 dark:text-emerald-300 dark:hover:bg-emerald-900/40"
+                  >
                     <Check className="mr-1 h-3.5 w-3.5" />
                     Verified
-                  </span>
+                  </button>
                 ) : null}
               </div>
             </div>
@@ -9330,6 +9350,27 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
 
     setPendingVerification({ examination, visit });
     setVerificationNote('');
+  };
+
+  const handleShowVerificationNote = (
+    examination: {
+      no_rawat?: string;
+      tgl_perawatan?: string;
+      jam_rawat?: string;
+      verified_at?: string | null;
+      verification_note?: string;
+      verification_by?: string;
+    },
+    visit?: { no_rawat?: string }
+  ) => {
+    setVerificationNoteDetail({
+      no_rawat: String(visit?.no_rawat || examination?.no_rawat || '').trim(),
+      tgl_perawatan: String(examination?.tgl_perawatan || '').trim(),
+      jam_rawat: String(examination?.jam_rawat || '').trim(),
+      verified_at: examination?.verified_at || null,
+      catatan: String(examination?.verification_note || '').trim(),
+      verifikator: String(examination?.verification_by || '').trim()
+    });
   };
 
   const confirmVerifyExamination = async () => {
@@ -15801,6 +15842,61 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
                 disabled={verifyingExaminationKey !== null || !verificationNote.trim()}
               >
                 {verifyingExaminationKey !== null ? 'Menyimpan...' : 'Verifikasi & Simpan Catatan'}
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog
+        open={verificationNoteDetail !== null}
+        onOpenChange={(open) => {
+          if (!open) {
+            setVerificationNoteDetail(null);
+          }
+        }}
+      >
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Check className="h-5 w-5 text-emerald-600 dark:text-emerald-400" />
+              Catatan Verifikasi SOAP
+            </DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+              <div>
+                <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">No. Rawat</p>
+                <p className="break-words text-sm font-medium">{verificationNoteDetail?.no_rawat || '-'}</p>
+              </div>
+              <div>
+                <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Waktu Pemeriksaan</p>
+                <p className="text-sm font-medium">
+                  {verificationNoteDetail?.tgl_perawatan
+                    ? `${formatUIDate(verificationNoteDetail.tgl_perawatan)}${verificationNoteDetail.jam_rawat ? ` • ${verificationNoteDetail.jam_rawat.slice(0, 5)}` : ''}`
+                    : '-'}
+                </p>
+              </div>
+              <div>
+                <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Waktu Verifikasi</p>
+                <p className="text-sm font-medium text-emerald-700 dark:text-emerald-300">
+                  {verificationNoteDetail?.verified_at ? formatUIDateTime(verificationNoteDetail.verified_at) : '-'}
+                </p>
+              </div>
+              <div>
+                <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Diverifikasi Oleh</p>
+                <p className="text-sm font-medium">{verificationNoteDetail?.verifikator || '-'}</p>
+              </div>
+            </div>
+            <div className="space-y-1">
+              <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Catatan Verifikasi</p>
+              <div className="whitespace-pre-line break-words rounded-lg border bg-muted/30 p-3 text-sm">
+                {verificationNoteDetail?.catatan || 'Catatan verifikasi tidak tersedia untuk SOAP ini.'}
+              </div>
+            </div>
+            <div className="flex justify-end">
+              <Button type="button" variant="secondary" onClick={() => setVerificationNoteDetail(null)}>
+                Tutup
               </Button>
             </div>
           </div>

@@ -1078,6 +1078,66 @@ class GetMedicalRecordService {
     }));
   }
 
+  // Normalize the composite key used to match a SOAP record with its verification note
+  static buildVerificationNoteKey(noRawat, tglPerawatan, jamRawat) {
+    const datePart = this.formatDateOnly(tglPerawatan) || String(tglPerawatan || '').slice(0, 10);
+    const timeMatch = String(jamRawat || '').trim().match(/^(\d{1,2}):(\d{2})/);
+    const timePart = timeMatch ? `${timeMatch[1].padStart(2, '0')}:${timeMatch[2]}` : '';
+
+    return `${String(noRawat || '').trim()}|${datePart}|${timePart}`;
+  }
+
+  // Helper function to fetch SOAP verification notes, keyed by no_rawat + date + time
+  static async fetchVerificationNotes(noRawats) {
+    const normalizedNoRawats = Array.from(
+      new Set(
+        (Array.isArray(noRawats) ? noRawats : [noRawats])
+          .map((value) => String(value || '').trim())
+          .filter(Boolean)
+      )
+    );
+
+    if (!normalizedNoRawats.length) {
+      return new Map();
+    }
+
+    try {
+      const placeholders = normalizedNoRawats.map(() => '?').join(', ');
+      const [rows] = await db.execute(
+        `
+          SELECT
+            cvs.no_rawat,
+            cvs.tgl_perawatan,
+            cvs.jam_rawat,
+            cvs.catatan,
+            cvs.nip,
+            cvs.kd_dokter,
+            COALESCE(TRIM(d.nm_dokter), '') AS nm_dokter,
+            COALESCE(TRIM(p.nama), '') AS nm_pegawai
+          FROM catatan_verif_soap cvs
+          LEFT JOIN dokter d ON TRIM(d.kd_dokter) = TRIM(cvs.kd_dokter)
+          LEFT JOIN pegawai p ON TRIM(p.nik) = TRIM(cvs.nip)
+          WHERE TRIM(cvs.no_rawat) IN (${placeholders})
+        `,
+        normalizedNoRawats
+      );
+
+      const notes = new Map();
+      rows.forEach((row) => {
+        const key = this.buildVerificationNoteKey(row.no_rawat, row.tgl_perawatan, row.jam_rawat);
+        notes.set(key, {
+          catatan: String(row.catatan || '').trim(),
+          verifikator: String(row.nm_dokter || row.nm_pegawai || row.kd_dokter || '').trim()
+        });
+      });
+
+      return notes;
+    } catch (error) {
+      console.error('Error fetching SOAP verification notes:', error);
+      return new Map();
+    }
+  }
+
   // Helper function to fetch examinations
   static async fetchExaminations(noRawat, type) {
     const table = type === 'ralan' ? 'pemeriksaan_ralan' : 'pemeriksaan_ranap';
@@ -1111,6 +1171,8 @@ class GetMedicalRecordService {
     `;
     const [rows] = await db.execute(examQuery, [...psikologRoleParams, noRawat]);
 
+    const verificationNotes = type === 'ranap' ? await this.fetchVerificationNotes(noRawat) : new Map();
+
     let autoStopOrders = [];
     if (rows.some((row) => Number(row.auto_stop_order) === 1)) {
       try {
@@ -1121,7 +1183,12 @@ class GetMedicalRecordService {
       }
     }
     
-    return rows.map(row => ({
+    return rows.map(row => {
+      const verificationNote = verificationNotes.get(
+        this.buildVerificationNoteKey(row.no_rawat, row.tgl_perawatan, row.jam_rawat)
+      );
+
+      return {
       tanggal: this.formatDateOnly(row.tgl_perawatan) + ' ' + row.jam_rawat,
       tgl_perawatan: this.formatDateOnly(row.tgl_perawatan),
       jam_rawat: row.jam_rawat,
@@ -1149,8 +1216,11 @@ class GetMedicalRecordService {
       i: row.instruksi || '',
       e: row.evaluasi || '',
       pegawai: row.nama || '',
-      verified_at: row.verified_at || null
-    }));
+      verified_at: row.verified_at || null,
+      verification_note: verificationNote?.catatan || '',
+      verification_by: verificationNote?.verifikator || ''
+      };
+    });
   }
 
   static async fetchTriageIgd(noRawat) {
@@ -2831,6 +2901,10 @@ class GetMedicalRecordService {
       [...psikologRoleParams, ...params, limit, offset]
     );
 
+    const verificationNotes = statusLanjut === 'Ranap'
+      ? await this.fetchVerificationNotes(rows.map((row) => row.no_rawat))
+      : new Map();
+
     const matchingStopOrderRows = rows.filter((row) => Number(row.auto_stop_order) === 1);
     let autoStopOrders = [];
     if (matchingStopOrderRows.length) {
@@ -2858,13 +2932,19 @@ class GetMedicalRecordService {
             )
           : [];
 
+        const verificationNote = verificationNotes.get(
+          this.buildVerificationNoteKey(exam.no_rawat, examDate, examTime)
+        );
+
         return {
           key: `${type}-${exam.no_rawat}-${examDate}-${examTime}-${examIndex}`,
           visit: { no_rawat: exam.no_rawat, status_lanjut: statusLanjut },
           exam: {
             ...exam,
             auto_stop_order: Number(exam.auto_stop_order) === 1,
-            auto_stop_orders: examAutoStopOrders
+            auto_stop_orders: examAutoStopOrders,
+            verification_note: verificationNote?.catatan || '',
+            verification_by: verificationNote?.verifikator || ''
           },
           rawatType: statusLanjut,
           timestamp: Number.isNaN(parsedDate) ? 0 : parsedDate
