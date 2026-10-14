@@ -344,6 +344,33 @@ class GetMedicalRecordService {
     return noteMap;
   }
 
+  static async fetchPatientNotesByNoRawat(noRawat) {
+    const normalizedNoRawat = String(noRawat || '').trim();
+    if (!normalizedNoRawat) {
+      return [];
+    }
+
+    const [rows] = await db.execute(
+      `
+        SELECT
+          cp.no_rawat,
+          DATE_FORMAT(cp.tanggal, '%Y-%m-%d') AS tanggal,
+          TIME_FORMAT(cp.jam, '%H:%i') AS jam,
+          TRIM(cp.catatan) AS catatan,
+          COALESCE(d.nm_dokter, cp.kd_dokter, '') AS petugas
+        FROM catatan_perawatan cp
+        LEFT JOIN dokter d ON d.kd_dokter = cp.kd_dokter
+        WHERE cp.no_rawat = ?
+        ORDER BY cp.tanggal DESC, cp.jam DESC
+      `,
+      [normalizedNoRawat]
+    );
+
+    return rows
+      .map((row) => this.buildPatientNoteSummary(row))
+      .filter(Boolean);
+  }
+
   static async fetchIcdDetailsByNoRawat(noRawat, statusLanjut) {
     const normalizedNoRawat = String(noRawat || '').trim();
     if (!normalizedNoRawat) {
@@ -2841,12 +2868,20 @@ class GetMedicalRecordService {
     if (String(visit.status_lanjut || '').trim() === 'Ranap') {
       const inpatientDetails = await this.fetchInpatientDetailsByNoRawats([noRawat]);
       const inpatientDetail = inpatientDetails.find((detail) => detail.no_rawat === noRawat);
-        const patientNoteMap = await this.fetchPatientNotesSummaryMap([noRawat]);
-        return this.buildInpatientVisit(visit, inpatientDetail, patientNoteMap.get(noRawat) || null);
+      const [patientNoteMap, patientNotes] = await Promise.all([
+        this.fetchPatientNotesSummaryMap([noRawat]),
+        this.fetchPatientNotesByNoRawat(noRawat)
+      ]);
+      const builtVisit = await this.buildInpatientVisit(visit, inpatientDetail, patientNoteMap.get(noRawat) || null);
+      return { ...builtVisit, patient_notes: patientNotes };
     }
 
-      const patientNoteMap = await this.fetchPatientNotesSummaryMap([noRawat]);
-      return this.buildOutpatientVisit(visit, patientNoteMap.get(noRawat) || null);
+    const [patientNoteMap, patientNotes] = await Promise.all([
+      this.fetchPatientNotesSummaryMap([noRawat]),
+      this.fetchPatientNotesByNoRawat(noRawat)
+    ]);
+    const builtVisit = await this.buildOutpatientVisit(visit, patientNoteMap.get(noRawat) || null);
+    return { ...builtVisit, patient_notes: patientNotes };
   }
 
   static async fetchExaminationsPage(no_rm, statusLanjut, page, limit, focusNoRawat) {
