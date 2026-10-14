@@ -46,6 +46,13 @@ interface PaginationMeta {
   hasMore: boolean;
 }
 
+interface VisitPatientNote {
+  tanggal?: string;
+  jam?: string;
+  catatan?: string;
+  petugas?: string;
+}
+
 interface MedicalRecordResponseData {
   patient?: {
     nama?: string;
@@ -427,6 +434,11 @@ const MedicalRecordReadonly: React.FC<MedicalRecordReadonlyProps> = ({
           const laboratories = Array.isArray(visit.laboratory) ? visit.laboratory : [];
           const radiologies = Array.isArray(visit.radiology) ? visit.radiology : [];
           const operationReports = Array.isArray(visit.operationReports) ? visit.operationReports : [];
+          const patientNotes = Array.isArray(visit.patient_notes) && visit.patient_notes.length > 0
+            ? visit.patient_notes
+            : String(visit.patient_note?.catatan || '').trim()
+              ? [visit.patient_note]
+              : [];
 
           return (
             <div key={visit.no_rawat} className="rounded-lg border bg-card shadow-sm">
@@ -476,6 +488,27 @@ const MedicalRecordReadonly: React.FC<MedicalRecordReadonlyProps> = ({
                       </>
                     ) : null}
                   </div>
+
+                  <SectionCard
+                    title="Catatan Pasien"
+                    icon={<FileText className="h-4 w-4 text-primary" />}
+                    emptyMessage="Belum ada catatan pasien untuk kunjungan ini."
+                    hasData={patientNotes.length > 0}
+                  >
+                    {patientNotes.map((note: VisitPatientNote, index: number) => {
+                      const noteDateTime = [note.tanggal, note.jam].filter(Boolean).join(' ');
+                      const noteMeta = [note.petugas, noteDateTime ? formatDateTime(noteDateTime) : '']
+                        .filter(Boolean)
+                        .join(' • ');
+
+                      return (
+                        <div key={`${visit.no_rawat}-note-${index}`} className="rounded-md border px-3 py-3">
+                          {noteMeta ? <p className="text-xs text-muted-foreground">{noteMeta}</p> : null}
+                          <p className="mt-2 whitespace-pre-wrap break-words text-sm">{note.catatan}</p>
+                        </div>
+                      );
+                    })}
+                  </SectionCard>
 
                   <SectionCard
                     title="Pemeriksaan"
