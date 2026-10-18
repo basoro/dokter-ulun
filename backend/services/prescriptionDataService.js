@@ -533,6 +533,8 @@ class PrescriptionDataService {
     }
 
     const placeholders = normalizedCodes.map(() => '?').join(', ');
+    // Ambang jumlah resep kronis mengikuti mlite_apotek_online_maping_obat.jml
+    // (bukan angka tetap 30): jml < mao.jml tidak dihitung kronis, jml >= mao.jml dihitung kronis.
     const query = `
       SELECT
         rd.kode_brng,
@@ -549,7 +551,7 @@ class PrescriptionDataService {
         ON mao.kode_brng = rd.kode_brng
       WHERE current_visit.no_rawat = ?
         AND rd.kode_brng IN (${placeholders})
-        AND CAST(rd.jml AS DECIMAL(12, 3)) >= 30
+        AND CAST(rd.jml AS DECIMAL(12, 3)) >= mao.jml
         AND DATE(mv.tgl_registrasi) <= DATE(current_visit.tgl_registrasi)
         AND DATEDIFF(DATE(current_visit.tgl_registrasi), DATE(mv.tgl_registrasi)) BETWEEN 0 AND 30
       ORDER BY DATE(mv.tgl_registrasi) DESC, ro.tgl_peresepan DESC, ro.jam DESC, ro.no_resep DESC
