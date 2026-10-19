@@ -6785,7 +6785,7 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
     medIndex: number,
     obatIndex: number,
     kodeBrng: string,
-    excludedNoResep = ''
+    excludedNoResep?: string
   ) => {
     const fieldKey = getMedicineFieldKey(medIndex, obatIndex);
     const normalizedCode = String(kodeBrng || '').trim();
@@ -6809,7 +6809,9 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
         action: 'check_chronic_medicine',
         no_rawat: formattedNoRawat,
         kode_brng: normalizedCode,
-        no_resep: String(excludedNoResep || editingPrescriptionNo || '')
+        no_resep: String(
+          excludedNoResep !== undefined ? excludedNoResep : (editingPrescriptionNo || '')
+        )
       });
       const response = await fetch(`${API_URLS.PRESCRIPTION_DATA}?${params.toString()}`);
       const responseJson = await response.json().catch(() => null);
@@ -6891,11 +6893,24 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
         }))
       : [];
     const hasMedicineItems = newMedication.obat.length > 0;
+    const targetMedIndex = hasMedicineItems && isFirstEmpty ? 0 : medications.length;
 
     if (hasMedicineItems && isFirstEmpty) {
       setMedications([newMedication]);
     } else if (hasMedicineItems) {
       setMedications([...medications, newMedication]);
+    }
+
+    if (hasMedicineItems) {
+      // Periksa batas resep kronis untuk setiap item obat yang disalin,
+      // supaya alert kronis tetap tampil seperti saat memilih obat manual.
+      setChronicMedicineLimits({});
+      newMedication.obat.forEach((item, index) => {
+        const kodeBrng = String(item.kode_brng || '').trim();
+        if (kodeBrng) {
+          void checkChronicMedicineLimit(targetMedIndex, index, kodeBrng, '');
+        }
+      });
     }
 
     if (compoundItems.length > 0) {
