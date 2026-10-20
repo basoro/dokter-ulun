@@ -1415,8 +1415,8 @@ app.get('/api/sbar-ranap/:no_rawat', async (req, res) => {
 app.post('/api/sbar-ranap/:no_rawat/verification', async (req, res) => {
   try {
     const { no_rawat } = req.params;
-    const { tgl_perawatan, jam_rawat, kd_dokter, catatan } = req.body || {};
-    const result = await SbarService.verifySbar(no_rawat, tgl_perawatan, jam_rawat, kd_dokter, catatan);
+    const { tgl_perawatan, jam_rawat, kd_dokter } = req.body || {};
+    const result = await SbarService.verifySbar(no_rawat, tgl_perawatan, jam_rawat, kd_dokter);
     res.json(result);
   } catch (error) {
     console.error('Error in SBAR ranap verification endpoint:', error);

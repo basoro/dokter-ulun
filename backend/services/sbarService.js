@@ -46,12 +46,11 @@ class SbarService {
     }));
   }
 
-  static async verifySbar(noRawat, tglPerawatan, jamRawat, kdDokter, catatan = '') {
+  static async verifySbar(noRawat, tglPerawatan, jamRawat, kdDokter) {
     const normalizedNoRawat = String(noRawat || '').trim();
     const normalizedDate = String(tglPerawatan || '').trim();
     const normalizedTime = String(jamRawat || '').trim();
     const normalizedKdDokter = String(kdDokter || '').trim().slice(0, 20);
-    const normalizedCatatan = String(catatan || '').trim();
 
     if (!normalizedNoRawat || !normalizedDate || !normalizedTime) {
       throw new Error('no_rawat, tgl_perawatan, dan jam_rawat wajib diisi');
@@ -78,10 +77,10 @@ class SbarService {
     await executeQuery(
       `
         UPDATE pemeriksaan_sbar_ranap
-        SET verified_at = NOW(), verified_by = ?, verified_note = ?
+        SET verified_at = NOW(), verified_by = ?, verified_note = NULL
         WHERE no_rawat = ? AND tgl_perawatan = ? AND jam_rawat = ?
       `,
-      [normalizedKdDokter, normalizedCatatan, normalizedNoRawat, normalizedDate, normalizedTime]
+      [normalizedKdDokter, normalizedNoRawat, normalizedDate, normalizedTime]
     );
 
     return {
@@ -91,7 +90,7 @@ class SbarService {
       tgl_perawatan: normalizedDate,
       jam_rawat: normalizedTime,
       verified_by: normalizedKdDokter,
-      verified_note: normalizedCatatan
+      verified_note: null
     };
   }
 }
