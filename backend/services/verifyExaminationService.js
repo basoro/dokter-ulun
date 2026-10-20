@@ -1,6 +1,7 @@
-import db from '../config/database.js';
+import db, { executeQuery } from '../config/database.js';
 
 const NOTE_TABLE = 'catatan_verif_soap';
+const SELF_ONLY_VERIFICATION_MESSAGE = 'Verifikasi SOAP hanya dapat dilakukan untuk SOAP milik sendiri';
 
 const normalizeTimePart = (value) => {
   const match = String(value || '').trim().match(/^(\d{1,2}):(\d{2})/);
@@ -11,6 +12,22 @@ const normalizeNoRawat = (value) => String(value || '').trim();
 const normalizeDate = (value) => String(value || '').trim();
 
 class VerifyExaminationService {
+  static async getVerificationMode() {
+    const rows = await executeQuery(
+      'SELECT value FROM mlite_settings WHERE module = ? AND field = ? LIMIT 1',
+      ['settings', 'dokter_verif_soap']
+    );
+
+    return String(rows[0]?.value || '').trim().toLowerCase() === 'self' ? 'self' : 'all';
+  }
+
+  static isOwnSoap(nip, kd_dokter) {
+    const normalizedNip = String(nip || '').trim().toLowerCase();
+    const normalizedKdDokter = String(kd_dokter || '').trim().toLowerCase();
+
+    return Boolean(normalizedNip && normalizedKdDokter && normalizedNip === normalizedKdDokter);
+  }
+
   static async verifyInpatientExamination(no_rawat, tgl_perawatan, jam_rawat, username = '', kd_dokter = '', catatan = '') {
     const normalizedNoRawat = normalizeNoRawat(no_rawat);
     const normalizedDate = normalizeDate(tgl_perawatan);
@@ -34,6 +51,7 @@ class VerifyExaminationService {
       throw new Error('Catatan verifikasi maksimal 255 karakter');
     }
 
+    const verificationMode = await this.getVerificationMode();
     const connection = await db.getConnection();
     try {
       await connection.beginTransaction();
@@ -60,6 +78,10 @@ class VerifyExaminationService {
       const nip = String(record.nip || '').trim();
       if (!nip) {
         throw new Error('NIP pada SOAP tidak ditemukan');
+      }
+
+      if (verificationMode === 'self' && !this.isOwnSoap(nip, normalizedKdDokter)) {
+        throw new Error(SELF_ONLY_VERIFICATION_MESSAGE);
       }
 
       const [updateResult] = await connection.execute(
@@ -145,6 +167,7 @@ class VerifyExaminationService {
       throw new Error('Tidak ada SOAP harian rawat inap yang dipilih untuk diverifikasi');
     }
 
+    const verificationMode = await this.getVerificationMode();
     const connection = await db.getConnection();
     try {
       await connection.beginTransaction();
@@ -155,7 +178,7 @@ class VerifyExaminationService {
       for (const item of normalizedItems) {
         const [rows] = await connection.execute(
           `
-            SELECT verified_at
+            SELECT nip, verified_at
             FROM pemeriksaan_ranap
             WHERE no_rawat = ? AND tgl_perawatan = ? AND jam_rawat = ?
             LIMIT 1
@@ -171,6 +194,11 @@ class VerifyExaminationService {
 
         if (rows[0]?.verified_at) {
           results.push({ ...item, success: false, message: 'SOAP harian rawat inap sudah diverifikasi' });
+          continue;
+        }
+
+        if (verificationMode === 'self' && !this.isOwnSoap(rows[0]?.nip, normalizedKdDokter)) {
+          results.push({ ...item, success: false, message: `${SELF_ONLY_VERIFICATION_MESSAGE}` });
           continue;
         }
 

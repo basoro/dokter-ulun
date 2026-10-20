@@ -150,6 +150,62 @@ router.put('/alert-kronis-setting', asyncHandler(async (req, res) => {
 }));
 
 /**
+ * @route GET /satu-sehat/verif-soap-setting
+ * @desc Get dokter_verif_soap setting value (self/all) for SOAP verification
+ * @access Public read; manage flag limited to SETTINGS_BUTTON_SSRME_ACCESS env
+ */
+router.get('/verif-soap-setting', asyncHandler(async (req, res) => {
+  const username = getRequestUsername(req);
+  const rows = await executeQuery(
+    'SELECT value FROM mlite_settings WHERE module = ? AND field = ? LIMIT 1',
+    ['settings', 'dokter_verif_soap']
+  );
+  const value = String(rows[0]?.value || '').trim().toLowerCase() === 'self' ? 'self' : 'all';
+
+  return res.json({
+    success: true,
+    value,
+    can_manage: getSettingsButtonAccess().includes(username)
+  });
+}));
+
+/**
+ * @route PUT /satu-sehat/verif-soap-setting
+ * @desc Set dokter_verif_soap setting value (self/all) for SOAP verification
+ * @access Restricted to kd_dokter in SETTINGS_BUTTON_SSRME_ACCESS env
+ */
+router.put('/verif-soap-setting', asyncHandler(async (req, res) => {
+  const username = getRequestUsername(req);
+  if (!username || !getSettingsButtonAccess().includes(username)) {
+    return res.status(403).json({ success: false, message: 'Anda tidak memiliki akses untuk mengubah pengaturan ini.' });
+  }
+
+  const value = String(req.body?.value || '').trim().toLowerCase();
+  if (value !== 'self' && value !== 'all') {
+    return res.status(400).json({ success: false, message: 'Nilai pengaturan harus self atau all.' });
+  }
+
+  const existingRows = await executeQuery(
+    'SELECT 1 FROM mlite_settings WHERE module = ? AND field = ? LIMIT 1',
+    ['settings', 'dokter_verif_soap']
+  );
+
+  if (existingRows.length) {
+    await executeQuery(
+      'UPDATE mlite_settings SET value = ? WHERE module = ? AND field = ?',
+      [value, 'settings', 'dokter_verif_soap']
+    );
+  } else {
+    await executeQuery(
+      'INSERT INTO mlite_settings (module, field, value) VALUES (?, ?, ?)',
+      ['settings', 'dokter_verif_soap', value]
+    );
+  }
+
+  return res.json({ success: true, value });
+}));
+
+/**
  * @route POST /satu-sehat/rme-nasional
  * @desc Buka RME Nasional SATUSEHAT (ChaRME) untuk sebuah kunjungan.
  *       Alur: token -> SHL; bila consent belum ada, buat CHL lalu coba lagi.

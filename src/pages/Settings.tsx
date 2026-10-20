@@ -17,6 +17,7 @@ import { Switch } from '@/components/ui/switch';
 import { Separator } from '@/components/ui/separator';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 
 const formatGender = (value?: string) => {
   if (value === 'P') {
@@ -73,6 +74,10 @@ const Settings: React.FC = () => {
   const [alertKronisEnabled, setAlertKronisEnabled] = React.useState(false);
   const [alertKronisSettingsLoaded, setAlertKronisSettingsLoaded] = React.useState(false);
   const [savingAlertKronis, setSavingAlertKronis] = React.useState(false);
+  const [canManageVerifSoap, setCanManageVerifSoap] = React.useState(false);
+  const [verifSoapMode, setVerifSoapMode] = React.useState<'self' | 'all'>('all');
+  const [verifSoapSettingsLoaded, setVerifSoapSettingsLoaded] = React.useState(false);
+  const [savingVerifSoap, setSavingVerifSoap] = React.useState(false);
 
   React.useEffect(() => {
     setPreferences(loadNotificationPreferences());
@@ -159,6 +164,74 @@ const Settings: React.FC = () => {
       isActive = false;
     };
   }, [user?.username]);
+
+  React.useEffect(() => {
+    if (!user?.username) {
+      return;
+    }
+
+    let isActive = true;
+    setVerifSoapSettingsLoaded(false);
+
+    const loadVerifSoapSetting = async () => {
+      try {
+        const response = await fetch(
+          `${API_URLS.VERIF_SOAP_SETTING}?username=${encodeURIComponent(user.username)}`
+        );
+        const result = await response.json().catch(() => null);
+
+        if (!response.ok || !result?.success) {
+          throw new Error(result?.message || 'Gagal memuat pengaturan Verifikasi SOAP.');
+        }
+
+        if (isActive) {
+          setCanManageVerifSoap(Boolean(result.can_manage));
+          setVerifSoapMode(result.value === 'self' ? 'self' : 'all');
+        }
+      } catch (error) {
+        if (isActive) {
+          setCanManageVerifSoap(false);
+          toast.error(error instanceof Error ? error.message : 'Gagal memuat pengaturan Verifikasi SOAP.');
+        }
+      } finally {
+        if (isActive) {
+          setVerifSoapSettingsLoaded(true);
+        }
+      }
+    };
+
+    void loadVerifSoapSetting();
+    return () => {
+      isActive = false;
+    };
+  }, [user?.username]);
+
+  const handleVerifSoapChange = async (mode: 'self' | 'all') => {
+    if (!user?.username) {
+      return;
+    }
+
+    try {
+      setSavingVerifSoap(true);
+      const response = await fetch(API_URLS.VERIF_SOAP_SETTING, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ username: user.username, value: mode })
+      });
+      const result = await response.json().catch(() => null);
+
+      if (!response.ok || !result?.success) {
+        throw new Error(result?.message || 'Gagal menyimpan pengaturan Verifikasi SOAP.');
+      }
+
+      setVerifSoapMode(result.value === 'self' ? 'self' : 'all');
+      toast.success('Pengaturan Verifikasi SOAP berhasil disimpan.');
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'Gagal menyimpan pengaturan Verifikasi SOAP.');
+    } finally {
+      setSavingVerifSoap(false);
+    }
+  };
 
   const handlePreferenceChange = (key: keyof NotificationPreferences, value: boolean) => {
     const nextPreferences = {
@@ -623,6 +696,30 @@ const Settings: React.FC = () => {
                       disabled={savingAlertKronis}
                       aria-label="Alert Obat Kronis ON | OFF"
                     />
+                  </div>
+                )}
+
+                {canManageVerifSoap && (
+                  <div className="flex flex-col gap-3 rounded-lg border p-4 sm:flex-row sm:items-center sm:justify-between">
+                    <div>
+                      <p className="font-medium">Verifikasi SOAP</p>
+                      <p className="text-sm text-muted-foreground">
+                        Pilih <span className="font-medium">Self</span> agar dokter hanya dapat memverifikasi SOAP miliknya sendiri, atau <span className="font-medium">All</span> agar semua SOAP rawat inap dapat diverifikasi.
+                      </p>
+                    </div>
+                    <Select
+                      value={verifSoapMode}
+                      onValueChange={(value) => void handleVerifSoapChange(value as 'self' | 'all')}
+                      disabled={savingVerifSoap || !verifSoapSettingsLoaded}
+                    >
+                      <SelectTrigger className="w-full sm:w-[220px]" aria-label="Verifikasi SOAP">
+                        <SelectValue placeholder="Pilih mode verifikasi" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="self">Self (SOAP sendiri)</SelectItem>
+                        <SelectItem value="all">All (Semua SOAP)</SelectItem>
+                      </SelectContent>
+                    </Select>
                   </div>
                 )}
               </CardContent>
