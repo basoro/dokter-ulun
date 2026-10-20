@@ -1661,6 +1661,7 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
   const [isDpjpExpanded, setIsDpjpExpanded] = useState(false);
   const [editingExamination, setEditingExamination] = useState<any>(null);
   const [verifyingExaminationKey, setVerifyingExaminationKey] = useState<string | null>(null);
+  const [verifSoapMode, setVerifSoapMode] = useState<'self' | 'all'>('all');
   const [pendingVerification, setPendingVerification] = useState<{
     examination: { tgl_perawatan: string; jam_rawat: string };
     visit: { no_rawat: string };
@@ -1688,6 +1689,27 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
   const { toast } = useToast();
   const { user } = useAuth();
   const currentUsername = String(user?.username || '').trim();
+  useEffect(() => {
+    let isActive = true;
+
+    const loadVerifSoapSetting = async () => {
+      try {
+        const response = await fetch(API_URLS.VERIF_SOAP_SETTING);
+        const result = await response.json().catch(() => null);
+
+        if (isActive && response.ok && result?.success) {
+          setVerifSoapMode(result.value === 'self' ? 'self' : 'all');
+        }
+      } catch (error) {
+        console.error('Error loading verif soap setting:', error);
+      }
+    };
+
+    void loadVerifSoapSetting();
+    return () => {
+      isActive = false;
+    };
+  }, []);
   const notifyVerificationNoteLimit = useCallback(() => {
     toast({
       title: 'Batas karakter',
@@ -3434,10 +3456,20 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
   const canDeleteLabRequest = (lab: any) => matchesCurrentUser(lab?.dokter_perujuk);
   const canDeleteRadiologyRequest = (rad: any) => matchesCurrentUser(rad?.dokter_perujuk);
   const canEditExamination = canDeleteExamination;
+  const isOwnSoapExamination = (exam: { nip?: string; kd_dokter?: string } | null | undefined) => {
+    const normalizedCurrentUsername = currentUsername.toLowerCase();
+    if (!normalizedCurrentUsername) {
+      return false;
+    }
+
+    return [exam?.nip, exam?.kd_dokter]
+      .some((value) => String(value || '').trim().toLowerCase() === normalizedCurrentUsername);
+  };
   const canVerifyExamination = (exam: any, rawatType: 'Ralan' | 'Ranap' | 'IGD') => (
     rawatType === 'Ranap' &&
     allowRanapVerification &&
-    !isVerifiedExamination(exam)
+    !isVerifiedExamination(exam) &&
+    (verifSoapMode !== 'self' || isOwnSoapExamination(exam))
   );
   const canEditPrescription = canDeletePrescription;
   const canEditLabRequest = canDeleteLabRequest;
@@ -3580,7 +3612,9 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
             <p className="text-sm font-medium">Verifikasi Massal SOAP</p>
             <p className="text-xs text-muted-foreground">
               {selectableKeys.length === 0
-                ? 'Tidak ada SOAP harian rawat inap yang belum diverifikasi.'
+                ? (verifSoapMode === 'self'
+                  ? 'Tidak ada SOAP harian rawat inap milik Anda yang belum diverifikasi.'
+                  : 'Tidak ada SOAP harian rawat inap yang belum diverifikasi.')
                 : `${selectedCount} dari ${selectableKeys.length} SOAP belum diverifikasi dipilih. Verifikasi massal tidak menyimpan catatan.`}
             </p>
           </div>
@@ -3628,7 +3662,13 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
       const isVerifying = verifyingExaminationKey === examinationKey;
       const editLabel = isVerified ? 'Sudah Diverifikasi' : canEdit ? 'Edit' : 'Bukan Data Anda';
       const deleteLabel = isVerified ? 'Sudah Diverifikasi' : allowedToDelete ? 'Hapus' : 'Bukan Data Anda';
-      const verifyLabel = isVerified ? 'Lihat Catatan Verifikasi' : canVerify ? 'Verifikasi' : 'Bukan Data Anda';
+      const verifyLabel = isVerified
+        ? 'Lihat Catatan Verifikasi'
+        : canVerify
+          ? 'Verifikasi'
+          : rawatType === 'Ranap' && allowRanapVerification && verifSoapMode === 'self' && !isOwnSoapExamination(exam)
+            ? 'Hanya SOAP milik sendiri'
+            : 'Bukan Data Anda';
       const resolvedRole = resolveExaminationRole(exam?.role, exam?.pegawai, exam?.nama, visit?.dokter, visit?.nm_dokter);
       const roleStyles = getExaminationRoleStyles(resolvedRole);
       const roleLabel = getExaminationRoleLabel(resolvedRole);
@@ -9535,7 +9575,9 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
         title: "Akses Ditolak",
         description: isVerifiedExamination(examination)
           ? "SOAP harian rawat inap ini sudah diverifikasi."
-          : "Hanya SOAP harian rawat inap yang belum diverifikasi yang dapat diproses.",
+          : verifSoapMode === 'self' && !isOwnSoapExamination(examination)
+            ? "Pengaturan Verifikasi SOAP aktif pada mode Self, sehingga hanya SOAP milik sendiri yang dapat diverifikasi."
+            : "Hanya SOAP harian rawat inap yang belum diverifikasi yang dapat diproses.",
         variant: "destructive",
       });
       return;
