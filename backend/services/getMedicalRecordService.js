@@ -1,4 +1,5 @@
 import db from '../config/database.js';
+import PacsClientService from './pacsClientService.js';
 
 class GetMedicalRecordService {
   static DEFAULT_LIMIT = 5;
@@ -7,6 +8,8 @@ class GetMedicalRecordService {
   static ORTHANC_REQUEST_TIMEOUT_MS = 15000;
   static ORTHANC_REQUEST_RETRY_COUNT = 1;
   static ORTHANC_INSTANCE_SORT_CONCURRENCY = 8;
+  static PACS_SUMMARY_INSTANCE_LIMIT = 6;
+  static PACS_FULL_INSTANCE_LIMIT = 1000;
   static orthancStudyCache = new Map();
   static orthancStudyInFlight = new Map();
   static radiologyPacsPayloadCache = new Map();
@@ -779,9 +782,11 @@ class GetMedicalRecordService {
                   series_date: seriesDate,
                   description,
                   modality,
+                  image_source: 'orthanc',
                   images: instances.map((instanceId) => ({
                     instance_id: instanceId,
-                    series_id: seriesId
+                    series_id: seriesId,
+                    image_source: 'orthanc'
                   }))
                 };
               } catch (error) {
@@ -801,19 +806,26 @@ class GetMedicalRecordService {
   }
 
   static matchRadiologyPacsSeries(seriesList, examDate, examName) {
-    const normalizedDate = this.formatDateOnly(examDate);
-    const datedSeries = (seriesList || []).filter((series) => series?.series_date === normalizedDate);
-
-    if (!datedSeries.length) {
+    const normalizedSeries = Array.isArray(seriesList) ? seriesList.filter(Boolean) : [];
+    if (!normalizedSeries.length) {
       return [];
     }
 
+    const normalizedDate = this.formatDateOnly(examDate);
+    const datedSeries = normalizedDate
+      ? normalizedSeries.filter((series) => series?.series_date === normalizedDate)
+      : [];
+
+    // Tanggal akuisisi DICOM sering tidak sama dengan tanggal input SIMRS,
+    // jadi daftar bertanggal hanya diprioritaskan, bukan dijadikan syarat mutlak.
+    const candidates = datedSeries.length ? datedSeries : normalizedSeries;
+
     const normalizedExam = this.normalizeSearchText(examName);
     if (!normalizedExam) {
-      return datedSeries;
+      return candidates;
     }
 
-    const matchedSeries = datedSeries.filter((series) => {
+    const matchedSeries = candidates.filter((series) => {
       const normalizedDescription = this.normalizeSearchText(series?.description);
       return normalizedDescription && (
         normalizedDescription.includes(normalizedExam) ||
@@ -821,7 +833,7 @@ class GetMedicalRecordService {
       );
     });
 
-    return matchedSeries.length ? matchedSeries : datedSeries;
+    return matchedSeries.length ? matchedSeries : candidates;
   }
 
   static parseNumberTag(value) {
@@ -905,7 +917,9 @@ class GetMedicalRecordService {
     const sortedSeries = await Promise.all(
       normalizedSeries.map(async (series) => {
         const images = Array.isArray(series?.images) ? series.images.filter(Boolean) : [];
-        if (images.length <= 1) {
+        // Instance PACS sudah terurut (image_position_patient) dan tidak punya
+        // metadata di Orthanc, jadi tidak perlu diurutkan ulang.
+        if (images.length <= 1 || images.every((image) => image?.image_source === 'pacs')) {
           return series;
         }
 
@@ -966,7 +980,12 @@ class GetMedicalRecordService {
     const allImages = matchedSeries.flatMap((series) =>
       (series.images || []).map((image) => this.serializeRadiologyPacsImage(image, series))
     );
-    const totalImages = allImages.length;
+    // `total_instances` hanya dikirim series PACS: jumlah instance sebenarnya di
+    // server bisa lebih banyak daripada yang diambil untuk mode summary.
+    const totalImages = matchedSeries.reduce(
+      (sum, series) => sum + (Number(series?.total_instances) || (series?.images || []).length),
+      0
+    );
     const shouldLimitCtImages = (limitCtToThumbnail || normalizedMode === 'summary') && pacsModality === 'CT' && totalImages > 0;
     const normalizedNonCtPreviewLimit = Math.max(1, Number(nonCtPreviewLimit) || 6);
 
@@ -1002,7 +1021,7 @@ class GetMedicalRecordService {
           series_date: series.series_date || '',
           description: series.description || '',
           modality: series.modality || '',
-          image_count: seriesImages.length,
+          image_count: Number(series.total_instances) || seriesImages.length,
           thumbnail_instance_id: seriesImages.length > 0 ? seriesImages[0].instance_id : '',
           images: responseSeriesImages
         };
@@ -1057,6 +1076,232 @@ class GetMedicalRecordService {
     } catch (error) {
       console.warn(`Orthanc preview unavailable for instance ${instanceId}, fallback to rendered:`, error.message);
       return this.getOrthancRenderedImage(instanceId, width);
+    }
+  }
+
+  static async getRadiologyPatientId(noRawat) {
+    const normalizedNoRawat = String(noRawat || '').trim();
+    if (!normalizedNoRawat) {
+      return '';
+    }
+
+    const [rows] = await db.execute(
+      'SELECT no_rkm_medis FROM reg_periksa WHERE no_rawat = ? LIMIT 1',
+      [normalizedNoRawat]
+    );
+
+    return String(rows?.[0]?.no_rkm_medis || '').trim();
+  }
+
+  /**
+   * Bangun daftar series + instance langsung dari PACS. Dipakai sebagai sumber
+   * gambar inline pelengkap Orthanc (modality CT/MR tidak lagi dikirim ke Orthanc).
+   */
+  static async fetchPacsSourceSeries(study, examDate, options = {}) {
+    const mode = String(options?.mode || 'summary').trim().toLowerCase() === 'full' ? 'full' : 'summary';
+    const instanceLimit = mode === 'full' ? this.PACS_FULL_INSTANCE_LIMIT : this.PACS_SUMMARY_INSTANCE_LIMIT;
+    const seriesDate = this.normalizePacsDate(study?.study_date || '') || this.formatDateOnly(examDate);
+    const studySeries = await PacsClientService.listStudySeries(study?.study_instance_uid);
+
+    const seriesResults = await Promise.all(
+      studySeries.map(async (seriesItem) => {
+        const seriesUid = String(seriesItem?.series_instance_uid || '').trim();
+        if (!seriesUid) {
+          return null;
+        }
+
+        try {
+          const instances = await PacsClientService.listSeriesInstances(seriesUid, instanceLimit);
+          const images = instances
+            .map((instance) => ({
+              instance_id: String(instance?.sop_instance_uid || '').trim(),
+              series_id: seriesUid,
+              image_source: 'pacs'
+            }))
+            .filter((image) => image.instance_id);
+
+          return {
+            series_id: seriesUid,
+            series_date: seriesDate,
+            description: String(seriesItem?.series_description || '').trim(),
+            modality: String(seriesItem?.modality || '').trim().toUpperCase(),
+            total_instances: Number(seriesItem?.number_of_instances) || images.length,
+            image_source: 'pacs',
+            images
+          };
+        } catch (error) {
+          console.error(`[radiologi] gagal memuat instance PACS series ${seriesUid}:`, error?.message || error);
+          return null;
+        }
+      })
+    );
+
+    return seriesResults.filter(Boolean);
+  }
+
+  /**
+   * Resolusi studi + gambar inline dari PACS. Tidak pernah melempar error.
+   */
+  static async getPacsRadiologySource(noRawat, examDate, examName, options = {}) {
+    const resolved = await this.resolveRadiologyPacsStudy(noRawat, examDate, examName);
+    const study = resolved.study;
+
+    if (!study?.study_instance_uid) {
+      return { study: null, fallbackReason: resolved.fallbackReason, payload: null };
+    }
+
+    try {
+      const series = await this.fetchPacsSourceSeries(study, examDate, options);
+
+      return {
+        study,
+        fallbackReason: null,
+        payload: this.buildRadiologyPacsPayload(series, { mode: options?.mode })
+      };
+    } catch (error) {
+      const errorCode = error?.code || 'PACS_REQUEST_FAILED';
+      console.error(`[radiologi] gagal memuat gambar inline PACS (${errorCode}):`, error?.message || error);
+
+      return { study, fallbackReason: errorCode, payload: null };
+    }
+  }
+
+  /**
+   * Orthanc tetap dipakai bila sudah punya gambar (CR/DX/PX); PACS mengisi
+   * kekosongan, mis. CT/MR yang tidak lagi dikirim ke Orthanc.
+   */
+  static pickRadiologyImageSourcePayload(orthancPayload, pacsPayload) {
+    const orthancImages = Array.isArray(orthancPayload?.pacs_images) ? orthancPayload.pacs_images : [];
+    const pacsImages = Array.isArray(pacsPayload?.pacs_images) ? pacsPayload.pacs_images : [];
+
+    if (orthancImages.length > 0 || pacsImages.length === 0) {
+      return { payload: orthancPayload, imageSource: 'orthanc' };
+    }
+
+    return { payload: pacsPayload, imageSource: 'pacs' };
+  }
+
+  static async getPacsInstanceImage(instanceUid, width = 512) {
+    const normalizedWidth = Math.min(Math.max(Number.parseInt(String(width || ''), 10) || 512, 64), 2048);
+    return PacsClientService.fetchInstanceImage(instanceUid, normalizedWidth);
+  }
+
+  /**
+   * Resolusi studi di PACS (sumber utama). Tidak pernah melempar error: kegagalan
+   * dikembalikan sebagai fallbackReason supaya orkestrator bisa lanjut ke Orthanc.
+   */
+  static async resolveRadiologyPacsStudy(noRawat, examDate, examName) {
+    if (!PacsClientService.isEnabled()) {
+      return { study: null, fallbackReason: 'PACS_DISABLED' };
+    }
+
+    try {
+      const patientId = await this.getRadiologyPatientId(noRawat);
+      if (!patientId) {
+        return { study: null, fallbackReason: 'PACS_NOT_FOUND' };
+      }
+
+      const study = await PacsClientService.findStudyForRadiology({ patientId, examDate, examName });
+      return { study, fallbackReason: null };
+    } catch (error) {
+      const fallbackReason = error?.code || 'PACS_NETWORK_ERROR';
+      console.error(`[radiologi] PACS tidak tersedia (${fallbackReason}), memakai Orthanc:`, error?.message || error);
+      return { study: null, fallbackReason };
+    }
+  }
+
+  /**
+   * Rantai sumber tampilan radiologi: PACS dulu, Orthanc sebagai fallback.
+   * Gambar inline diambil dari Orthanc bila tersedia; bila tidak (mis. CT/MR
+   * yang tidak lagi dikirim ke Orthanc) gambar diambil langsung dari PACS.
+   */
+  static async getRadiologyImagesWithFallback(noRawat, examDate, examName, options = {}) {
+    const [orthancSettled, pacsSettled] = await Promise.allSettled([
+      this.getRadiologyPacsImages(noRawat, examDate, examName, options),
+      this.getPacsRadiologySource(noRawat, examDate, examName, options)
+    ]);
+
+    const pacsStudy = pacsSettled.status === 'fulfilled' ? pacsSettled.value.study : null;
+    const pacsPayload = pacsSettled.status === 'fulfilled' ? pacsSettled.value.payload : null;
+    const fallbackReason = pacsSettled.status === 'fulfilled'
+      ? pacsSettled.value.fallbackReason
+      : 'PACS_NETWORK_ERROR';
+
+    // PACS dan Orthanc sama-sama gagal, dan PACS tidak punya data pengganti.
+    if (orthancSettled.status === 'rejected' && !pacsStudy) {
+      throw orthancSettled.reason instanceof Error
+        ? orthancSettled.reason
+        : new Error('Gagal memuat gambar radiologi dari PACS maupun Orthanc');
+    }
+
+    const orthancPayload = orthancSettled.status === 'fulfilled'
+      ? orthancSettled.value
+      : {
+          pacs_modality: '',
+          pacs_total_images: 0,
+          pacs_metadata_only: false,
+          pacs_full_loaded: false,
+          pacs_series: [],
+          pacs_images: []
+        };
+
+    const { payload, imageSource } = this.pickRadiologyImageSourcePayload(orthancPayload, pacsPayload);
+
+    return {
+      ...payload,
+      source: pacsStudy ? 'pacs' : 'orthanc',
+      image_source: imageSource,
+      fallback_reason: pacsStudy ? null : fallbackReason,
+      viewer_link_available: Boolean(pacsStudy),
+      pacs_study_instance_uid: pacsStudy?.study_instance_uid || '',
+      pacs_study_description: pacsStudy?.study_description || '',
+      pacs_number_of_instances: Number(pacsStudy?.number_of_instances) || 0
+    };
+  }
+
+  static async getRadiologyViewerLink(noRawat, examDate, examName, seriesUid = '') {
+    if (!PacsClientService.isEnabled()) {
+      return {
+        success: false,
+        code: 'PACS_DISABLED',
+        message: 'Integrasi PACS sedang dinonaktifkan.'
+      };
+    }
+
+    try {
+      const patientId = await this.getRadiologyPatientId(noRawat);
+      if (!patientId) {
+        return {
+          success: false,
+          code: 'PACS_NOT_FOUND',
+          message: 'Data registrasi pasien tidak ditemukan.'
+        };
+      }
+
+      const study = await PacsClientService.findStudyForRadiology({ patientId, examDate, examName });
+      const viewerLink = await PacsClientService.createViewerLink(study.study_instance_uid, {
+        noRawat,
+        seriesUid
+      });
+
+      return {
+        success: true,
+        source: 'pacs',
+        study_instance_uid: viewerLink.study_instance_uid,
+        series_instance_uid: viewerLink.series_instance_uid,
+        url: viewerLink.url,
+        expires_at: viewerLink.expires_at,
+        label: viewerLink.label
+      };
+    } catch (error) {
+      const code = error?.code || 'PACS_REQUEST_FAILED';
+      console.error(`[radiologi] gagal membuat viewer link PACS (${code}):`, error?.message || error);
+
+      return {
+        success: false,
+        code,
+        message: 'Foto radiologi di PACS belum dapat dibuka saat ini. Silakan coba lagi.'
+      };
     }
   }
 
@@ -2392,17 +2637,8 @@ class GetMedicalRecordService {
       includePacs ? this.fetchRadiologyPacsSeries(noRawat) : Promise.resolve([])
     ]);
 
-    return rows.map(row => {
-      const matchedSeries = this.matchRadiologyPacsSeries(
-        pacsSeries,
-        row.tgl_periksa,
-        row.nm_perawatan
-      );
-      const pacsPayload = this.buildRadiologyPacsPayload(matchedSeries, {
-        limitCtToThumbnail: true
-      });
-
-      return {
+    return Promise.all(rows.map(async (row) => {
+      const radiologyRow = {
         no_rawat: row.no_rawat || '',
         kd_jenis_prw: row.kd_jenis_prw || '',
         nm_perawatan: row.nm_perawatan || '',
@@ -2412,10 +2648,34 @@ class GetMedicalRecordService {
         judul: row.judul || '',
         hasil: row.hasil || '',
         saran: row.saran || '',
-        kesan: row.kesan || '',
-        ...(includePacs ? pacsPayload : {})
+        kesan: row.kesan || ''
       };
-    });
+
+      if (!includePacs) {
+        return radiologyRow;
+      }
+
+      const orthancPayload = this.buildRadiologyPacsPayload(
+        this.matchRadiologyPacsSeries(pacsSeries, row.tgl_periksa, row.nm_perawatan),
+        { limitCtToThumbnail: true }
+      );
+      const pacsResult = await this.getPacsRadiologySource(
+        noRawat,
+        radiologyRow.tgl_periksa,
+        row.nm_perawatan,
+        { mode: 'summary' }
+      );
+      const { payload, imageSource } = this.pickRadiologyImageSourcePayload(orthancPayload, pacsResult.payload);
+
+      return {
+        ...radiologyRow,
+        ...payload,
+        source: pacsResult.study ? 'pacs' : 'orthanc',
+        image_source: imageSource,
+        fallback_reason: pacsResult.study ? null : pacsResult.fallbackReason,
+        viewer_link_available: Boolean(pacsResult.study)
+      };
+    }));
   }
 
   static async fetchHeartExaminations(noRawat) {

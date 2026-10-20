@@ -1,6 +1,6 @@
 import React from 'react';
 import { format } from 'date-fns';
-import { CalendarDays, ChevronLeft, ChevronRight, Download, FileText, FlaskConical, ImageIcon, Loader2, Pause, Play, RotateCcw, Search, ScanLine, Save, X, ZoomIn, ZoomOut } from 'lucide-react';
+import { CalendarDays, ChevronLeft, ChevronRight, Download, ExternalLink, FileText, FlaskConical, ImageIcon, Loader2, Pause, Play, RotateCcw, Search, ScanLine, Save, X, ZoomIn, ZoomOut } from 'lucide-react';
 import { useSearchParams } from 'react-router-dom';
 import { DateRange } from 'react-day-picker';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -86,6 +86,7 @@ interface LaboratoryDetail {
 
 interface RadiologyPacsImage {
   instance_id?: string;
+  image_source?: string;
 }
 
 interface RadiologyPacsResult {
@@ -101,6 +102,9 @@ interface RadiologyPacsResult {
   pacs_total_images?: number;
   pacs_metadata_only?: boolean;
   pacs_full_loaded?: boolean;
+  source?: 'pacs' | 'orthanc';
+  fallback_reason?: string | null;
+  viewer_link_available?: boolean;
 }
 
 interface RadiologyDetail {
@@ -130,6 +134,7 @@ interface ViewerImageItem {
   description?: string;
   downloadName?: string;
   instanceId?: string;
+  imageSource?: string;
 }
 
 const pageConfig: Record<DiagnosticMode, {
@@ -186,18 +191,29 @@ const formatDateTime = (date?: string, time?: string) => {
 const getCurrentRequestDate = () => format(new Date(), 'yyyy-MM-dd');
 const getCurrentRequestTime = () => format(new Date(), 'HH:mm:ss');
 
-const buildPacsPreviewUrl = (instanceId?: string, width = 500) => {
+const buildPacsPreviewUrl = (instanceId?: string, width = 500, imageSource?: string) => {
   const normalizedInstanceId = String(instanceId || '').trim();
   if (!normalizedInstanceId) {
     return '';
   }
 
-  return `${API_CONFIG.BASE_URL}/pacs/preview/${encodeURIComponent(normalizedInstanceId)}?width=${width}`;
+  const isPacsSource = String(imageSource || '').trim().toLowerCase() === 'pacs';
+  const queryString = `width=${width}${isPacsSource ? '&source=pacs' : ''}`;
+  return `${API_CONFIG.BASE_URL}/pacs/preview/${encodeURIComponent(normalizedInstanceId)}?${queryString}`;
 };
 
-const buildViewerImageUrl = (instanceId?: string, modality?: string) => {
+const buildViewerImageUrl = (instanceId?: string, modality?: string, imageSource?: string) => {
   const normalizedModality = String(modality || '').trim().toUpperCase();
-  return buildPacsPreviewUrl(instanceId, normalizedModality === 'CT' ? 768 : 1200);
+  return buildPacsPreviewUrl(instanceId, normalizedModality === 'CT' ? 768 : 1200, imageSource);
+};
+
+const resolvePacsImageSource = (image?: RadiologyPacsImage, result?: RadiologyPacsResult) => {
+  const imageSource = String(image?.image_source || '').trim().toLowerCase();
+  if (imageSource) {
+    return imageSource;
+  }
+
+  return String(result?.source || '').trim().toLowerCase() === 'pacs' ? 'pacs' : '';
 };
 
 const isImageUrl = (value?: string) => /\.(png|jpe?g|gif|webp|bmp|svg)(\?.*)?$/i.test(String(value || '').trim());
@@ -254,6 +270,15 @@ const DiagnosticHubPage: React.FC<DiagnosticHubPageProps> = ({ mode }) => {
   });
   const [radiologyPacsLoading, setRadiologyPacsLoading] = React.useState(false);
   const [radiologyPacsError, setRadiologyPacsError] = React.useState('');
+  const [pacsViewerLinkState, setPacsViewerLinkState] = React.useState<{
+    key: string;
+    loading: boolean;
+    error: string;
+  }>({
+    key: '',
+    loading: false,
+    error: ''
+  });
   const [imageViewer, setImageViewer] = React.useState<{
     open: boolean;
     title: string;
@@ -648,7 +673,7 @@ const DiagnosticHubPage: React.FC<DiagnosticHubPageProps> = ({ mode }) => {
       return;
     }
 
-    const src = buildViewerImageUrl(image.instanceId, 'CT');
+    const src = buildViewerImageUrl(image.instanceId, 'CT', image.imageSource);
     if (!src || loadedCtViewerFramesRef.current.has(src) || loadingCtViewerFramesRef.current.has(src)) {
       return;
     }
@@ -695,7 +720,7 @@ const DiagnosticHubPage: React.FC<DiagnosticHubPageProps> = ({ mode }) => {
       params.set('exam_name', examName);
     }
 
-    const response = await fetch(`${API_CONFIG.BASE_URL}/pacs/radiology-images?${params.toString()}`, {
+    const response = await fetch(`${API_URLS.PACS_RADIOLOGY_IMAGES}?${params.toString()}`, {
       credentials: 'include'
     });
     const responseJson = await response.json().catch(() => null);
@@ -710,7 +735,10 @@ const DiagnosticHubPage: React.FC<DiagnosticHubPageProps> = ({ mode }) => {
       pacs_total_images: Number(responseJson.pacs_total_images) || 0,
       pacs_metadata_only: responseJson.pacs_metadata_only === true,
       pacs_full_loaded: responseJson.pacs_full_loaded === true,
-      pacs_images: Array.isArray(responseJson.pacs_images) ? responseJson.pacs_images.filter(Boolean) : []
+      pacs_images: Array.isArray(responseJson.pacs_images) ? responseJson.pacs_images.filter(Boolean) : [],
+      source: responseJson.source === 'pacs' ? 'pacs' : 'orthanc',
+      fallback_reason: responseJson.fallback_reason || null,
+      viewer_link_available: responseJson.viewer_link_available === true
     } as RadiologyPacsResult;
   }, []);
 
@@ -737,11 +765,12 @@ const DiagnosticHubPage: React.FC<DiagnosticHubPageProps> = ({ mode }) => {
     const currentImages = Array.isArray(result?.pacs_images) ? result.pacs_images.filter(Boolean) : [];
     const totalImages = Math.max(Number(result?.pacs_total_images) || 0, currentImages.length);
     const viewerImages = currentImages.map((item, index) => ({
-      src: buildViewerImageUrl(item.instance_id, modality),
+      src: buildViewerImageUrl(item.instance_id, modality, resolvePacsImageSource(item, result)),
       title: `${result.pemeriksaan || 'Radiologi'} ${index + 1}`,
       description: formatDateTime(result.tanggal),
       downloadName: `radiologi-${result.pemeriksaan || 'gambar'}-${index + 1}.jpg`,
-      instanceId: item.instance_id
+      instanceId: item.instance_id,
+      imageSource: resolvePacsImageSource(item, result)
     })).filter((item) => Boolean(item.src));
     const shouldFetchFullCt = modality === 'CT' && totalImages > viewerImages.length;
     const requestId = ++imageViewerRequestRef.current;
@@ -761,11 +790,12 @@ const DiagnosticHubPage: React.FC<DiagnosticHubPageProps> = ({ mode }) => {
       try {
         const fullResult = await fetchRadiologyResultPacs(noRawat, result, 'full');
         const fullImages = (Array.isArray(fullResult.pacs_images) ? fullResult.pacs_images : []).map((item, index) => ({
-          src: buildViewerImageUrl(item.instance_id, modality),
+          src: buildViewerImageUrl(item.instance_id, modality, resolvePacsImageSource(item, fullResult)),
           title: `${fullResult.pemeriksaan || 'Radiologi'} ${index + 1}`,
           description: formatDateTime(fullResult.tanggal),
           downloadName: `radiologi-${fullResult.pemeriksaan || 'gambar'}-${index + 1}.jpg`,
-          instanceId: item.instance_id
+          instanceId: item.instance_id,
+          imageSource: resolvePacsImageSource(item, fullResult)
         })).filter((item) => Boolean(item.src));
 
         updateRadiologyResultPacs(fullResult);
@@ -802,6 +832,54 @@ const DiagnosticHubPage: React.FC<DiagnosticHubPageProps> = ({ mode }) => {
       }
     }, 0);
   }, [fetchRadiologyResultPacs, formatDateTime, openImageViewer, radiologyDetail?.no_rawat, selectedNoRawat, updateRadiologyResultPacs]);
+
+  const openRadiologyPacsViewerLink = React.useCallback(async (result: RadiologyPacsResult) => {
+    const noRawat = String(radiologyDetail?.no_rawat || selectedNoRawat || '').trim();
+    const examDate = String(result?.tgl_periksa || String(result?.tanggal || '').split(' ')[0] || '').trim();
+    const examName = String(result?.pemeriksaan || result?.judul || '').trim();
+    const resultKey = getRadiologyPacsResultKey(noRawat, result);
+
+    if (!noRawat || !examDate) {
+      setPacsViewerLinkState({
+        key: resultKey,
+        loading: false,
+        error: 'Data pemeriksaan belum lengkap untuk membuka PACS Viewer.'
+      });
+      return;
+    }
+
+    setPacsViewerLinkState({ key: resultKey, loading: true, error: '' });
+
+    try {
+      const params = new URLSearchParams({
+        no_rawat: noRawat,
+        exam_date: examDate
+      });
+
+      if (examName) {
+        params.set('exam_name', examName);
+      }
+
+      const response = await fetch(`${API_URLS.PACS_VIEWER_LINK}?${params.toString()}`, {
+        credentials: 'include'
+      });
+      const responseJson = await response.json().catch(() => null);
+
+      if (!response.ok || !responseJson?.success || !responseJson?.url) {
+        throw new Error(responseJson?.message || 'PACS Viewer belum dapat dibuka saat ini.');
+      }
+
+      window.open(String(responseJson.url), '_blank', 'noopener,noreferrer');
+      setPacsViewerLinkState({ key: resultKey, loading: false, error: '' });
+    } catch (error) {
+      console.error('Error creating PACS viewer link:', error);
+      setPacsViewerLinkState({
+        key: resultKey,
+        loading: false,
+        error: error instanceof Error ? error.message : 'PACS Viewer belum dapat dibuka saat ini.'
+      });
+    }
+  }, [getRadiologyPacsResultKey, radiologyDetail?.no_rawat, selectedNoRawat]);
 
   const zoomInViewer = () => {
     setImageViewer((previous) => ({
@@ -1548,18 +1626,61 @@ const DiagnosticHubPage: React.FC<DiagnosticHubPageProps> = ({ mode }) => {
                           </div>
                         ) : radiologyDetail.pacs_results.length === 0 ? (
                           <p className="text-sm text-muted-foreground">Belum ada hasil radiologi yang dapat ditampilkan.</p>
-                        ) : radiologyDetail.pacs_results.map((result, index) => (
+                        ) : radiologyDetail.pacs_results.map((result, index) => {
+                          const viewerLinkResultKey = getRadiologyPacsResultKey(radiologyDetail.no_rawat, result);
+                          const isViewerLinkLoading = pacsViewerLinkState.loading && pacsViewerLinkState.key === viewerLinkResultKey;
+                          const viewerLinkError = pacsViewerLinkState.key === viewerLinkResultKey ? pacsViewerLinkState.error : '';
+                          const canOpenPacsViewer = result.source === 'pacs' && result.viewer_link_available !== false;
+
+                          return (
                           <div key={`${result.tanggal}-${index}`} className="rounded-lg border p-4 space-y-3">
                             <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
                               <div>
                                 <p className="font-medium">{result.pemeriksaan || result.judul || '-'}</p>
                                 <p className="text-sm text-muted-foreground">{formatDateTime(result.tanggal)}</p>
                               </div>
-                              <div className="flex gap-2">
+                              <div className="flex flex-wrap items-center gap-2">
+                                {result.source ? (
+                                  <Badge
+                                    variant="outline"
+                                    className={cn(
+                                      result.source === 'pacs'
+                                        ? 'border-emerald-200 bg-emerald-50 text-emerald-700'
+                                        : 'border-amber-200 bg-amber-50 text-amber-700'
+                                    )}
+                                    title={result.source === 'pacs'
+                                      ? 'Data radiologi berasal dari server PACS.'
+                                      : 'PACS tidak tersedia, menampilkan data dari server Orthanc'}
+                                  >
+                                    {result.source === 'pacs' ? 'PACS' : 'Orthanc (fallback)'}
+                                  </Badge>
+                                ) : null}
                                 <Badge variant="secondary">{result.pacs_modality || 'RAD'}</Badge>
                                 <Badge variant="outline">{Math.max(Number(result.pacs_total_images) || 0, result.pacs_images?.length || 0)} gambar</Badge>
+                                {canOpenPacsViewer ? (
+                                  <Button
+                                    type="button"
+                                    variant="outline"
+                                    size="sm"
+                                    className="h-7 px-2 text-xs"
+                                    disabled={isViewerLinkLoading}
+                                    onClick={() => {
+                                      void openRadiologyPacsViewerLink(result);
+                                    }}
+                                  >
+                                    {isViewerLinkLoading ? (
+                                      <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" />
+                                    ) : (
+                                      <ExternalLink className="mr-1 h-3.5 w-3.5" />
+                                    )}
+                                    Buka di PACS Viewer
+                                  </Button>
+                                ) : null}
                               </div>
                             </div>
+                            {viewerLinkError ? (
+                              <p className="text-xs text-amber-700">{viewerLinkError}</p>
+                            ) : null}
                             {result.hasil ? (
                               <div className="rounded-md bg-muted/50 p-3 text-sm whitespace-pre-wrap">{result.hasil}</div>
                             ) : null}
@@ -1586,7 +1707,7 @@ const DiagnosticHubPage: React.FC<DiagnosticHubPageProps> = ({ mode }) => {
                                   ? result.pacs_images.slice(0, 1)
                                   : result.pacs_images.slice(0, 4)
                                 ).map((image, imageIndex) => {
-                                  const previewUrl = buildPacsPreviewUrl(image.instance_id, 420);
+                                  const previewUrl = buildPacsPreviewUrl(image.instance_id, 420, resolvePacsImageSource(image, result));
                                   return (
                                     <button
                                       key={`${image.instance_id || imageIndex}`}
@@ -1613,7 +1734,8 @@ const DiagnosticHubPage: React.FC<DiagnosticHubPageProps> = ({ mode }) => {
                               </div>
                             ) : null}
                           </div>
-                        ))}
+                          );
+                        })}
                       </CardContent>
                     </Card>
 

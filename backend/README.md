@@ -72,6 +72,15 @@ ORTHANC_SERVER=http://127.0.0.1:8042
 ORTHANC_USERNAME=orthanc
 ORTHANC_PASSWORD=orthanc
 
+PACS_ENABLED=true
+PACS_BASE_URL=https://pacs.rshdbarabai.com
+PACS_SERVICE_USERNAME=simrs-viewer
+PACS_SERVICE_PASSWORD=ubah_dengan_secret_dari_secret_store
+PACS_REQUEST_TIMEOUT_MS=5000
+PACS_REQUEST_RETRY_COUNT=1
+PACS_VIEWER_LINK_TTL_MINUTES=1440
+PACS_STUDY_CACHE_TTL_MS=120000
+
 DIGITAL_FILES_BASE_URL=https://simrs.rshdbarabai.com/webapps/berkasrawat
 DOCTOR_ACCESS_ALIASES={"DR00025":["D0000045","D0000226","D0000275"]}
 ```
@@ -83,7 +92,24 @@ Keterangan:
 - `FRONTEND_URL`
   - origin frontend yang diizinkan oleh CORS
 - `ORTHANC_*`
-  - konfigurasi akses ke server Orthanc
+  - konfigurasi akses ke server Orthanc (dipakai sebagai sumber fallback gambar radiologi)
+- `PACS_ENABLED`
+  - `true` untuk mengaktifkan PACS sebagai sumber utama metadata radiologi; `false` untuk langsung memakai Orthanc
+- `PACS_BASE_URL`
+  - base URL API PACS `pacs.rshdbarabai.com` (kontrak API: `simrs-integration.md`)
+  - kompatibilitas: `PACS_SERVER` dibaca sebagai alias bila `PACS_BASE_URL` kosong
+- `PACS_SERVICE_USERNAME` / `PACS_SERVICE_PASSWORD`
+  - kredensial akun service PACS (role `TECHNICIAN` dengan permission `study:share`)
+  - kompatibilitas: `PACS_USERNAME` / `PACS_PASSWORD` dibaca sebagai alias bila variabel baru kosong
+  - nilai lama di `.env` harus dianggap bocor dan wajib dirotasi oleh admin PACS
+- `PACS_REQUEST_TIMEOUT_MS`
+  - timeout satu request ke PACS (default `5000`); kegagalan memicu fallback ke Orthanc
+- `PACS_REQUEST_RETRY_COUNT`
+  - jumlah retry untuk error jaringan/status >= 500 (default `1`); tidak ada retry untuk 401/403/404
+- `PACS_VIEWER_LINK_TTL_MINUTES`
+  - masa berlaku signed viewer link OHIF (default `1440`)
+- `PACS_STUDY_CACHE_TTL_MS`
+  - TTL cache pencarian studi PACS (default `120000`)
 - `DIGITAL_FILES_BASE_URL`
   - base URL file digital yang dipakai modal `Berkas Digital`
 - `DOCTOR_ACCESS_ALIASES`
@@ -181,8 +207,13 @@ pm2 save
 
 ### Radiologi dan PACS
 
-- `GET /api/pacs/radiology-images`
+- `GET /api/pacs/radiology-images` (query: `no_rawat`, `exam_date`, `exam_name`, `mode=summary|full`)
+  - sumber utama PACS `pacs.rshdbarabai.com`; bila PACS gagal/lambat/tidak punya studi otomatis fallback ke Orthanc
+  - respons menyertakan `source` (`pacs`\|`orthanc`), `fallback_reason`, dan `viewer_link_available`
+- `GET /api/pacs/viewer-link` (query: `no_rawat`, `exam_date`, `exam_name`, `series_uid`)
+  - me-mint signed viewer link OHIF untuk satu study; bila PACS tidak tersedia balas `success: false` tanpa error 500
 - `GET /api/pacs/preview/:instanceId`
+- `GET /api/pacs/rendered/:instanceId`
 
 ### Berkas Digital
 
@@ -240,6 +271,16 @@ Periksa:
 - `ORTHANC_USERNAME`
 - `ORTHANC_PASSWORD`
 - akses jaringan dari backend ke server Orthanc
+
+### Foto radiologi tampil dengan badge "Orthanc (fallback)"
+
+Artinya PACS sedang tidak dipakai. Periksa:
+
+- `PACS_ENABLED` masih `true`
+- `PACS_BASE_URL` (atau alias `PACS_SERVER`) dapat dijangkau dari backend
+- `PACS_SERVICE_USERNAME` / `PACS_SERVICE_PASSWORD` (atau alias `PACS_USERNAME` / `PACS_PASSWORD`) valid
+- nilai `fallback_reason` pada respons `/api/pacs/radiology-images` (`PACS_TIMEOUT`, `PACS_NETWORK_ERROR`, `PACS_AUTH_FAILED`, `PACS_NOT_FOUND`, `PACS_SERVER_ERROR`)
+- bila `PACS_AUTH_FAILED`: akun service PACS kemungkinan belum dibuat/dirotasi
 
 ### Berkas digital menampilkan base URL belum dikonfigurasi
 

@@ -21,6 +21,12 @@ const dbConfig = {
 // Create connection pool
 const pool = mysql.createPool(dbConfig);
 
+// Pool wajib punya listener 'error': tanpa ini, error koneksi idle yang kedua
+// akan menjadi unhandled 'error' event dan mematikan proses Node.
+pool.on('error', (error) => {
+  console.error('❌ MySQL pool error:', error.message);
+});
+
 // Test database connection
 export const testConnection = async () => {
   try {

@@ -1,30 +1,4 @@
 import pool from '../config/database.js';
-import fs from 'fs';
-
-// #region debug-point B:save-exam-service-reporter
-const reportSaveExaminationDebug = (hypothesisId, location, msg, data = {}, runId = 'pre-fix') => {
-  let debugServerUrl = 'http://127.0.0.1:7777/event';
-  let debugSessionId = 'spo2-ranap-save';
-  try {
-    const envContent = fs.readFileSync('.dbg/spo2-ranap-save.env', 'utf8');
-    debugServerUrl = envContent.match(/DEBUG_SERVER_URL=(.+)/)?.[1]?.trim() || debugServerUrl;
-    debugSessionId = envContent.match(/DEBUG_SESSION_ID=(.+)/)?.[1]?.trim() || debugSessionId;
-  } catch {}
-  fetch(debugServerUrl, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      sessionId: debugSessionId,
-      runId,
-      hypothesisId,
-      location,
-      msg,
-      data,
-      ts: Date.now()
-    })
-  }).catch(() => {});
-};
-// #endregion
 
 class SaveExaminationService {
   /**
@@ -59,32 +33,10 @@ class SaveExaminationService {
         nip
       } = examinationData;
 
-      // #region debug-point B:save-exam-service-entry
-      reportSaveExaminationDebug('B', 'backend/services/saveExaminationService.js:saveExamination', '[DEBUG] save examination service entry', {
-        no_rawat: no_rawat || null,
-        status_rawat: status_rawat || null,
-        spo2: spo2 ?? null,
-        tgl_perawatan: tgl_perawatan || null,
-        jam_rawat: jam_rawat || null,
-        nip: nip || null,
-        hasKeluhan: Boolean(keluhan),
-        hasPemeriksaan: Boolean(pemeriksaan)
-      });
-      // #endregion
-
       console.log('Save examination request:', { no_rawat, status_rawat, tgl_perawatan });
 
       // Validate required fields
       if (!no_rawat || !status_rawat || !tgl_perawatan || !jam_rawat || !nip) {
-        // #region debug-point B:save-exam-validation-failed
-        reportSaveExaminationDebug('B', 'backend/services/saveExaminationService.js:saveExamination', '[DEBUG] save examination validation failed', {
-          no_rawat: no_rawat || null,
-          status_rawat: status_rawat || null,
-          tgl_perawatan: tgl_perawatan || null,
-          jam_rawat: jam_rawat || null,
-          nip: nip || null
-        });
-        // #endregion
         throw new Error('Missing required fields: no_rawat, status_rawat, tgl_perawatan, jam_rawat, nip');
       }
 
@@ -122,18 +74,6 @@ class SaveExaminationService {
           no_rawat, tgl_perawatan, jam_rawat, suhu, tensi, nadi, respirasi,
           tinggi, berat, gcs, keluhan, pemeriksaan, 'tidak ada', '-', rtl, penilaian, nip
         ];
-        // #region debug-point C:save-exam-before-ralan-query
-        reportSaveExaminationDebug('C', 'backend/services/saveExaminationService.js:saveExamination', '[DEBUG] executing ralan save examination query', {
-          tableName,
-          valuesPreview: {
-            no_rawat,
-            spo2: spo2 ?? null,
-            tgl_perawatan,
-            jam_rawat,
-            nip
-          }
-        });
-        // #endregion
         [result] = await connection.execute(query, values);
         
       } else {
@@ -182,62 +122,9 @@ class SaveExaminationService {
           no_rawat, tgl_perawatan, jam_rawat, suhu, tensi, nadi, respirasi,
           tinggi, berat, spo2, gcs, keluhan, pemeriksaan, '', rtl, penilaian, instruksi, evaluasi, nip
         ];
-        // #region debug-point C:save-exam-before-ranap-query
-        reportSaveExaminationDebug('C', 'backend/services/saveExaminationService.js:saveExamination', '[DEBUG] executing ranap save examination query', {
-          tableName,
-          valuesPreview: {
-            no_rawat,
-            spo2: spo2 ?? null,
-            tgl_perawatan,
-            jam_rawat,
-            nip
-          }
-        });
-        // #endregion
         [result] = await connection.execute(query, values);
       }
 
-      // #region debug-point C:save-exam-query-success
-      reportSaveExaminationDebug('C', 'backend/services/saveExaminationService.js:saveExamination', '[DEBUG] examination query success', {
-        tableName,
-        affectedRows: result?.affectedRows ?? null,
-        insertId: result?.insertId ?? null
-      });
-      // #endregion
-      // #region debug-point D:save-exam-post-query-readback
-      try {
-        const [databaseRows] = await connection.execute('SELECT DATABASE() AS active_database');
-        const [readbackRows] = await connection.execute(
-          `
-            SELECT no_rawat, tgl_perawatan, jam_rawat, spo2, nip
-            FROM ${tableName}
-            WHERE no_rawat = ? AND tgl_perawatan = ? AND jam_rawat = ?
-            LIMIT 1
-          `,
-          [no_rawat, tgl_perawatan, jam_rawat]
-        );
-        reportSaveExaminationDebug('D', 'backend/services/saveExaminationService.js:saveExamination', '[DEBUG] post-query readback after save', {
-          tableName,
-          activeDatabase: databaseRows?.[0]?.active_database || null,
-          readbackCount: Array.isArray(readbackRows) ? readbackRows.length : null,
-          readbackRow: Array.isArray(readbackRows) && readbackRows.length > 0
-            ? {
-                no_rawat: readbackRows[0]?.no_rawat || null,
-                tgl_perawatan: readbackRows[0]?.tgl_perawatan || null,
-                jam_rawat: readbackRows[0]?.jam_rawat || null,
-                spo2: readbackRows[0]?.spo2 ?? null,
-                nip: readbackRows[0]?.nip || null
-              }
-            : null
-        });
-      } catch (readbackError) {
-        reportSaveExaminationDebug('D', 'backend/services/saveExaminationService.js:saveExamination', '[DEBUG] post-query readback failed', {
-          tableName,
-          name: readbackError?.name || 'Error',
-          message: readbackError?.message || 'Unknown error'
-        });
-      }
-      // #endregion
       console.log(`Examination saved to ${tableName}:`, {
         affectedRows: result.affectedRows,
         insertId: result.insertId
@@ -257,13 +144,6 @@ class SaveExaminationService {
       };
 
     } catch (error) {
-      // #region debug-point D:save-exam-service-error
-      reportSaveExaminationDebug('D', 'backend/services/saveExaminationService.js:saveExamination', '[DEBUG] save examination service error', {
-        name: error?.name || 'Error',
-        message: error?.message || 'Unknown error',
-        stack: error?.stack || null
-      });
-      // #endregion
       console.error('Error saving examination:', error);
       throw error;
     } finally {
