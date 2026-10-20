@@ -68,6 +68,7 @@ interface MedicalResume {
   ket_dilanjutkan: string;
   kontrol: string;
   obat_pulang: string;
+  ket_kondisi_pulang: string;
   tindakan_venti?: string;
   kondisi_pulang?: string;
   no_rkm_medis?: string;
@@ -121,6 +122,7 @@ interface ResumeSourceData {
   operationData: any[];
   inpatientMedications: any[];
   dischargeMedicationRequests: any[];
+  lastRanapSoaps: ResumeRanapExamination[];
 }
 
 type ResumePickerTarget =
@@ -130,7 +132,8 @@ type ResumePickerTarget =
   | 'pemeriksaan_penunjang'
   | 'hasil_laborat'
   | 'tindakan_dan_operasi'
-  | 'obat_di_rs';
+  | 'obat_di_rs'
+  | 'ket_kondisi_pulang';
 
 interface ResumePickerItem {
   id: string;
@@ -206,6 +209,7 @@ const RESUME_PAYLOAD_LABELS: Record<string, string> = {
   ket_dilanjutkan: 'Keterangan Dilanjutkan',
   kontrol: 'Kontrol',
   obat_pulang: 'Obat Pulang',
+  ket_kondisi_pulang: 'Keterangan Kondisi Pulang',
   verified: 'Status Verifikasi'
 };
 
@@ -424,6 +428,7 @@ const createEmptySourceData = (): ResumeSourceData => ({
   operationData: [],
   inpatientMedications: [],
   dischargeMedicationRequests: [],
+  lastRanapSoaps: [],
 });
 
 const formatDiagnosaMasukText = (value: string): string => {
@@ -505,6 +510,7 @@ export const MedicalResumeModal: React.FC<MedicalResumeModalProps> = ({
       ket_dilanjutkan: '',
       kontrol: '',
       obat_pulang: '',
+      ket_kondisi_pulang: '',
       tindakan_venti: '',
       kondisi_pulang: 'Membaik',
       dokter_penulis: currentDoctorName,
@@ -692,6 +698,39 @@ export const MedicalResumeModal: React.FC<MedicalResumeModalProps> = ({
       return emptyData;
     } finally {
       setSourceLoading(false);
+    }
+  };
+
+  const fetchLastRanapSoaps = async (): Promise<ResumeRanapExamination[]> => {
+    if (!noRawat) {
+      return [];
+    }
+
+    try {
+      const response = await fetch(
+        `${API_URLS.RESUME_PASIEN_DATA}/${encodeURIComponent(noRawat)}/soap-terakhir?limit=3`
+      );
+      const result = await response.json();
+
+      if (!response.ok || !result.success) {
+        throw new Error(result.error || 'Gagal memuat SOAP terakhir');
+      }
+
+      const rows = Array.isArray(result.data)
+        ? result.data.map((item: ResumeRanapExamination) => ({
+            ...item,
+            tanggal: item?.tgl_perawatan || item?.tanggal || '',
+          }))
+        : [];
+      setSourceData((previous) => ({ ...previous, lastRanapSoaps: rows }));
+      return rows;
+    } catch (error) {
+      toast({
+        title: "Error",
+        description: error instanceof Error ? error.message : "Gagal memuat SOAP terakhir",
+        variant: "destructive",
+      });
+      return [];
     }
   };
 
@@ -1053,6 +1092,24 @@ export const MedicalResumeModal: React.FC<MedicalResumeModalProps> = ({
       item.p ? `Plan: ${item.p}` : '',
       item.i ? `Instruksi/Intervensi: ${item.i}` : '',
       item.e ? `Evaluasi: ${item.e}` : ''
+    ].filter(Boolean).join('\n');
+  };
+
+  const buildSoapText = (item: ResumeRanapExamination) => {
+    const tanggal = item.tgl_perawatan || item.tanggal || '';
+    const formattedDateTime = tanggal
+      ? formatUIDateTime(`${tanggal} ${item.jam_rawat || '00:00'}`)
+      : '';
+
+    return [
+      formattedDateTime ? `Tanggal & Jam: ${formattedDateTime}` : '',
+      item.pegawai ? `Petugas: ${item.pegawai}` : '',
+      item.s ? `S: ${item.s}` : '',
+      item.o ? `O: ${item.o}` : '',
+      item.a ? `A: ${item.a}` : '',
+      item.p ? `P: ${item.p}` : '',
+      item.i ? `I: ${item.i}` : '',
+      item.e ? `E: ${item.e}` : ''
     ].filter(Boolean).join('\n');
   };
 
@@ -1452,6 +1509,32 @@ export const MedicalResumeModal: React.FC<MedicalResumeModalProps> = ({
             .sort((a, b) => a.sortTimestamp - b.sortTimestamp)
             .map((item) => item.pickerItem)
         };
+      case 'ket_kondisi_pulang':
+        return {
+          target,
+          title: 'Pilih SOAP Terakhir',
+          description: 'Menampilkan 3 SOAP terakhir',
+          emptyMessage: 'Belum ada data SOAP rawat inap untuk nomor rawat ini.',
+          multiple: true,
+          items: (currentSourceData.lastRanapSoaps || [])
+            .map((item, index) => ({
+              sortTimestamp: getExaminationSortTimestamp(item),
+              pickerItem: {
+                id: `soap-terakhir-${index}-${item.tgl_perawatan || item.tanggal || ''}-${item.jam_rawat || ''}`,
+                title: item.tgl_perawatan || item.tanggal
+                  ? formatUIDateTime(`${item.tgl_perawatan || item.tanggal} ${item.jam_rawat || '00:00'}`)
+                  : `SOAP ${index + 1}`,
+                subtitle: item.pegawai || 'Rawat Inap',
+                description: buildSoapText(item),
+                value: buildSoapText(item),
+                badgeLabel: 'SOAP',
+                badgeClassName: 'bg-blue-500/15 text-blue-700 border border-blue-200'
+              }
+            }))
+            .filter((item) => item.pickerItem.value.trim())
+            .sort((a, b) => b.sortTimestamp - a.sortTimestamp)
+            .map((item) => item.pickerItem)
+        };
       default:
         return {
           target,
@@ -1502,6 +1585,24 @@ export const MedicalResumeModal: React.FC<MedicalResumeModalProps> = ({
         title: "Memuat Data",
         description: "Sumber data resume masih dimuat, silakan tunggu sebentar.",
       });
+      return;
+    }
+
+    if (target === 'ket_kondisi_pulang') {
+      const soaps = await fetchLastRanapSoaps();
+      const config = buildPickerConfigFromSource(target, { ...sourceData, lastRanapSoaps: soaps });
+
+      if (config.items.length === 0) {
+        toast({
+          title: "Data Belum Tersedia",
+          description: config.emptyMessage,
+        });
+        return;
+      }
+
+      setPickerTarget(target);
+      setPickerSearch('');
+      setSelectedPickerItems([]);
       return;
     }
 
@@ -1625,6 +1726,9 @@ export const MedicalResumeModal: React.FC<MedicalResumeModalProps> = ({
         break;
       case 'obat_di_rs':
         updateField('obat_di_rs', mergeTextBlocks(formData.obat_di_rs, selectedItems.map((item) => item.value)));
+        break;
+      case 'ket_kondisi_pulang':
+        updateField('ket_kondisi_pulang', mergeTextBlocks(formData.ket_kondisi_pulang, selectedItems.map((item) => item.value)));
         break;
       default:
         break;
@@ -2069,6 +2173,16 @@ export const MedicalResumeModal: React.FC<MedicalResumeModalProps> = ({
                             {kondisiPulangRanapOptions.map((item) => <SelectItem key={item} value={item}>{item}</SelectItem>)}
                           </SelectContent>
                         </Select>
+                      </div>
+                      <div className="md:col-span-2">
+                        {renderFieldLabel('ket_kondisi_pulang', 'Keterangan Kondisi Pulang', 'ket_kondisi_pulang')}
+                        <Textarea
+                          id="ket_kondisi_pulang"
+                          rows={4}
+                          value={formData.ket_kondisi_pulang || ''}
+                          onChange={(e) => updateField('ket_kondisi_pulang', e.target.value)}
+                          placeholder="Tulis keterangan kondisi pulang atau ambil dari 3 SOAP terakhir rawat inap"
+                        />
                       </div>
                     </div>
                   )}

@@ -103,12 +103,44 @@ curl -X GET "http://localhost:3002/api/resume-pasien-data/2025%2F07%2F30%2F00090
     "prosedur_utama": "Primary procedure",
     "prosedur_sekunder": "Secondary procedure",
     "kondisi_pulang": "Discharge condition",
+    "ket_kondisi_pulang": "Discharge condition note",
     "keadaan": "Patient condition",
     "ket_keadaan": "Condition description",
     "obat_pulang": "Discharge medications",
     "nasihat": "Medical advice",
     "kontrol": "Follow-up schedule"
   }
+}
+```
+
+### 2b. Get Last SOAP Entries (Rawat Inap)
+**GET** `/api/resume-pasien-data/:no_rawat/soap-terakhir?limit=3`
+
+Returns the latest SOAP entries from `pemeriksaan_ranap` for the admission, ordered by `tgl_perawatan DESC, jam_rawat DESC` (default limit 3).
+
+#### Example
+```bash
+curl -X GET "http://localhost:3002/api/resume-pasien-data/2025%2F07%2F30%2F000903/soap-terakhir?limit=3"
+```
+
+#### Response
+```json
+{
+  "success": true,
+  "data": [
+    {
+      "tgl_perawatan": "2025-07-31",
+      "jam_rawat": "08:15:00",
+      "s": "Subjective",
+      "o": "Objective",
+      "a": "Assessment",
+      "p": "Plan",
+      "i": "Instruction",
+      "e": "Evaluation",
+      "nip": "DR001",
+      "pegawai": "Doctor name"
+    }
+  ]
 }
 ```
 
@@ -133,6 +165,7 @@ Creates or updates a patient resume.
   "prosedur_utama": "Primary procedure",
   "prosedur_sekunder": "Secondary procedure",
   "kondisi_pulang": "Discharge condition",
+  "ket_kondisi_pulang": "Discharge condition note",
   "keadaan": "Patient condition",
   "ket_keadaan": "Condition description",
   "obat_pulang": "Discharge medications",
