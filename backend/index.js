@@ -2792,6 +2792,29 @@ app.get('/api/resume-pasien-data/:no_rawat', async (req, res) => {
   }
 });
 
+app.get('/api/resume-pasien-data/:no_rawat/soap-terakhir', async (req, res) => {
+  try {
+    const { no_rawat } = req.params;
+    const { limit = 3 } = req.query;
+
+    if (!no_rawat) {
+      return res.status(400).json({
+        success: false,
+        error: 'no_rawat is required'
+      });
+    }
+
+    const result = await ResumePasienDataService.getLastRanapSoaps(no_rawat, limit);
+    res.json(result);
+  } catch (error) {
+    console.error('Resume last SOAP error:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message
+    });
+  }
+});
+
 app.get('/api/resume-pasien-data/:no_rawat/logs', async (req, res) => {
   try {
     const { no_rawat } = req.params;

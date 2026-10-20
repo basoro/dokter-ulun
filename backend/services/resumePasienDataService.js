@@ -395,6 +395,7 @@ class ResumePasienDataService {
       kontrol: resumeData.kontrol ? resumeData.kontrol : null,
       obat_pulang: value('obat_pulang'),
       kondisi_pulang: mappedKondisiPulang.kondisi_pulang,
+      ket_kondisi_pulang: value('ket_kondisi_pulang'),
       tindakan_venti: tindakanVenti,
     };
 
@@ -980,6 +981,44 @@ class ResumePasienDataService {
     }
   }
 
+  // Get the latest SOAP entries from pemeriksaan_ranap for the discharge condition note
+  async getLastRanapSoaps(no_rawat, limit = 3) {
+    const normalizedNoRawat = String(no_rawat || '').trim();
+    if (!normalizedNoRawat) {
+      throw new Error('no_rawat is required');
+    }
+
+    const parsedLimit = parseInt(limit, 10);
+    const safeLimit = Math.min(Math.max(Number.isNaN(parsedLimit) ? 3 : parsedLimit, 1), 10);
+
+    const rows = await executeQuery(
+      `
+        SELECT
+          DATE_FORMAT(pr.tgl_perawatan, '%Y-%m-%d') AS tgl_perawatan,
+          TIME_FORMAT(pr.jam_rawat, '%H:%i:%s') AS jam_rawat,
+          pr.keluhan AS s,
+          pr.pemeriksaan AS o,
+          pr.penilaian AS a,
+          pr.rtl AS p,
+          pr.instruksi AS i,
+          pr.evaluasi AS e,
+          pr.nip,
+          COALESCE(d.nm_dokter, '') AS pegawai
+        FROM pemeriksaan_ranap pr
+        LEFT JOIN dokter d ON d.kd_dokter = pr.nip
+        WHERE pr.no_rawat = ?
+        ORDER BY pr.tgl_perawatan DESC, pr.jam_rawat DESC
+        LIMIT ?
+      `,
+      [normalizedNoRawat, safeLimit]
+    );
+
+    return {
+      success: true,
+      data: Array.isArray(rows) ? rows : []
+    };
+  }
+
   // Get resume detail for specific patient
   async getResumeDetail(no_rawat, statusRawat = 'Ranap', kdDokter = '') {
     const normalizedStatusRawat = this.normalizeStatusRawat(statusRawat);
@@ -1080,6 +1119,7 @@ class ResumePasienDataService {
         COALESCE(rpr.ket_keadaan, '') AS ket_keadaan,
         COALESCE(rpr.dilanjutkan, '') AS dilanjutkan,
         COALESCE(rpr.ket_dilanjutkan, '') AS ket_dilanjutkan,
+        COALESCE(rpr.ket_kondisi_pulang, '') AS ket_kondisi_pulang,
         rpr.kontrol,
         COALESCE(rpr.obat_pulang, '') AS obat_pulang,
         CASE WHEN rpr.no_rawat IS NULL THEN 0 ELSE 1 END AS has_resume
@@ -1093,7 +1133,7 @@ class ResumePasienDataService {
       LEFT JOIN kamar k ON ki.kd_kamar = k.kd_kamar
       LEFT JOIN bangsal b ON k.kd_bangsal = b.kd_bangsal
       WHERE rp.no_rawat = ?
-      GROUP BY rp.no_rawat, rp.kd_dokter, regDok.nm_dokter, p.no_rkm_medis, p.nm_pasien, p.jk, p.tgl_lahir, rpr.kd_dokter, rpr.diagnosa_awal, rpr.alasan, rpr.keluhan_utama, rpr.pemeriksaan_fisik, rpr.jalannya_penyakit, rpr.pemeriksaan_penunjang, rpr.hasil_laborat, rpr.tindakan_dan_operasi, rpr.obat_di_rs, rpr.diagnosa_utama, rpr.kd_diagnosa_utama, rpr.diagnosa_sekunder, rpr.kd_diagnosa_sekunder, rpr.diagnosa_sekunder2, rpr.kd_diagnosa_sekunder2, rpr.diagnosa_sekunder3, rpr.kd_diagnosa_sekunder3, rpr.diagnosa_sekunder4, rpr.kd_diagnosa_sekunder4, rpr.prosedur_utama, rpr.kd_prosedur_utama, rpr.prosedur_sekunder, rpr.kd_prosedur_sekunder, rpr.prosedur_sekunder2, rpr.kd_prosedur_sekunder2, rpr.prosedur_sekunder3, rpr.kd_prosedur_sekunder3, rpr.alergi, rpr.diet, rpr.lab_belum, rpr.edukasi, rpr.cara_keluar, rpr.ket_keluar, rpr.keadaan, rpr.ket_keadaan, rpr.dilanjutkan, rpr.ket_dilanjutkan, rpr.kontrol
+      GROUP BY rp.no_rawat, rp.kd_dokter, regDok.nm_dokter, p.no_rkm_medis, p.nm_pasien, p.jk, p.tgl_lahir, rpr.kd_dokter, rpr.diagnosa_awal, rpr.alasan, rpr.keluhan_utama, rpr.pemeriksaan_fisik, rpr.jalannya_penyakit, rpr.pemeriksaan_penunjang, rpr.hasil_laborat, rpr.tindakan_dan_operasi, rpr.obat_di_rs, rpr.diagnosa_utama, rpr.kd_diagnosa_utama, rpr.diagnosa_sekunder, rpr.kd_diagnosa_sekunder, rpr.diagnosa_sekunder2, rpr.kd_diagnosa_sekunder2, rpr.diagnosa_sekunder3, rpr.kd_diagnosa_sekunder3, rpr.diagnosa_sekunder4, rpr.kd_diagnosa_sekunder4, rpr.prosedur_utama, rpr.kd_prosedur_utama, rpr.prosedur_sekunder, rpr.kd_prosedur_sekunder, rpr.prosedur_sekunder2, rpr.kd_prosedur_sekunder2, rpr.prosedur_sekunder3, rpr.kd_prosedur_sekunder3, rpr.alergi, rpr.diet, rpr.lab_belum, rpr.edukasi, rpr.cara_keluar, rpr.ket_keluar, rpr.keadaan, rpr.ket_keadaan, rpr.dilanjutkan, rpr.ket_dilanjutkan, rpr.ket_kondisi_pulang, rpr.kontrol
     `;
 
     try {
@@ -1303,9 +1343,9 @@ class ResumePasienDataService {
           prosedur_sekunder, kd_prosedur_sekunder, prosedur_sekunder2, kd_prosedur_sekunder2,
           prosedur_sekunder3, kd_prosedur_sekunder3, alergi, diet, lab_belum, edukasi,
           cara_keluar, ket_keluar, keadaan, ket_keadaan, dilanjutkan, ket_dilanjutkan,
-          kontrol, obat_pulang
+          kontrol, obat_pulang, ket_kondisi_pulang
         ) VALUES (
-          ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
+          ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
         )
         ON DUPLICATE KEY UPDATE
           kd_dokter = VALUES(kd_dokter),
@@ -1347,7 +1387,8 @@ class ResumePasienDataService {
           dilanjutkan = VALUES(dilanjutkan),
           ket_dilanjutkan = VALUES(ket_dilanjutkan),
           kontrol = VALUES(kontrol),
-          obat_pulang = VALUES(obat_pulang)
+          obat_pulang = VALUES(obat_pulang),
+          ket_kondisi_pulang = VALUES(ket_kondisi_pulang)
       `;
 
       const params = [
@@ -1392,6 +1433,7 @@ class ResumePasienDataService {
         normalized.ket_dilanjutkan,
         normalized.kontrol,
         normalized.obat_pulang,
+        normalized.ket_kondisi_pulang,
       ];
 
       await executeQuery(query, params);
