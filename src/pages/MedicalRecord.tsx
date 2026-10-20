@@ -1887,8 +1887,6 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
   const [ventilatorLoading, setVentilatorLoading] = useState(false);
   const [sbarEntries, setSbarEntries] = useState<SbarEntry[]>([]);
   const [sbarLoading, setSbarLoading] = useState(false);
-  const [pendingSbarVerification, setPendingSbarVerification] = useState<SbarEntry | null>(null);
-  const [sbarVerificationNote, setSbarVerificationNote] = useState('');
   const [savingSbarVerification, setSavingSbarVerification] = useState(false);
   const [ekstrapiramidalForm, setEkstrapiramidalForm] = useState(getDefaultEkstrapiramidalForm);
   const [savingEkstrapiramidal, setSavingEkstrapiramidal] = useState(false);
@@ -8267,22 +8265,8 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
     }
   }, [formattedNoRawat]);
 
-  const handleOpenSbarVerification = (entry: SbarEntry) => {
-    setPendingSbarVerification(entry);
-    setSbarVerificationNote(String(entry.verified_note || ''));
-  };
-
-  const closeSbarVerification = () => {
-    if (savingSbarVerification) {
-      return;
-    }
-
-    setPendingSbarVerification(null);
-    setSbarVerificationNote('');
-  };
-
-  const confirmSbarVerification = async () => {
-    if (!pendingSbarVerification || !formattedNoRawat) {
+  const handleVerifySbar = async (entry: SbarEntry) => {
+    if (savingSbarVerification || !formattedNoRawat) {
       return;
     }
 
@@ -8304,10 +8288,9 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            tgl_perawatan: pendingSbarVerification.tgl_perawatan,
-            jam_rawat: pendingSbarVerification.jam_rawat,
-            kd_dokter: verifierCode,
-            catatan: sbarVerificationNote.trim()
+            tgl_perawatan: entry.tgl_perawatan,
+            jam_rawat: entry.jam_rawat,
+            kd_dokter: verifierCode
           })
         }
       );
@@ -8321,8 +8304,6 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
         title: 'Berhasil',
         description: responseJson?.message || 'SBAR berhasil diverifikasi'
       });
-      setPendingSbarVerification(null);
-      setSbarVerificationNote('');
       await fetchSbarEntries();
     } catch (error) {
       console.error('Error verifying SBAR:', error);
@@ -13761,7 +13742,8 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
                                               type="button"
                                               size="sm"
                                               variant={entry.verified_at ? 'secondary' : 'default'}
-                                              onClick={() => handleOpenSbarVerification(entry)}
+                                              onClick={() => void handleVerifySbar(entry)}
+                                              disabled={savingSbarVerification}
                                               className="whitespace-nowrap"
                                             >
                                               {entry.verified_at ? (
@@ -16593,54 +16575,6 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
                 disabled={verifyingExaminationKey !== null || !verificationNote.trim()}
               >
                 {verifyingExaminationKey !== null ? 'Menyimpan...' : 'Verifikasi & Simpan Catatan'}
-              </Button>
-            </div>
-          </div>
-        </DialogContent>
-      </Dialog>
-
-      <Dialog
-        open={pendingSbarVerification !== null}
-        onOpenChange={(open) => {
-          if (!open) {
-            closeSbarVerification();
-          }
-        }}
-      >
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Verifikasi SBAR</DialogTitle>
-          </DialogHeader>
-          <div className="space-y-4">
-            <p className="text-sm text-muted-foreground">
-              Verifikasi SBAR untuk {pendingSbarVerification?.tgl_perawatan || '-'} {pendingSbarVerification?.jam_rawat || ''}. Catatan boleh dikosongkan.
-            </p>
-            <div className="space-y-2">
-              <Label htmlFor="sbar-verification-note">Catatan</Label>
-              <Textarea
-                id="sbar-verification-note"
-                value={sbarVerificationNote}
-                onChange={(event) => setSbarVerificationNote(event.target.value)}
-                rows={4}
-                placeholder="Tulis catatan verifikasi (opsional)"
-                disabled={savingSbarVerification}
-              />
-            </div>
-            <div className="flex justify-end gap-2">
-              <Button
-                type="button"
-                variant="outline"
-                onClick={closeSbarVerification}
-                disabled={savingSbarVerification}
-              >
-                Batal
-              </Button>
-              <Button
-                type="button"
-                onClick={() => void confirmSbarVerification()}
-                disabled={savingSbarVerification}
-              >
-                {savingSbarVerification ? 'Menyimpan...' : 'Simpan Verifikasi'}
               </Button>
             </div>
           </div>
