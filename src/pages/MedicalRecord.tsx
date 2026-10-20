@@ -275,6 +275,22 @@ interface VentilatorEntry {
   created_at?: string;
 }
 
+interface SbarEntry {
+  no_rawat: string;
+  tgl_perawatan: string;
+  jam_rawat: string;
+  situasi: string;
+  latar_belakang: string;
+  penilaian: string;
+  rekomendasi: string;
+  nip: string;
+  pegawai: string;
+  is_verified?: number;
+  verified_at?: string;
+  verified_by?: string;
+  verified_note?: string;
+}
+
 const ECHO_CARDIOGRAPHY_TITLE_OPTIONS = [
   'Echocardiography',
   'Holter Monitoring',
@@ -393,7 +409,7 @@ type ProcedureStatusRawat = 'Ralan' | 'Ranap';
 type LabStatusRawat = 'Ralan' | 'Ranap' | 'IGD';
 type RadiologyStatusRawat = 'Ralan' | 'Ranap' | 'IGD';
 type OutpatientExaminationSectionTabValue = 'examinations' | 'asmed-ralan' | 'echo-echocardiography' | 'rehab-medik';
-type InpatientExaminationSectionTabValue = 'examinations' | 'asmed-ralan' | 'balance-cairan' | 'ventilator' | 'ekstrapiramidal' | 'echo-echocardiography' | 'rehab-medik';
+type InpatientExaminationSectionTabValue = 'examinations' | 'asmed-ralan' | 'balance-cairan' | 'sbar' | 'ventilator' | 'ekstrapiramidal' | 'echo-echocardiography' | 'rehab-medik';
 type VisitDetailSectionFilterValue = 'all' | 'triase' | 'catatan' | 'pemeriksaan' | 'diagnosa' | 'tindakan' | 'resep' | 'laboratorium' | 'radiologi' | 'pemeriksaan-jantung';
 
 interface MedicalRecordData {
@@ -1869,6 +1885,11 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
   const [savingBalanceCairan, setSavingBalanceCairan] = useState(false);
   const [ventilatorEntries, setVentilatorEntries] = useState<VentilatorEntry[]>([]);
   const [ventilatorLoading, setVentilatorLoading] = useState(false);
+  const [sbarEntries, setSbarEntries] = useState<SbarEntry[]>([]);
+  const [sbarLoading, setSbarLoading] = useState(false);
+  const [pendingSbarVerification, setPendingSbarVerification] = useState<SbarEntry | null>(null);
+  const [sbarVerificationNote, setSbarVerificationNote] = useState('');
+  const [savingSbarVerification, setSavingSbarVerification] = useState(false);
   const [ekstrapiramidalForm, setEkstrapiramidalForm] = useState(getDefaultEkstrapiramidalForm);
   const [savingEkstrapiramidal, setSavingEkstrapiramidal] = useState(false);
   const [echoCardiographyEntries, setEchoCardiographyEntries] = useState<EchoCardiographyEntry[]>([]);
@@ -8219,6 +8240,102 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
     }
   }, [formattedNoRawat]);
 
+  const fetchSbarEntries = useCallback(async () => {
+    if (!formattedNoRawat) {
+      setSbarEntries([]);
+      return;
+    }
+
+    try {
+      setSbarLoading(true);
+      const response = await fetch(`${API_URLS.SBAR_RANAP}/${encodeURIComponent(formattedNoRawat)}`);
+      const responseJson = await response.json().catch(() => null);
+
+      if (!response.ok || !responseJson?.success) {
+        throw new Error(
+          responseJson?.error || `HTTP error! status: ${response.status}`
+        );
+      }
+
+      const entries = Array.isArray(responseJson.data) ? responseJson.data : [];
+      setSbarEntries(entries);
+    } catch (error) {
+      console.error('Error fetching SBAR:', error);
+      setSbarEntries([]);
+    } finally {
+      setSbarLoading(false);
+    }
+  }, [formattedNoRawat]);
+
+  const handleOpenSbarVerification = (entry: SbarEntry) => {
+    setPendingSbarVerification(entry);
+    setSbarVerificationNote(String(entry.verified_note || ''));
+  };
+
+  const closeSbarVerification = () => {
+    if (savingSbarVerification) {
+      return;
+    }
+
+    setPendingSbarVerification(null);
+    setSbarVerificationNote('');
+  };
+
+  const confirmSbarVerification = async () => {
+    if (!pendingSbarVerification || !formattedNoRawat) {
+      return;
+    }
+
+    const verifierCode = String(user?.kd_dokter || currentUsername).trim();
+    if (!verifierCode) {
+      toast({
+        title: 'Error',
+        description: 'Identitas dokter login tidak ditemukan',
+        variant: 'destructive'
+      });
+      return;
+    }
+
+    try {
+      setSavingSbarVerification(true);
+      const response = await fetch(
+        `${API_URLS.SBAR_RANAP_VERIFICATION}/${encodeURIComponent(formattedNoRawat)}/verification`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            tgl_perawatan: pendingSbarVerification.tgl_perawatan,
+            jam_rawat: pendingSbarVerification.jam_rawat,
+            kd_dokter: verifierCode,
+            catatan: sbarVerificationNote.trim()
+          })
+        }
+      );
+      const responseJson = await response.json().catch(() => null);
+
+      if (!response.ok || !responseJson?.success) {
+        throw new Error(responseJson?.error || `HTTP error! status: ${response.status}`);
+      }
+
+      toast({
+        title: 'Berhasil',
+        description: responseJson?.message || 'SBAR berhasil diverifikasi'
+      });
+      setPendingSbarVerification(null);
+      setSbarVerificationNote('');
+      await fetchSbarEntries();
+    } catch (error) {
+      console.error('Error verifying SBAR:', error);
+      toast({
+        title: 'Error',
+        description: error instanceof Error ? error.message : 'Gagal memverifikasi SBAR',
+        variant: 'destructive'
+      });
+    } finally {
+      setSavingSbarVerification(false);
+    }
+  };
+
   const handleSaveBalanceCairan = useCallback(async () => {
     if (!formattedNoRawat) {
       toast({
@@ -8618,6 +8735,17 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
       void fetchVentilatorEntries();
     }
   }, [fetchVentilatorEntries, formattedNoRawat, inpatientExaminationSectionTab]);
+
+  useEffect(() => {
+    if (!formattedNoRawat) {
+      setSbarEntries([]);
+      return;
+    }
+
+    if (inpatientExaminationSectionTab === 'sbar') {
+      void fetchSbarEntries();
+    }
+  }, [fetchSbarEntries, formattedNoRawat, inpatientExaminationSectionTab]);
 
   useEffect(() => {
     if (formattedNoRawat && echoCardiographyAccess) {
@@ -13300,6 +13428,7 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
                           <TabsTrigger value="examinations">Pemeriksaan</TabsTrigger>
                           <TabsTrigger value="asmed-ralan">Assesmen Medis</TabsTrigger>
                           <TabsTrigger value="balance-cairan">Balance Cairan</TabsTrigger>
+                          <TabsTrigger value="sbar">SBAR</TabsTrigger>
                           <TabsTrigger value="ventilator">Ventilator</TabsTrigger>
                           <TabsTrigger value="ekstrapiramidal">Ekstrapiramidal</TabsTrigger>
                           {echoCardiographyAccess && (
@@ -13570,6 +13699,86 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
                                 )}
                               </div>
                             </>
+                          )}
+                        </TabsContent>
+
+                        <TabsContent value="sbar" className="space-y-4">
+                          {!formattedNoRawat ? (
+                            <div className="border border-dashed rounded-lg p-6 text-sm text-muted-foreground bg-muted/20">
+                              Pilih kunjungan rawat inap terlebih dahulu untuk melihat SBAR.
+                            </div>
+                          ) : (
+                            <div className="border rounded-lg">
+                              <div className="flex flex-col gap-3 border-b p-4 sm:flex-row sm:items-center sm:justify-between">
+                                <div>
+                                  <h4 className="font-medium">SBAR</h4>
+                                  <p className="text-sm text-muted-foreground">
+                                    Situation, Background, Assesment, Recommendation pasien rawat inap.
+                                  </p>
+                                </div>
+                                <Button
+                                  type="button"
+                                  variant="outline"
+                                  size="sm"
+                                  onClick={() => void fetchSbarEntries()}
+                                  disabled={sbarLoading}
+                                >
+                                  {sbarLoading ? 'Memuat...' : 'Refresh'}
+                                </Button>
+                              </div>
+
+                              {sbarLoading ? (
+                                <div className="p-6 text-sm text-muted-foreground">Memuat data SBAR...</div>
+                              ) : sbarEntries.length === 0 ? (
+                                <div className="p-6 text-sm text-muted-foreground">Belum ada data SBAR untuk nomor rawat ini.</div>
+                              ) : (
+                                <div className="overflow-x-auto">
+                                  <table className="w-full text-sm">
+                                    <thead className="bg-muted/40">
+                                      <tr className="text-left">
+                                        <th className="px-3 py-2 font-medium">Tanggal</th>
+                                        <th className="px-3 py-2 font-medium">Jam</th>
+                                        <th className="px-3 py-2 font-medium">Situation</th>
+                                        <th className="px-3 py-2 font-medium">Background</th>
+                                        <th className="px-3 py-2 font-medium">Assesment</th>
+                                        <th className="px-3 py-2 font-medium">Recommendation</th>
+                                        <th className="px-3 py-2 font-medium">Petugas</th>
+                                        <th className="px-3 py-2 font-medium">Aksi</th>
+                                      </tr>
+                                    </thead>
+                                    <tbody>
+                                      {sbarEntries.map((entry, index) => (
+                                        <tr key={`${entry.no_rawat}-${entry.tgl_perawatan}-${entry.jam_rawat}-${index}`} className="border-t align-top">
+                                          <td className="whitespace-nowrap px-3 py-2">{formatLongDateSafe(entry.tgl_perawatan)}</td>
+                                          <td className="whitespace-nowrap px-3 py-2">{entry.jam_rawat || '-'}</td>
+                                          <td className="whitespace-pre-line break-words px-3 py-2">{entry.situasi || '-'}</td>
+                                          <td className="whitespace-pre-line break-words px-3 py-2">{entry.latar_belakang || '-'}</td>
+                                          <td className="whitespace-pre-line break-words px-3 py-2">{entry.penilaian || '-'}</td>
+                                          <td className="whitespace-pre-line break-words px-3 py-2">{entry.rekomendasi || '-'}</td>
+                                          <td className="px-3 py-2">{entry.pegawai || entry.nip || '-'}</td>
+                                          <td className="px-3 py-2">
+                                            <Button
+                                              type="button"
+                                              size="sm"
+                                              variant={entry.verified_at ? 'secondary' : 'default'}
+                                              onClick={() => handleOpenSbarVerification(entry)}
+                                              className="whitespace-nowrap"
+                                            >
+                                              {entry.verified_at ? (
+                                                <>
+                                                  <Check className="mr-1 h-4 w-4" />
+                                                  Verified
+                                                </>
+                                              ) : 'Verifikasi'}
+                                            </Button>
+                                          </td>
+                                        </tr>
+                                      ))}
+                                    </tbody>
+                                  </table>
+                                </div>
+                              )}
+                            </div>
                           )}
                         </TabsContent>
 
@@ -16384,6 +16593,54 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
                 disabled={verifyingExaminationKey !== null || !verificationNote.trim()}
               >
                 {verifyingExaminationKey !== null ? 'Menyimpan...' : 'Verifikasi & Simpan Catatan'}
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog
+        open={pendingSbarVerification !== null}
+        onOpenChange={(open) => {
+          if (!open) {
+            closeSbarVerification();
+          }
+        }}
+      >
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Verifikasi SBAR</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <p className="text-sm text-muted-foreground">
+              Verifikasi SBAR untuk {pendingSbarVerification?.tgl_perawatan || '-'} {pendingSbarVerification?.jam_rawat || ''}. Catatan boleh dikosongkan.
+            </p>
+            <div className="space-y-2">
+              <Label htmlFor="sbar-verification-note">Catatan</Label>
+              <Textarea
+                id="sbar-verification-note"
+                value={sbarVerificationNote}
+                onChange={(event) => setSbarVerificationNote(event.target.value)}
+                rows={4}
+                placeholder="Tulis catatan verifikasi (opsional)"
+                disabled={savingSbarVerification}
+              />
+            </div>
+            <div className="flex justify-end gap-2">
+              <Button
+                type="button"
+                variant="outline"
+                onClick={closeSbarVerification}
+                disabled={savingSbarVerification}
+              >
+                Batal
+              </Button>
+              <Button
+                type="button"
+                onClick={() => void confirmSbarVerification()}
+                disabled={savingSbarVerification}
+              >
+                {savingSbarVerification ? 'Menyimpan...' : 'Simpan Verifikasi'}
               </Button>
             </div>
           </div>

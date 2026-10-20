@@ -37,6 +37,7 @@ import PatientNotesService from './services/patientNotesService.js';
 import PatientContactService from './services/patientContactService.js';
 import BalanceCairanService from './services/balanceCairanService.js';
 import VentilatorService from './services/ventilatorService.js';
+import SbarService from './services/sbarService.js';
 import ProcedureService from './services/procedureService.js';
 import PrescriptionDataService from './services/prescriptionDataService.js';
 import RadiologyDataService from './services/radiologyDataService.js';
@@ -1388,6 +1389,37 @@ app.get('/api/ventilator/:no_rawat', async (req, res) => {
     });
   } catch (error) {
     console.error('Error in ventilator GET endpoint:', error);
+    res.status(400).json({
+      success: false,
+      error: error.message
+    });
+  }
+});
+
+app.get('/api/sbar-ranap/:no_rawat', async (req, res) => {
+  try {
+    const result = await SbarService.listByNoRawat(req.params.no_rawat);
+    res.json({
+      success: true,
+      data: result
+    });
+  } catch (error) {
+    console.error('Error in SBAR ranap GET endpoint:', error);
+    res.status(400).json({
+      success: false,
+      error: error.message
+    });
+  }
+});
+
+app.post('/api/sbar-ranap/:no_rawat/verification', async (req, res) => {
+  try {
+    const { no_rawat } = req.params;
+    const { tgl_perawatan, jam_rawat, kd_dokter, catatan } = req.body || {};
+    const result = await SbarService.verifySbar(no_rawat, tgl_perawatan, jam_rawat, kd_dokter, catatan);
+    res.json(result);
+  } catch (error) {
+    console.error('Error in SBAR ranap verification endpoint:', error);
     res.status(400).json({
       success: false,
       error: error.message
