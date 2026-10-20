@@ -12,7 +12,7 @@ import {
   Activity, ClipboardList, BedDouble, UserCircle, Building, MapPin,
   Phone, Heart, CalendarDays, FileText, Plus, X, Trash2, Image as ImageIcon, Clock, CreditCard,
   Copy, ChevronDown, ChevronUp, Brain, Check, CheckSquare, ChevronsUpDown, Pencil, Play,
-  BadgeAlert, Maximize2, Mic, Square, Info, Loader2
+  BadgeAlert, Maximize2, Mic, Square, Info, Loader2, ExternalLink
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -2100,6 +2100,7 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
     modality: string;
     totalImages: number;
     loading: boolean;
+    rad: any;
   }>({
     open: false,
     title: '',
@@ -2107,12 +2108,18 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
     currentIndex: 0,
     modality: '',
     totalImages: 0,
-    loading: false
+    loading: false,
+    rad: null
   });
   const [isPacsPlaying, setIsPacsPlaying] = useState(false);
   const [pacsPlaybackSpeed, setPacsPlaybackSpeed] = useState(180);
   const [pacsZoomLevel, setPacsZoomLevel] = useState(1);
   const [radiologyPacsByKey, setRadiologyPacsByKey] = useState<Record<string, any>>({});
+  const [pacsViewerLinkState, setPacsViewerLinkState] = useState<{ key: string; loading: boolean; error: string }>({
+    key: '',
+    loading: false,
+    error: ''
+  });
   const [loadingRadiologyPacsKeys, setLoadingRadiologyPacsKeys] = useState<Record<string, boolean>>({});
   const [radiologyPacsErrorKeys, setRadiologyPacsErrorKeys] = useState<Record<string, string>>({});
   const [visibleRadiologyPacsCardKeys, setVisibleRadiologyPacsCardKeys] = useState<Record<string, boolean>>({});
@@ -6448,13 +6455,17 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
       .filter((value, index, array) => array.indexOf(value) === index);
 
     candidateIndexes.forEach((index) => {
-      const instanceId = String(pacsPreviewModal.images[index]?.instance_id || '').trim();
+      const imageItem = pacsPreviewModal.images[index];
+      const instanceId = String(imageItem?.instance_id || '').trim();
 
       if (!instanceId) {
         return;
       }
 
-      const previewUrl = `${API_CONFIG.BASE_URL}/pacs/preview/${encodeURIComponent(instanceId)}`;
+      const imageSource = String(
+        imageItem?.image_source || (pacsPreviewModal.rad?.source === 'pacs' ? 'pacs' : '')
+      ).trim().toLowerCase();
+      const previewUrl = `${API_CONFIG.BASE_URL}/pacs/preview/${encodeURIComponent(instanceId)}${imageSource === 'pacs' ? '?source=pacs' : ''}`;
       if (prefetchedPacsPreviewUrlsRef.current.has(previewUrl)) {
         return;
       }
@@ -9905,7 +9916,10 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
       pacs_metadata_only: responseJson.pacs_metadata_only === true,
       pacs_full_loaded: responseJson.pacs_full_loaded === true,
       pacs_series: Array.isArray(responseJson.pacs_series) ? responseJson.pacs_series.filter(Boolean) : [],
-      pacs_images: Array.isArray(responseJson.pacs_images) ? responseJson.pacs_images.filter(Boolean) : []
+      pacs_images: Array.isArray(responseJson.pacs_images) ? responseJson.pacs_images.filter(Boolean) : [],
+      source: responseJson.source === 'pacs' ? 'pacs' : 'orthanc',
+      fallback_reason: responseJson.fallback_reason || null,
+      viewer_link_available: responseJson.viewer_link_available === true
     };
   }, []);
 
@@ -10118,7 +10132,8 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
       currentIndex,
       modality: normalizedModality,
       totalImages,
-      loading: shouldFetchFullCt
+      loading: shouldFetchFullCt,
+      rad
     });
     setIsPacsPlaying(normalizedModality === 'CT' && !shouldFetchFullCt && normalizedImages.length > 1);
 
@@ -10174,6 +10189,53 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
       currentIndex: normalizedIndex
     }));
   };
+
+  const openRadiologyPacsViewerLink = useCallback(async (rad: any) => {
+    const enrichedRad = getRadiologyWithLazyPacs(rad);
+    const noRawat = String(enrichedRad?.no_rawat || '').trim();
+    const examDate = String(enrichedRad?.tgl_periksa || String(enrichedRad?.tanggal || '').split(' ')[0] || '').trim();
+    const examName = String(enrichedRad?.pemeriksaan || '').trim();
+    const linkKey = getRadiologyPacsKey(enrichedRad);
+
+    if (!noRawat || !examDate) {
+      setPacsViewerLinkState({
+        key: linkKey,
+        loading: false,
+        error: 'Data pemeriksaan belum lengkap untuk membuka PACS Viewer.'
+      });
+      return;
+    }
+
+    setPacsViewerLinkState({ key: linkKey, loading: true, error: '' });
+
+    try {
+      const params = new URLSearchParams({
+        no_rawat: noRawat,
+        exam_date: examDate
+      });
+
+      if (examName) {
+        params.set('exam_name', examName);
+      }
+
+      const response = await fetch(`${API_URLS.PACS_VIEWER_LINK}?${params.toString()}`);
+      const responseJson = await response.json().catch(() => null);
+
+      if (!response.ok || !responseJson?.success || !responseJson?.url) {
+        throw new Error(responseJson?.message || 'PACS Viewer belum dapat dibuka saat ini.');
+      }
+
+      window.open(String(responseJson.url), '_blank', 'noopener,noreferrer');
+      setPacsViewerLinkState({ key: linkKey, loading: false, error: '' });
+    } catch (error) {
+      console.error('Error creating PACS viewer link:', error);
+      setPacsViewerLinkState({
+        key: linkKey,
+        loading: false,
+        error: error instanceof Error ? error.message : 'PACS Viewer belum dapat dibuka saat ini.'
+      });
+    }
+  }, [getRadiologyWithLazyPacs]);
 
   const getRadiologyPacsThumbnailItems = (rad: any) => {
     const pacsImages = Array.isArray(rad?.pacs_images) ? rad.pacs_images.filter(Boolean) : [];
@@ -10235,19 +10297,26 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
       modality?: string;
       width?: number;
       preferPreview?: boolean;
+      imageSource?: string;
     }
   ) => {
     const normalizedModality = String(options?.modality || '').toUpperCase();
+    const isPacsSource = String(options?.imageSource || '').trim().toLowerCase() === 'pacs';
     const preferPreview = options?.preferPreview || normalizedModality === 'CT';
     const basePath = preferPreview ? '/api/pacs/preview' : '/api/pacs/rendered';
     const encodedInstanceId = encodeURIComponent(instanceId);
+    const params = new URLSearchParams();
 
-    if (preferPreview) {
-      return `${API_CONFIG.BASE_URL_WITHOUT_API}${basePath}/${encodedInstanceId}`;
+    if (isPacsSource) {
+      params.set('source', 'pacs');
     }
 
-    const width = options?.width || 500;
-    return `${API_CONFIG.BASE_URL_WITHOUT_API}${basePath}/${encodedInstanceId}?width=${width}`;
+    if (!preferPreview) {
+      params.set('width', String(options?.width || 500));
+    }
+
+    const queryString = params.toString();
+    return `${API_CONFIG.BASE_URL_WITHOUT_API}${basePath}/${encodedInstanceId}${queryString ? `?${queryString}` : ''}`;
   };
 
   const zoomOutPacsPreview = () => {
@@ -10260,6 +10329,61 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
 
   const resetPacsZoom = () => {
     setPacsZoomLevel(1);
+  };
+
+  const renderRadiologyPacsSourceActions = (rad: any, pacsKey: string) => {
+    const pacsSource = String(rad?.source || '');
+    const canOpenPacsViewer = pacsSource === 'pacs' && rad?.viewer_link_available !== false;
+    const isViewerLinkLoading = pacsViewerLinkState.loading && pacsViewerLinkState.key === pacsKey;
+    const viewerLinkError = pacsViewerLinkState.key === pacsKey ? pacsViewerLinkState.error : '';
+
+    if (!pacsSource && !canOpenPacsViewer && !viewerLinkError) {
+      return null;
+    }
+
+    return (
+      <>
+        <div className="flex flex-wrap items-center gap-2">
+          {pacsSource ? (
+            <span
+              className={cn(
+                'inline-flex items-center rounded-full border px-2.5 py-1 text-xs font-medium',
+                pacsSource === 'pacs'
+                  ? 'border-emerald-200 bg-emerald-50 text-emerald-700'
+                  : 'border-amber-200 bg-amber-50 text-amber-700'
+              )}
+              title={pacsSource === 'pacs'
+                ? 'Data radiologi berasal dari server PACS.'
+                : 'PACS tidak tersedia, menampilkan data dari server Orthanc'}
+            >
+              {pacsSource === 'pacs' ? 'PACS' : 'Orthanc (fallback)'}
+            </span>
+          ) : null}
+          {canOpenPacsViewer ? (
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              className="h-7 px-2 text-xs"
+              disabled={isViewerLinkLoading}
+              onClick={() => {
+                void openRadiologyPacsViewerLink(rad);
+              }}
+            >
+              {isViewerLinkLoading ? (
+                <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" />
+              ) : (
+                <ExternalLink className="mr-1 h-3.5 w-3.5" />
+              )}
+              Buka di PACS Viewer
+            </Button>
+          ) : null}
+        </div>
+        {viewerLinkError ? (
+          <p className="text-xs text-amber-700">{viewerLinkError}</p>
+        ) : null}
+      </>
+    );
   };
 
   const renderRadiologyPacsImages = (rad: any) => {
@@ -10300,6 +10424,7 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
                             : 'Thumbnail PACS belum dimuat. Anda bisa memuat thumbnail ringkas tanpa membuka seluruh stack gambar.'}
                   </p>
                 </div>
+                {renderRadiologyPacsSourceActions(enrichedRad, pacsKey)}
                 {!isLoadingPacs && !hasLoadedPacs ? (
                   <Button
                     type="button"
@@ -10329,7 +10454,7 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
 
     return (
       <div className="mt-4 border-t pt-4">
-        <div className="mb-3 flex items-start justify-between gap-3">
+        <div className="mb-3 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
           <div>
             <p className="text-sm font-medium flex items-center gap-2">
               <ImageIcon className="h-4 w-4" />
@@ -10341,15 +10466,20 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
               </p>
             ) : null}
           </div>
-          {modality === 'CT' ? (
-            <p className="text-xs text-muted-foreground">
-              CT scan: {totalImages} slice, klik thumbnail untuk memuat lengkap
-            </p>
-          ) : totalImages > displayImages.length ? (
-            <p className="text-xs text-muted-foreground">
-              Menampilkan {displayImages.length} dari {totalImages} gambar
-            </p>
-          ) : null}
+          <div className="flex flex-col items-start gap-2 sm:items-end">
+            {modality === 'CT' ? (
+              <p className="text-xs text-muted-foreground">
+                CT scan: {totalImages} slice, klik thumbnail untuk memuat lengkap
+              </p>
+            ) : totalImages > displayImages.length ? (
+              <p className="text-xs text-muted-foreground">
+                Menampilkan {displayImages.length} dari {totalImages} gambar
+              </p>
+            ) : null}
+            <div className="flex flex-wrap items-center gap-2">
+              {renderRadiologyPacsSourceActions(enrichedRad, pacsKey)}
+            </div>
+          </div>
         </div>
 
         <div className={cn(
@@ -10360,7 +10490,8 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
             const previewUrl = getPacsImageUrl(image.instance_id, {
               modality,
               width: 400,
-              preferPreview: modality === 'CT'
+              preferPreview: modality === 'CT',
+              imageSource: image.image_source
             });
 
             return (
@@ -15795,11 +15926,50 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
                 {pacsPreviewModal.title}
               </span>
               {pacsPreviewModal.images.length > 0 ? (
-                <span className="text-sm font-normal text-muted-foreground">
-                  {isCtPacsPreview ? 'Slice' : 'Gambar'} {pacsPreviewModal.currentIndex + 1} dari {Math.max(pacsPreviewModal.totalImages || 0, pacsPreviewModal.images.length)}
+                <span className="flex flex-wrap items-center justify-end gap-2 text-sm font-normal text-muted-foreground">
+                  <span>
+                    {isCtPacsPreview ? 'Slice' : 'Gambar'} {pacsPreviewModal.currentIndex + 1} dari {Math.max(pacsPreviewModal.totalImages || 0, pacsPreviewModal.images.length)}
+                  </span>
+                  {pacsPreviewModal.rad?.source ? (
+                    <span
+                      className={cn(
+                        'inline-flex items-center rounded-full border px-2.5 py-1 text-xs font-medium',
+                        pacsPreviewModal.rad.source === 'pacs'
+                          ? 'border-emerald-200 bg-emerald-50 text-emerald-700'
+                          : 'border-amber-200 bg-amber-50 text-amber-700'
+                      )}
+                      title={pacsPreviewModal.rad.source === 'pacs'
+                        ? 'Data radiologi berasal dari server PACS.'
+                        : 'PACS tidak tersedia, menampilkan data dari server Orthanc'}
+                    >
+                      {pacsPreviewModal.rad.source === 'pacs' ? 'PACS' : 'Orthanc (fallback)'}
+                    </span>
+                  ) : null}
+                  {pacsPreviewModal.rad?.source === 'pacs' && pacsPreviewModal.rad?.viewer_link_available !== false ? (
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      className="h-7 px-2 text-xs"
+                      disabled={pacsViewerLinkState.loading && pacsViewerLinkState.key === getRadiologyPacsKey(pacsPreviewModal.rad)}
+                      onClick={() => {
+                        void openRadiologyPacsViewerLink(pacsPreviewModal.rad);
+                      }}
+                    >
+                      {pacsViewerLinkState.loading && pacsViewerLinkState.key === getRadiologyPacsKey(pacsPreviewModal.rad) ? (
+                        <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" />
+                      ) : (
+                        <ExternalLink className="mr-1 h-3.5 w-3.5" />
+                      )}
+                      Buka di PACS Viewer
+                    </Button>
+                  ) : null}
                 </span>
               ) : null}
             </DialogTitle>
+            {pacsPreviewModal.rad && pacsViewerLinkState.key === getRadiologyPacsKey(pacsPreviewModal.rad) && pacsViewerLinkState.error ? (
+              <p className="text-xs text-amber-700">{pacsViewerLinkState.error}</p>
+            ) : null}
           </DialogHeader>
 
           <div className="space-y-4 p-6">

@@ -75,8 +75,24 @@ ORTHANC_SERVER=http://127.0.0.1:8042
 ORTHANC_USERNAME=your_orthanc_username
 ORTHANC_PASSWORD=your_orthanc_password
 
+PACS_ENABLED=true
+PACS_BASE_URL=https://pacs.rshdbarabai.com
+PACS_SERVICE_USERNAME=your_pacs_service_username
+PACS_SERVICE_PASSWORD=your_pacs_service_password
+PACS_REQUEST_TIMEOUT_MS=5000
+PACS_REQUEST_RETRY_COUNT=1
+PACS_VIEWER_LINK_TTL_MINUTES=1440
+PACS_STUDY_CACHE_TTL_MS=120000
+
 DIGITAL_FILES_BASE_URL=https://simrs.rshdbarabai.com/webapps/berkasrawat
 ```
+
+Catatan PACS:
+
+- akun service PACS wajib memakai role `TECHNICIAN` dengan permission `study:share` (lihat checklist go-live di `simrs-integration.md`)
+- nilai `PACS_SERVICE_PASSWORD` disimpan hanya di `backend/.env` (jangan di variabel `VITE_*` atau kode frontend)
+- `PACS_SERVER` / `PACS_USERNAME` / `PACS_PASSWORD` lama tetap dibaca sebagai alias, tetapi sebaiknya dirotasi dan dipindahkan ke variabel baru
+- bila PACS tidak dapat dijangkau, foto radiologi tetap tampil dari Orthanc (badge `Orthanc (fallback)` di UI)
 
 ## 3. Menjalankan Backend Dengan PM2
 
@@ -268,6 +284,15 @@ Periksa:
 - `ORTHANC_USERNAME`
 - `ORTHANC_PASSWORD`
 - akses backend ke server Orthanc
+
+### Radiologi tampil dengan badge "Orthanc (fallback)"
+
+Artinya PACS sedang tidak dipakai, gambar dilayani Orthanc. Periksa:
+
+- `PACS_ENABLED=true`
+- `PACS_BASE_URL` (atau alias `PACS_SERVER`) dapat dijangkau dari server backend
+- `PACS_SERVICE_USERNAME` / `PACS_SERVICE_PASSWORD` (atau alias lama) valid
+- nilai `fallback_reason` pada respons `/api/pacs/radiology-images`
 
 ### Berkas digital kosong
 

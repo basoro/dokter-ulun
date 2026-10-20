@@ -2,7 +2,6 @@ import express from 'express';
 import multer from 'multer';
 import cors from 'cors';
 import dotenv from 'dotenv';
-import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { AuthService } from './services/authService.js';
@@ -61,30 +60,15 @@ const __dirname = path.dirname(__filename);
 dotenv.config({ path: path.resolve(__dirname, '.env') });
 initCrudAuditStorage();
 
-// #region debug-point A:save-exam-route-reporter
-const reportSaveExaminationDebug = (hypothesisId, location, msg, data = {}, runId = 'pre-fix') => {
-  let debugServerUrl = 'http://127.0.0.1:7777/event';
-  let debugSessionId = 'spo2-ranap-save';
-  try {
-    const envContent = fs.readFileSync('.dbg/spo2-ranap-save.env', 'utf8');
-    debugServerUrl = envContent.match(/DEBUG_SERVER_URL=(.+)/)?.[1]?.trim() || debugServerUrl;
-    debugSessionId = envContent.match(/DEBUG_SESSION_ID=(.+)/)?.[1]?.trim() || debugSessionId;
-  } catch {}
-  fetch(debugServerUrl, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      sessionId: debugSessionId,
-      runId,
-      hypothesisId,
-      location,
-      msg,
-      data,
-      ts: Date.now()
-    })
-  }).catch(() => {});
-};
-// #endregion
+// Penjaga keandalan proses: backend ini pernah mati mendadak tanpa jejak.
+// Log tetap ditulis agar penyebabnya dapat ditelusuri, namun proses tidak dibunuh diam-diam.
+process.on('uncaughtException', (error) => {
+  console.error('❌ Uncaught exception:', error);
+});
+
+process.on('unhandledRejection', (reason) => {
+  console.error('❌ Unhandled rejection:', reason);
+});
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -346,39 +330,11 @@ console.log('✅ Clinical-pathway routes registered successfully');
 app.post('/api/save-examination', async (req, res) => {
   try {
     const examinationData = req.body;
-    // #region debug-point A:save-exam-route-entry
-    reportSaveExaminationDebug('A', 'backend/index.js:/api/save-examination', '[DEBUG] save examination route hit', {
-      method: req.method,
-      hasBody: !!req.body,
-      bodyKeys: Object.keys(req.body || {}),
-      no_rawat: examinationData?.no_rawat || null,
-      status_rawat: examinationData?.status_rawat || null,
-      spo2: examinationData?.spo2 ?? null,
-      tgl_perawatan: examinationData?.tgl_perawatan || null,
-      jam_rawat: examinationData?.jam_rawat || null,
-      nip: examinationData?.nip || null
-    });
-    // #endregion
-    
     const result = await SaveExaminationService.saveExamination(examinationData);
     await auditCrudSuccess(req, 'examination', result?.data?.action || 'create', result);
-    // #region debug-point A:save-exam-route-success
-    reportSaveExaminationDebug('A', 'backend/index.js:/api/save-examination', '[DEBUG] save examination route success', {
-      success: result?.success ?? null,
-      table: result?.table || null,
-      action: result?.data?.action || null
-    });
-    // #endregion
     res.json(result);
   } catch (error) {
     await auditCrudFailure(req, 'examination', 'upsert', error);
-    // #region debug-point D:save-exam-route-error
-    reportSaveExaminationDebug('D', 'backend/index.js:/api/save-examination', '[DEBUG] save examination route error', {
-      name: error?.name || 'Error',
-      message: error?.message || 'Unknown error',
-      stack: error?.stack || null
-    });
-    // #endregion
     console.error('Save examination error:', error);
     res.status(500).json({
       success: false,
@@ -928,8 +884,10 @@ app.get('/api/search-medical-record-patients', async (req, res) => {
 app.get('/api/pacs/rendered/:instanceId', async (req, res) => {
   try {
     const { instanceId } = req.params;
-    const { width } = req.query;
-    const imageResult = await GetMedicalRecordService.getOrthancRenderedImage(instanceId, width);
+    const { width, source } = req.query;
+    const imageResult = String(source || '').trim().toLowerCase() === 'pacs'
+      ? await GetMedicalRecordService.getPacsInstanceImage(instanceId, width)
+      : await GetMedicalRecordService.getOrthancRenderedImage(instanceId, width);
 
     res.setHeader('Content-Type', imageResult.contentType);
     res.setHeader('Cache-Control', 'public, max-age=86400, immutable');
@@ -946,8 +904,10 @@ app.get('/api/pacs/rendered/:instanceId', async (req, res) => {
 app.get('/api/pacs/preview/:instanceId', async (req, res) => {
   try {
     const { instanceId } = req.params;
-    const { width } = req.query;
-    const imageResult = await GetMedicalRecordService.getOrthancPreviewImage(instanceId, width);
+    const { width, source } = req.query;
+    const imageResult = String(source || '').trim().toLowerCase() === 'pacs'
+      ? await GetMedicalRecordService.getPacsInstanceImage(instanceId, width)
+      : await GetMedicalRecordService.getOrthancPreviewImage(instanceId, width);
 
     res.setHeader('Content-Type', imageResult.contentType);
     res.setHeader('Cache-Control', 'public, max-age=86400, immutable');
@@ -975,7 +935,7 @@ app.get('/api/pacs/radiology-images', async (req, res) => {
       });
     }
 
-    const pacsResult = await GetMedicalRecordService.getRadiologyPacsImages(noRawat, examDate, examName, {
+    const pacsResult = await GetMedicalRecordService.getRadiologyImagesWithFallback(noRawat, examDate, examName, {
       mode
     });
 
@@ -985,9 +945,41 @@ app.get('/api/pacs/radiology-images', async (req, res) => {
     });
   } catch (error) {
     console.error('Error fetching PACS radiology images:', error);
-    res.status(500).json({
+    res.status(503).json({
       success: false,
       error: error.message || 'Gagal memuat gambar PACS radiologi'
+    });
+  }
+});
+
+app.get('/api/pacs/viewer-link', async (req, res) => {
+  try {
+    const noRawat = String(req.query.no_rawat || '').trim();
+    const examDate = String(req.query.exam_date || '').trim();
+    const examName = String(req.query.exam_name || '').trim();
+    const seriesUid = String(req.query.series_uid || '').trim();
+
+    if (!noRawat || !examDate) {
+      return res.status(400).json({
+        success: false,
+        error: 'Parameter no_rawat dan exam_date wajib diisi'
+      });
+    }
+
+    const viewerLinkResult = await GetMedicalRecordService.getRadiologyViewerLink(
+      noRawat,
+      examDate,
+      examName,
+      seriesUid
+    );
+
+    res.json(viewerLinkResult);
+  } catch (error) {
+    console.error('Error creating PACS viewer link:', error);
+    res.json({
+      success: false,
+      code: error.code || 'PACS_REQUEST_FAILED',
+      message: 'Foto radiologi di PACS belum dapat dibuka saat ini. Silakan coba lagi.'
     });
   }
 });
@@ -2971,7 +2963,7 @@ app.use((err, req, res, next) => {
 });
 
 // Start server
-app.listen(PORT, async () => {
+const server = app.listen(PORT, async () => {
   console.log(`\n🚀 Dokter Ulun API Server`);
   console.log(`📍 Environment: ${process.env.NODE_ENV || 'development'}`);
   console.log(`🌐 Server running on: http://localhost:${PORT}`);
@@ -2986,6 +2978,10 @@ app.listen(PORT, async () => {
   } catch (error) {
     console.error('⚠️ Database connection test failed, but server will continue:', error.message);
   }
+});
+
+server.on('error', (error) => {
+  console.error('❌ HTTP server error:', error);
 });
 
 export default app;

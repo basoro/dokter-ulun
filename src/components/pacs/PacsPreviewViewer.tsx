@@ -19,6 +19,7 @@ type PacsImageUrlOptions = {
   modality?: string;
   width?: number;
   preferPreview?: boolean;
+  imageSource?: string;
 };
 
 interface PacsPreviewViewerProps {
@@ -137,7 +138,8 @@ const PacsPreviewViewer: React.FC<PacsPreviewViewerProps> = ({
                   href={activeImage?.instance_id
                     ? getImageUrl(activeImage.instance_id, {
                         modality,
-                        width: 1800
+                        width: 1800,
+                        imageSource: activeImage?.image_source
                       })
                     : '#'}
                   target="_blank"
@@ -165,7 +167,8 @@ const PacsPreviewViewer: React.FC<PacsPreviewViewerProps> = ({
               src={getImageUrl(activeImage.instance_id, {
                 modality,
                 width: 1800,
-                preferPreview: isCtPacsPreview
+                preferPreview: isCtPacsPreview,
+                imageSource: activeImage?.image_source
               })}
               alt={`Preview PACS ${currentIndex + 1}`}
               className="mx-auto max-h-[60vh] w-auto rounded-md object-contain transition-transform duration-200"
@@ -296,7 +299,8 @@ const PacsPreviewViewer: React.FC<PacsPreviewViewerProps> = ({
                   src={getImageUrl(image.instance_id, {
                     modality,
                     width: 220,
-                    preferPreview: false
+                    preferPreview: false,
+                    imageSource: image?.image_source
                   })}
                   alt={`Thumbnail PACS ${index + 1}`}
                   className="h-20 w-32 object-cover"
