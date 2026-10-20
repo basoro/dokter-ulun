@@ -1029,6 +1029,38 @@ class ResumePasienDataService {
     return this.getResumeDetailRanap(no_rawat, kdDokter);
   }
 
+  async getRencanaDilanjutkanRanap(no_rawat) {
+    const normalizedNoRawat = String(no_rawat || '').trim();
+    if (!normalizedNoRawat) {
+      return { poli: '', tanggal: '' };
+    }
+
+    const rows = await executeQuery(
+      `
+        SELECT
+          COALESCE(pk.nm_poli, '') AS poli,
+          COALESCE(DATE_FORMAT(br.tanggal_periksa, '%Y-%m-%d'), '') AS tanggal
+        FROM booking_registrasi br
+        INNER JOIN reg_periksa rp ON rp.no_rkm_medis = br.no_rkm_medis
+        INNER JOIN kamar_inap ki
+          ON ki.no_rawat = rp.no_rawat
+         AND ki.tgl_keluar = br.tanggal_booking
+        LEFT JOIN poliklinik pk ON pk.kd_poli = br.kd_poli
+        WHERE rp.no_rawat = ?
+        ORDER BY br.tanggal_periksa ASC, br.jam_booking ASC
+        LIMIT 1
+      `,
+      [normalizedNoRawat]
+    );
+
+    const row = rows?.[0] || {};
+
+    return {
+      poli: String(row.poli || '').trim(),
+      tanggal: String(row.tanggal || '').trim()
+    };
+  }
+
   async getResumeDetailRanap(no_rawat, kdDokter = '') {
     if (!no_rawat) {
       throw new Error('no_rawat is required');
@@ -1156,12 +1188,13 @@ class ResumePasienDataService {
             : (String(baseData.keadaan || '').trim() || String(baseData.stts_pulang || '').trim() || 'Membaik')
       );
 
-      const [doctorPenulis, verificationContext] = await Promise.all([
+      const [doctorPenulis, verificationContext, rencanaDilanjutkan] = await Promise.all([
         this.resolveDoctorTraceDisplay(
           baseData.ket_keadaan_trace,
           String(baseData.kd_dokter || '').trim()
         ),
-        this.getRanapVerificationContext(no_rawat, kdDokter)
+        this.getRanapVerificationContext(no_rawat, kdDokter),
+        this.getRencanaDilanjutkanRanap(no_rawat)
       ]);
 
       const formattedData = {
@@ -1180,6 +1213,8 @@ class ResumePasienDataService {
         is_verified: verificationContext.isVerified ? 1 : 0,
         is_dpjp_utama: verificationContext.isDpjpUtama ? 1 : 0,
         ket_dilanjutkan: String(baseData.ket_dilanjutkan || '').trim() || verificationContext.verificationStatus,
+        rencana_poli: rencanaDilanjutkan.poli,
+        rencana_tanggal: rencanaDilanjutkan.tanggal,
         has_resume: Number(baseData.has_resume || 0)
       };
 

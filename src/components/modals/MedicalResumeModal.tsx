@@ -20,7 +20,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
 import { cn } from '@/lib/utils';
-import { BadgeCheck, Check, ChevronsUpDown, FileText, History, Loader2, Paperclip, Plus, Search, Trash2 } from 'lucide-react';
+import { BadgeCheck, CalendarClock, Check, ChevronsUpDown, FileText, History, Loader2, Paperclip, Plus, Search, Trash2 } from 'lucide-react';
 import { useToast } from "@/hooks/use-toast";
 import { API_URLS } from '@/config/api';
 import { useAuth } from '@/contexts/AuthContext';
@@ -71,6 +71,8 @@ interface MedicalResume {
   ket_kondisi_pulang: string;
   tindakan_venti?: string;
   kondisi_pulang?: string;
+  rencana_poli?: string;
+  rencana_tanggal?: string;
   no_rkm_medis?: string;
   nm_pasien?: string;
   jenis_kelamin?: string;
@@ -419,6 +421,18 @@ const SearchableMedicalCodeField: React.FC<SearchableMedicalCodeFieldProps> = ({
     </div>
   );
 };
+
+interface ResumeInfoItemProps {
+  label: string;
+  children: React.ReactNode;
+}
+
+const ResumeInfoItem: React.FC<ResumeInfoItemProps> = ({ label, children }) => (
+  <div className="min-w-0">
+    <dt className="text-xs font-medium text-muted-foreground">{label}</dt>
+    <dd className="mt-0.5 font-medium break-words">{children}</dd>
+  </div>
+);
 
 const createEmptySourceData = (): ResumeSourceData => ({
   examinations: [],
@@ -1870,51 +1884,55 @@ export const MedicalResumeModal: React.FC<MedicalResumeModalProps> = ({
             <CardHeader>
               <CardTitle className="text-base">{isRalan ? 'Informasi Rawat Jalan' : 'Informasi Rawat Inap'}</CardTitle>
             </CardHeader>
-            <CardContent className="grid grid-cols-1 md:grid-cols-3 gap-4 text-sm">
-              <div>
-                <p className="text-muted-foreground">No. Rawat</p>
-                <p className="font-medium break-all">{formData.no_rawat || '-'}</p>
-              </div>
-              <div>
-                <p className="text-muted-foreground">No. RM / Pasien</p>
-                <p className="font-medium break-words">{formData.no_rkm_medis || '-'} {formData.nm_pasien ? `- ${formData.nm_pasien}` : ''}</p>
-              </div>
-              <div>
-                <p className="text-muted-foreground">Dokter Penulis</p>
-                <div className="flex flex-wrap items-center gap-2">
-                  <p className="font-medium break-words">{formData.dokter_penulis || currentDoctorName}</p>
-                  {!isRalan && isRanapVerified ? (
-                    <span
-                      className="inline-flex items-center gap-1 rounded-full bg-sky-500/10 px-2 py-0.5 text-xs font-medium text-sky-700"
-                      title="Resume sudah diverifikasi"
-                    >
-                      <BadgeCheck className="h-4 w-4 fill-sky-500 text-sky-500" />
-                      Verified
-                    </span>
+            <CardContent className="space-y-4 text-sm">
+              <dl className="grid grid-cols-1 gap-x-6 gap-y-4 md:grid-cols-3">
+                <ResumeInfoItem label="No. Rawat">
+                  <span className="break-all">{formData.no_rawat || '-'}</span>
+                </ResumeInfoItem>
+                <ResumeInfoItem label="No. RM / Pasien">
+                  {formData.no_rkm_medis || '-'}
+                  {formData.nm_pasien ? (
+                    <span className="text-muted-foreground"> — {formData.nm_pasien}</span>
                   ) : null}
+                </ResumeInfoItem>
+                <ResumeInfoItem label="Dokter Penulis">
+                  <span className="inline-flex flex-wrap items-center gap-2">
+                    <span className="break-words">{formData.dokter_penulis || currentDoctorName}</span>
+                    {!isRalan && isRanapVerified ? (
+                      <span
+                        className="inline-flex items-center gap-1 rounded-full bg-sky-500/10 px-2 py-0.5 text-xs font-medium text-sky-700"
+                        title="Resume sudah diverifikasi"
+                      >
+                        <BadgeCheck className="h-4 w-4 fill-sky-500 text-sky-500" />
+                        Verified
+                      </span>
+                    ) : null}
+                  </span>
+                </ResumeInfoItem>
+                {isRalan ? (
+                  <ResumeInfoItem label="Dokter Pemeriksa">{formData.dokter_reg || '-'}</ResumeInfoItem>
+                ) : (
+                  <>
+                    <ResumeInfoItem label="Tanggal Masuk">{formData.tgl_masuk || '-'}</ResumeInfoItem>
+                    <ResumeInfoItem label="Tanggal Keluar">{formData.tgl_keluar || '-'}</ResumeInfoItem>
+                    <ResumeInfoItem label="Bangsal / Kamar">
+                      {formData.nm_bangsal || '-'}{formData.kd_kamar ? ` - ${formData.kd_kamar}` : ''}
+                    </ResumeInfoItem>
+                  </>
+                )}
+              </dl>
+
+              {!isRalan && formData.rencana_poli && formData.rencana_tanggal ? (
+                <div className="flex items-start gap-3 rounded-lg border bg-muted/30 px-4 py-3">
+                  <CalendarClock className="mt-0.5 h-4 w-4 shrink-0 text-primary" />
+                  <div className="min-w-0">
+                    <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Rencana Dilanjutkan</p>
+                    <p className="mt-1 font-medium break-words">
+                      {`Ke ${formData.rencana_poli} Tanggal ${formatUIDate(formData.rencana_tanggal)} di RSUD H. DAMANHURI BARABAI.`}
+                    </p>
+                  </div>
                 </div>
-              </div>
-              {isRalan ? (
-                <div>
-                  <p className="text-muted-foreground">Dokter Pemeriksa</p>
-                  <p className="font-medium">{formData.dokter_reg || '-'}</p>
-                </div>
-              ) : (
-                <>
-                  <div>
-                    <p className="text-muted-foreground">Tanggal Masuk</p>
-                    <p className="font-medium">{formData.tgl_masuk || '-'}</p>
-                  </div>
-                  <div>
-                    <p className="text-muted-foreground">Tanggal Keluar</p>
-                    <p className="font-medium">{formData.tgl_keluar || '-'}</p>
-                  </div>
-                  <div>
-                    <p className="text-muted-foreground">Bangsal / Kamar</p>
-                    <p className="font-medium">{formData.nm_bangsal || '-'} {formData.kd_kamar ? `- ${formData.kd_kamar}` : ''}</p>
-                  </div>
-                </>
-              )}
+              ) : null}
             </CardContent>
           </Card>
 
