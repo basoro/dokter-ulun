@@ -52,7 +52,7 @@ import updateExaminationRoute from './routes/updateExamination.js';
 import clinicalPathwayRoutes from './routes/clinicalPathway.js';
 import satuSehatRoutes from './routes/satuSehat.js';
 
-import { executeQuery, testConnection } from './config/database.js';
+import { executeQuery, testConnection, getPoolStats, closePool } from './config/database.js';
 
 // Load environment variables
 const __filename = fileURLToPath(import.meta.url);
@@ -65,6 +65,10 @@ initCrudAuditStorage();
 // Log tetap ditulis agar penyebabnya dapat ditelusuri, namun proses tidak dibunuh diam-diam.
 process.on('uncaughtException', (error) => {
   console.error('❌ Uncaught exception:', error);
+  // Proses yang sudah melempar uncaught exception berada di state tidak pasti.
+  // Lebih aman berhenti dan biarkan supervisor menyalakan ulang daripada
+  // menerima request dengan state rusak.
+  process.exit(1);
 });
 
 process.on('unhandledRejection', (reason) => {
@@ -172,7 +176,9 @@ app.get('/health', (req, res) => {
     message: 'Dokter Ulun API is running',
     version: '1.0.0',
     environment: process.env.NODE_ENV || 'development',
-    timestamp: new Date().toISOString()
+    timestamp: new Date().toISOString(),
+    uptimeSeconds: Math.round(process.uptime()),
+    dbPool: getPoolStats()
   });
 });
 
@@ -3037,6 +3043,26 @@ const server = app.listen(PORT, async () => {
 
 server.on('error', (error) => {
   console.error('❌ HTTP server error:', error);
+});
+
+// Batasi umur request agar request yang menggantung tidak menahan slot selamanya.
+server.requestTimeout = Number(process.env.HTTP_REQUEST_TIMEOUT_MS || 120000);
+server.headersTimeout = 65000;
+server.keepAliveTimeout = 30000;
+
+const shutdown = async (signal) => {
+  console.log(`\n🛑 Menerima ${signal}, menutup server...`);
+  server.close(async () => {
+    await closePool();
+    process.exit(0);
+  });
+  setTimeout(() => process.exit(1), 15000).unref();
+};
+
+['SIGINT', 'SIGTERM'].forEach((signal) => {
+  process.on(signal, () => {
+    void shutdown(signal);
+  });
 });
 
 export default app;

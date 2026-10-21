@@ -1,23 +1,19 @@
-import mysql from 'mysql2/promise';
 import dotenv from 'dotenv';
 import GetMedicalRecordService from './getMedicalRecordService.js';
+import { acquireConnection, createServicePool } from '../config/database.js';
 
 dotenv.config();
 
-class RadiologyDataService {
-  constructor() {
-    this.dbConfig = {
-      host: process.env.MYSQL_HOST || 'localhost',
-      port: parseInt(process.env.MYSQL_PORT, 10) || 3306,
-      user: process.env.MYSQL_USER || 'root',
-      password: process.env.MYSQL_PASSWORD || '',
-      database: process.env.MYSQL_DATABASE || 'sik',
-      timezone: '+00:00'
-    };
-  }
+// Pool bersama untuk service ini (sebelumnya satu koneksi MySQL baru per
+// request). timezone tetap +00:00 agar serialisasi tanggal tidak berubah.
+const radiologyPool = createServicePool(
+  { timezone: '+00:00' },
+  { connectionLimit: Number(process.env.DB_RAD_POOL_LIMIT || 5), label: 'radiology' }
+);
 
+class RadiologyDataService {
   async getConnection() {
-    return await mysql.createConnection(this.dbConfig);
+    return await acquireConnection(radiologyPool);
   }
 
   normalizeStatusRawat(value) {
@@ -162,7 +158,7 @@ class RadiologyDataService {
       const [rows] = await connection.execute(query, [no_rawat]);
       return rows;
     } finally {
-      await connection.end();
+      connection.release();
     }
   }
 
@@ -192,7 +188,7 @@ class RadiologyDataService {
         klinis: klinisRows?.[0]?.klinis || ''
       };
     } finally {
-      await connection.end();
+      connection.release();
     }
   }
 
@@ -210,7 +206,7 @@ class RadiologyDataService {
       const [rows] = await connection.execute(query);
       return rows;
     } finally {
-      await connection.end();
+      connection.release();
     }
   }
 
@@ -347,7 +343,7 @@ class RadiologyDataService {
         totalPages
       };
     } finally {
-      await connection.end();
+      connection.release();
     }
   }
 
@@ -441,7 +437,7 @@ class RadiologyDataService {
         }
       };
     } finally {
-      await connection.end();
+      connection.release();
     }
   }
 
@@ -523,7 +519,7 @@ class RadiologyDataService {
       await connection.rollback();
       throw error;
     } finally {
-      await connection.end();
+      connection.release();
     }
   }
 
@@ -610,7 +606,7 @@ class RadiologyDataService {
       await connection.rollback();
       throw error;
     } finally {
-      await connection.end();
+      connection.release();
     }
   }
 
@@ -689,7 +685,7 @@ class RadiologyDataService {
       await connection.rollback();
       throw error;
     } finally {
-      await connection.end();
+      connection.release();
     }
   }
 
@@ -717,7 +713,7 @@ class RadiologyDataService {
       await connection.execute('DELETE FROM permintaan_radiologi WHERE noorder = ?', [noorder]);
       return { success: true };
     } finally {
-      await connection.end();
+      connection.release();
     }
   }
 }

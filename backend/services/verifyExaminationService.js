@@ -287,7 +287,7 @@ class VerifyExaminationService {
         `
           SELECT no_rawat, tgl_perawatan, jam_rawat
           FROM ${NOTE_TABLE}
-          WHERE TRIM(no_rawat) = TRIM(?) AND tgl_perawatan = ?
+          WHERE no_rawat = TRIM(?) AND tgl_perawatan = ?
         `,
         [normalizedNoRawat, normalizedDate]
       );
@@ -357,7 +357,7 @@ class VerifyExaminationService {
         `
           SELECT no_rawat, tgl_perawatan, jam_rawat
           FROM ${NOTE_TABLE}
-          WHERE TRIM(no_rawat) = TRIM(?) AND tgl_perawatan = ?
+          WHERE no_rawat = TRIM(?) AND tgl_perawatan = ?
         `,
         [normalizedNoRawat, normalizedDate]
       );

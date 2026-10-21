@@ -859,8 +859,13 @@ class ClinicalPathwayService {
         pa.tgl_lahir,
         rp.tgl_registrasi,
         rp.jam_reg,
-        ki.tgl_masuk,
-        ki.tgl_keluar,
+        (SELECT MIN(CONCAT(km.tgl_masuk, ' ', km.jam_masuk))
+           FROM kamar_inap km WHERE km.no_rawat = p.no_rawat) AS tgl_masuk,
+        (SELECT MAX(CASE
+             WHEN kk.tgl_keluar IS NULL OR kk.tgl_keluar = '0000-00-00' THEN NULL
+             ELSE CONCAT(kk.tgl_keluar, ' ', COALESCE(kk.jam_keluar, '00:00:00'))
+           END)
+           FROM kamar_inap kk WHERE kk.no_rawat = p.no_rawat) AS tgl_keluar,
         py.nm_penyakit,
         COALESCE(comp.compliance_percentage, 0) AS compliance_percentage,
         (
@@ -870,21 +875,8 @@ class ClinicalPathwayService {
         ) AS variance_count
       FROM mlite_clinical_pathway_patient p
       INNER JOIN mlite_clinical_pathway c ON c.id = p.clinical_pathway_id
-      LEFT JOIN reg_periksa rp ON rp.no_rawat = p.no_rawat
+      LEFT JOIN reg_periksa rp ON rp.no_rawat = CONVERT(p.no_rawat USING latin1)
       LEFT JOIN pasien pa ON pa.no_rkm_medis = rp.no_rkm_medis
-      LEFT JOIN (
-        SELECT
-          no_rawat,
-          MIN(CONCAT(tgl_masuk, ' ', jam_masuk)) AS tgl_masuk,
-          MAX(
-            CASE
-              WHEN tgl_keluar IS NULL OR tgl_keluar = '0000-00-00' THEN NULL
-              ELSE CONCAT(tgl_keluar, ' ', COALESCE(jam_keluar, '00:00:00'))
-            END
-          ) AS tgl_keluar
-        FROM kamar_inap
-        GROUP BY no_rawat
-      ) ki ON ki.no_rawat = p.no_rawat
       LEFT JOIN penyakit py ON py.kd_penyakit = p.kd_penyakit
       LEFT JOIN mlite_clinical_pathway_compliance comp ON comp.clinical_pathway_patient_id = p.id
       WHERE p.id = ?
@@ -1397,7 +1389,7 @@ class ClinicalPathwayService {
       FROM mlite_clinical_pathway_patient p
       INNER JOIN mlite_clinical_pathway c ON c.id = p.clinical_pathway_id
       LEFT JOIN mlite_clinical_pathway_compliance comp ON comp.clinical_pathway_patient_id = p.id
-      LEFT JOIN reg_periksa rp ON rp.no_rawat = p.no_rawat
+      LEFT JOIN reg_periksa rp ON rp.no_rawat = CONVERT(p.no_rawat USING latin1)
       LEFT JOIN pasien pa ON pa.no_rkm_medis = rp.no_rkm_medis
       ORDER BY p.id DESC
       LIMIT ?`,
@@ -1894,7 +1886,7 @@ class ClinicalPathwayService {
       FROM mlite_clinical_pathway_patient p
       INNER JOIN mlite_clinical_pathway c ON c.id = p.clinical_pathway_id
       LEFT JOIN mlite_clinical_pathway_compliance comp ON comp.clinical_pathway_patient_id = p.id
-      LEFT JOIN reg_periksa rp ON rp.no_rawat = p.no_rawat
+      LEFT JOIN reg_periksa rp ON rp.no_rawat = CONVERT(p.no_rawat USING latin1)
       LEFT JOIN pasien pa ON pa.no_rkm_medis = rp.no_rkm_medis
       LEFT JOIN penyakit py ON py.kd_penyakit = p.kd_penyakit
       WHERE ${whereSql}
@@ -1907,7 +1899,7 @@ class ClinicalPathwayService {
       `SELECT COUNT(*) AS total
        FROM mlite_clinical_pathway_patient p
        INNER JOIN mlite_clinical_pathway c ON c.id = p.clinical_pathway_id
-       LEFT JOIN reg_periksa rp ON rp.no_rawat = p.no_rawat
+       LEFT JOIN reg_periksa rp ON rp.no_rawat = CONVERT(p.no_rawat USING latin1)
        LEFT JOIN pasien pa ON pa.no_rkm_medis = rp.no_rkm_medis
        WHERE ${whereSql}`,
       params

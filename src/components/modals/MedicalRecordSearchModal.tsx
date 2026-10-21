@@ -81,6 +81,7 @@ const MedicalRecordSearchModal: React.FC<MedicalRecordSearchModalProps> = ({
 
   const listRef = React.useRef<HTMLDivElement | null>(null);
   const sentinelRef = React.useRef<HTMLDivElement | null>(null);
+  const abortRef = React.useRef<AbortController | null>(null);
 
   React.useEffect(() => {
     const timeoutId = window.setTimeout(() => {
@@ -101,6 +102,15 @@ const MedicalRecordSearchModal: React.FC<MedicalRecordSearchModalProps> = ({
       return;
     }
 
+    // Batalkan pencarian sebelumnya agar query lambat tidak menumpuk di server.
+    if (!append) {
+      abortRef.current?.abort();
+    }
+    const controller = new AbortController();
+    if (!append) {
+      abortRef.current = controller;
+    }
+
     try {
       if (append) {
         setLoadingMore(true);
@@ -114,7 +124,9 @@ const MedicalRecordSearchModal: React.FC<MedicalRecordSearchModalProps> = ({
         page: String(nextPage),
         limit: String(PAGE_SIZE)
       });
-      const response = await fetch(`${API_URLS.SEARCH_MEDICAL_RECORD_PATIENTS}?${params.toString()}`);
+      const response = await fetch(`${API_URLS.SEARCH_MEDICAL_RECORD_PATIENTS}?${params.toString()}`, {
+        signal: controller.signal
+      });
       const responseJson = await response.json();
 
       if (!response.ok) {
@@ -138,19 +150,26 @@ const MedicalRecordSearchModal: React.FC<MedicalRecordSearchModalProps> = ({
       setPage(nextPage);
       setHasMore(Boolean(responseJson?.pagination?.hasMore));
     } catch (fetchError) {
+      if (fetchError instanceof Error && fetchError.name === 'AbortError') {
+        return;
+      }
       setError(fetchError instanceof Error ? fetchError.message : 'Gagal memuat pasien');
       if (!append) {
         setPatients([]);
       }
       setHasMore(false);
     } finally {
-      setLoading(false);
-      setLoadingMore(false);
+      // Jangan mengubah state loading kalau request ini sudah dibatalkan.
+      if (append || abortRef.current === controller) {
+        setLoading(false);
+        setLoadingMore(false);
+      }
     }
   }, []);
 
   React.useEffect(() => {
     if (!open) {
+      abortRef.current?.abort();
       return;
     }
 
