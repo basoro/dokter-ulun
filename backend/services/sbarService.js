@@ -24,7 +24,7 @@ class SbarService {
           COALESCE(ps.verified_by, '') AS verified_by,
           COALESCE(ps.verified_note, '') AS verified_note
         FROM pemeriksaan_sbar_ranap ps
-        LEFT JOIN pegawai p ON TRIM(p.nik) = TRIM(ps.nip)
+        LEFT JOIN pegawai p ON p.nik = ps.nip
         WHERE ps.no_rawat = ?
         ORDER BY ps.tgl_perawatan DESC, ps.jam_rawat DESC
       `,

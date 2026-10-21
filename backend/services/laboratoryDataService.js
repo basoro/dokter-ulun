@@ -1,23 +1,21 @@
-import mysql from 'mysql2/promise';
 import dotenv from 'dotenv';
 import DigitalFilesService from './digitalFilesService.js';
+import { acquireConnection, createServicePool } from '../config/database.js';
 
 dotenv.config();
 
-class LaboratoryDataService {
-  constructor() {
-    this.dbConfig = {
-      host: process.env.MYSQL_HOST || 'localhost',
-      port: parseInt(process.env.MYSQL_PORT) || 3306,
-      user: process.env.MYSQL_USER || 'root',
-      password: process.env.MYSQL_PASSWORD || '',
-      database: process.env.MYSQL_DATABASE || 'sik',
-      timezone: '+00:00'
-    };
-  }
+// Pool bersama untuk service ini. Sebelumnya setiap request membuka koneksi
+// MySQL baru (mysql.createConnection) lalu menutupnya, sehingga handshake ke
+// server database terjadi terus-menerus. timezone tetap +00:00 agar nilai
+// tanggal yang dikembalikan tidak berubah.
+const laboratoryPool = createServicePool(
+  { timezone: '+00:00' },
+  { connectionLimit: Number(process.env.DB_LAB_POOL_LIMIT || 5), label: 'laboratory' }
+);
 
+class LaboratoryDataService {
   async getConnection() {
-    return await mysql.createConnection(this.dbConfig);
+    return await acquireConnection(laboratoryPool);
   }
 
   normalizeStatusRawat(value) {
@@ -181,7 +179,7 @@ class LaboratoryDataService {
       const [rows] = await connection.execute(query, [no_rawat]);
       return rows;
     } finally {
-      await connection.end();
+      connection.release();
     }
   }
 
@@ -223,7 +221,7 @@ class LaboratoryDataService {
         klinis: klinisRows?.[0]?.klinis || ''
       };
     } finally {
-      await connection.end();
+      connection.release();
     }
   }
 
@@ -305,7 +303,7 @@ class LaboratoryDataService {
         templates: templatesByServiceCode.get(String(row.kd_jenis_prw || '').trim()) || []
       }));
     } finally {
-      await connection.end();
+      connection.release();
     }
   }
 
@@ -322,7 +320,7 @@ class LaboratoryDataService {
       const [rows] = await connection.execute(query, [kd_jenis_prw]);
       return rows;
     } finally {
-      await connection.end();
+      connection.release();
     }
   }
 
@@ -459,7 +457,7 @@ class LaboratoryDataService {
         totalPages
       };
     } finally {
-      await connection.end();
+      connection.release();
     }
   }
 
@@ -702,7 +700,7 @@ class LaboratoryDataService {
         }
       };
     } finally {
-      await connection.end();
+      connection.release();
     }
   }
 
@@ -738,7 +736,7 @@ class LaboratoryDataService {
         no_rawat: normalizedNoRawat
       };
     } finally {
-      await connection.end();
+      connection.release();
     }
   }
 
@@ -821,7 +819,7 @@ class LaboratoryDataService {
       await connection.rollback();
       throw error;
     } finally {
-      await connection.end();
+      connection.release();
     }
   }
 
@@ -909,7 +907,7 @@ class LaboratoryDataService {
       await connection.rollback();
       throw error;
     } finally {
-      await connection.end();
+      connection.release();
     }
   }
 
@@ -939,7 +937,7 @@ class LaboratoryDataService {
       await connection.execute(deleteQuery, [noorder]);
       return { success: true };
     } finally {
-      await connection.end();
+      connection.release();
     }
   }
 }

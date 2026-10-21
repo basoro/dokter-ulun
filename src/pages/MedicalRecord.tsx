@@ -6170,6 +6170,11 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
     showAllInpatientMedicationRequests
   ]);
 
+  // Hitung percobaan gagal per kunjungan supaya detail yang terus gagal tidak
+  // diminta ulang tanpa henti (efek di bawah bergantung pada state loading).
+  const failedVisitDetailsRef = useRef<Record<string, number>>({});
+  const MAX_VISIT_DETAIL_ATTEMPTS = 3;
+
   const fetchVisitDetails = useCallback(async (noRawat: string) => {
     if (!noRawat) {
       return;
@@ -6210,7 +6215,9 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
           inpatient_visits: replaceVisitByNoRawat(previousData.inpatient_visits, visitData)
         };
       });
+      failedVisitDetailsRef.current[noRawat] = 0;
     } catch (error) {
+      failedVisitDetailsRef.current[noRawat] = (failedVisitDetailsRef.current[noRawat] || 0) + 1;
       if (contextVersion === dataContextVersionRef.current) {
         console.error('Error fetching visit details:', error);
       }
@@ -6431,7 +6438,12 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
     const currentVisits = [...allOutpatientVisits, ...allInpatientVisits];
     const missingVisitNoRawats = Array.from(new Set(
       currentVisits
-        .filter((visit) => visit?.no_rawat && !visit?.details_loaded && !loadingVisitDetailsKeys[visit.no_rawat])
+        .filter((visit) => (
+          visit?.no_rawat
+          && !visit?.details_loaded
+          && !loadingVisitDetailsKeys[visit.no_rawat]
+          && (failedVisitDetailsRef.current[visit.no_rawat] || 0) < MAX_VISIT_DETAIL_ATTEMPTS
+        ))
         .map((visit) => visit.no_rawat)
     ));
 
@@ -6439,7 +6451,17 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
       return;
     }
 
-    void Promise.allSettled(missingVisitNoRawats.map((noRawat) => fetchVisitDetails(noRawat)));
+    // Kirim bertahap agar satu halaman tidak membanjiri pool koneksi backend.
+    void (async () => {
+      const BATCH_SIZE = 3;
+      for (let index = 0; index < missingVisitNoRawats.length; index += BATCH_SIZE) {
+        await Promise.allSettled(
+          missingVisitNoRawats
+            .slice(index, index + BATCH_SIZE)
+            .map((noRawat) => fetchVisitDetails(noRawat))
+        );
+      }
+    })();
   }, [
     activeTab,
     allInpatientVisits,

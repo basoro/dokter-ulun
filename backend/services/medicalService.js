@@ -292,6 +292,55 @@ export class MedicalService {
     }
   }
 
+  // Ambil kunjungan terakhir untuk sekumpulan no_rkm_medis sekaligus.
+  static async fetchLatestVisitsByNoRm(noRkmMedisList = []) {
+    const normalizedList = Array.from(new Set(
+      (Array.isArray(noRkmMedisList) ? noRkmMedisList : [])
+        .map((value) => String(value || '').trim())
+        .filter(Boolean)
+    ));
+
+    if (!normalizedList.length) {
+      return new Map();
+    }
+
+    const placeholders = normalizedList.map(() => '?').join(', ');
+    const rows = await executeQuery(
+      `
+        SELECT
+          r.no_rkm_medis,
+          r.no_rawat,
+          r.tgl_registrasi,
+          r.jam_reg,
+          r.status_lanjut,
+          pol.nm_poli,
+          d.nm_dokter
+        FROM reg_periksa r
+        INNER JOIN (
+          SELECT no_rkm_medis, MAX(CONCAT(tgl_registrasi, ' ', jam_reg)) AS latest
+          FROM reg_periksa
+          WHERE no_rkm_medis IN (${placeholders})
+          GROUP BY no_rkm_medis
+        ) t
+          ON t.no_rkm_medis = r.no_rkm_medis
+         AND CONCAT(r.tgl_registrasi, ' ', r.jam_reg) = t.latest
+        LEFT JOIN poliklinik pol ON pol.kd_poli = r.kd_poli
+        LEFT JOIN dokter d ON d.kd_dokter = r.kd_dokter
+      `,
+      normalizedList
+    );
+
+    const visitMap = new Map();
+    rows.forEach((row) => {
+      const key = String(row.no_rkm_medis || '').trim();
+      if (key && !visitMap.has(key)) {
+        visitMap.set(key, row);
+      }
+    });
+
+    return visitMap;
+  }
+
   static async searchMedicalRecordPatients(searchQuery, page = 1, limit = 20) {
     try {
       const normalizedPage = Math.max(parseInt(page, 10) || 1, 1);
@@ -309,7 +358,10 @@ export class MedicalService {
            OR p.alamat LIKE ?
       `;
 
-      const dataSql = `
+      // Kandidat diambil urut nama lebih dulu. Sebelumnya query ini menghitung
+      // kunjungan terakhir untuk SELURUH hasil pencarian (ratusan ribu baris)
+      // sebelum LIMIT, sehingga satu pencarian butuh belasan detik.
+      const candidatesSql = `
         SELECT
           p.no_rkm_medis,
           p.nm_pasien,
@@ -317,32 +369,13 @@ export class MedicalService {
           p.tgl_lahir,
           TIMESTAMPDIFF(YEAR, p.tgl_lahir, CURDATE()) AS umur,
           p.alamat,
-          p.no_tlp,
-          latest.no_rawat AS last_no_rawat,
-          latest.tgl_registrasi AS last_visit_date,
-          latest.jam_reg AS last_visit_time,
-          latest.status_lanjut AS last_status_lanjut,
-          pol.nm_poli AS last_nm_poli,
-          d.nm_dokter AS last_nm_dokter
+          p.no_tlp
         FROM pasien p
-        LEFT JOIN reg_periksa latest
-          ON latest.no_rawat = (
-            SELECT rp2.no_rawat
-            FROM reg_periksa rp2
-            WHERE rp2.no_rkm_medis = p.no_rkm_medis
-            ORDER BY rp2.tgl_registrasi DESC, rp2.jam_reg DESC
-            LIMIT 1
-          )
-        LEFT JOIN poliklinik pol ON pol.kd_poli = latest.kd_poli
-        LEFT JOIN dokter d ON d.kd_dokter = latest.kd_dokter
         WHERE p.nm_pasien LIKE ?
            OR p.no_rkm_medis LIKE ?
            OR p.no_tlp LIKE ?
            OR p.alamat LIKE ?
-        ORDER BY
-          COALESCE(latest.tgl_registrasi, '1000-01-01') DESC,
-          COALESCE(latest.jam_reg, '00:00:00') DESC,
-          p.nm_pasien ASC
+        ORDER BY p.nm_pasien ASC, p.no_rkm_medis ASC
         LIMIT ?
         OFFSET ?
       `;
@@ -355,14 +388,37 @@ export class MedicalService {
       ]);
       const total = Number(countRows?.[0]?.total || 0);
 
-      const rows = await executeQuery(dataSql, [
-        searchPattern,
-        searchPattern,
-        searchPattern,
-        searchPattern,
-        normalizedLimit,
-        offset
-      ]);
+      const candidates = total > 0
+        ? await executeQuery(candidatesSql, [
+            searchPattern,
+            searchPattern,
+            searchPattern,
+            searchPattern,
+            normalizedLimit,
+            offset
+          ])
+        : [];
+
+      // Kunjungan terakhir hanya dihitung untuk baris yang benar-benar
+      // ditampilkan (maksimal `limit` pasien), memakai index no_rkm_medis.
+      const latestVisits = await this.fetchLatestVisitsByNoRm(
+        candidates.map((patient) => patient.no_rkm_medis)
+      );
+
+      const rows = candidates.map((patient) => {
+        const patientKey = String(patient.no_rkm_medis || '').trim();
+        const latest = latestVisits.get(patientKey) || null;
+
+        return {
+          ...patient,
+          last_no_rawat: latest?.no_rawat ?? null,
+          last_visit_date: latest?.tgl_registrasi ?? null,
+          last_visit_time: latest?.jam_reg ?? null,
+          last_status_lanjut: latest?.status_lanjut ?? null,
+          last_nm_poli: latest?.nm_poli ?? null,
+          last_nm_dokter: latest?.nm_dokter ?? null
+        };
+      });
 
       return {
         data: rows,

@@ -516,11 +516,11 @@ class DoctorNotificationService {
           d.nm_dokter,
           GROUP_CONCAT(DISTINCT COALESCE(NULLIF(TRIM(db.nama_brng), ''), TRIM(aso.kode_barang)) ORDER BY COALESCE(NULLIF(TRIM(db.nama_brng), ''), TRIM(aso.kode_barang)) SEPARATOR ', ') AS item_names
         FROM mlite_auto_stop_order aso
-        INNER JOIN reg_periksa rp ON TRIM(rp.no_rawat) = TRIM(aso.no_rawat)
+        INNER JOIN reg_periksa rp ON rp.no_rawat = aso.no_rawat
         LEFT JOIN pasien p ON p.no_rkm_medis = rp.no_rkm_medis
         LEFT JOIN dokter d ON d.kd_dokter = rp.kd_dokter
-        LEFT JOIN databarang db ON TRIM(db.kode_brng) = TRIM(aso.kode_barang)
-        WHERE TRIM(rp.kd_dokter) = TRIM(?)
+        LEFT JOIN databarang db ON db.kode_brng = aso.kode_barang
+        WHERE rp.kd_dokter = TRIM(?)
         GROUP BY
           aso.id,
           aso.no_rawat,

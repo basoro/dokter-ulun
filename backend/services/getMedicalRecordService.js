@@ -1330,8 +1330,8 @@ class GetMedicalRecordService {
           aso.created_by,
           COALESCE(TRIM(db.nama_brng), '') AS nama_brng
         FROM mlite_auto_stop_order aso
-        LEFT JOIN databarang db ON TRIM(db.kode_brng) = TRIM(aso.kode_barang)
-        WHERE TRIM(aso.no_rawat) IN (${placeholders})
+        LEFT JOIN databarang db ON db.kode_brng = aso.kode_barang
+        WHERE aso.no_rawat IN (${placeholders})
         ORDER BY aso.tgl_perawatan ASC, aso.jam_rawat ASC, aso.id ASC
       `,
       normalizedNoRawats
@@ -1388,8 +1388,8 @@ class GetMedicalRecordService {
             COALESCE(TRIM(p.nama), '') AS nm_pegawai
           FROM catatan_verif_soap cvs
           LEFT JOIN dokter d ON TRIM(d.kd_dokter) = TRIM(cvs.kd_dokter)
-          LEFT JOIN pegawai p ON TRIM(p.nik) = TRIM(cvs.nip)
-          WHERE TRIM(cvs.no_rawat) IN (${placeholders})
+          LEFT JOIN pegawai p ON p.nik = cvs.nip
+          WHERE cvs.no_rawat IN (${placeholders})
         `,
         normalizedNoRawats
       );
@@ -1430,15 +1430,14 @@ class GetMedicalRecordService {
         EXISTS (
           SELECT 1
           FROM mlite_auto_stop_order aso
-          WHERE TRIM(aso.no_rawat) = TRIM(p1.no_rawat)
+          WHERE aso.no_rawat = p1.no_rawat
             AND aso.tgl_perawatan = p1.tgl_perawatan
-            AND TRIM(aso.nip) = TRIM(p1.nip)
+            AND aso.nip = p1.nip
         ) AS auto_stop_order
-      FROM ${table} p1
-      LEFT JOIN pegawai p2 ON p2.nik = p1.nip
-      LEFT JOIN mlite_users mu ON TRIM(mu.username) = TRIM(p1.nip)
-      LEFT JOIN pegawai p3 ON TRIM(p3.nik) = TRIM(mu.username)
-      WHERE p1.no_rawat = ?
+      FROM ${table} p1        LEFT JOIN pegawai p2 ON p2.nik = p1.nip
+        LEFT JOIN mlite_users mu ON mu.username = p1.nip
+        LEFT JOIN pegawai p3 ON p3.nik = mu.username
+        WHERE p1.no_rawat = ?
       ORDER BY p1.tgl_perawatan DESC, p1.jam_rawat DESC
     `;
     const [rows] = await db.execute(examQuery, [...psikologRoleParams, noRawat]);
@@ -3178,17 +3177,17 @@ class GetMedicalRecordService {
           END AS role,        EXISTS (
           SELECT 1
           FROM mlite_auto_stop_order aso
-          WHERE TRIM(aso.no_rawat) = TRIM(p1.no_rawat)
+          WHERE aso.no_rawat = p1.no_rawat
             AND aso.tgl_perawatan = p1.tgl_perawatan
-            AND TRIM(aso.nip) = TRIM(p1.nip)
+            AND aso.nip = p1.nip
         ) AS auto_stop_order,
           r.no_rawat,
           r.status_lanjut
         FROM ${table} p1
         INNER JOIN reg_periksa r ON r.no_rawat = p1.no_rawat
         LEFT JOIN pegawai p2 ON p2.nik = p1.nip
-        LEFT JOIN mlite_users mu ON TRIM(mu.username) = TRIM(p1.nip)
-        LEFT JOIN pegawai p3 ON TRIM(p3.nik) = TRIM(mu.username)
+        LEFT JOIN mlite_users mu ON mu.username = p1.nip
+        LEFT JOIN pegawai p3 ON p3.nik = mu.username
         WHERE r.no_rkm_medis = ? AND r.status_lanjut = ? ${focusFilter}
         ORDER BY p1.tgl_perawatan DESC, p1.jam_rawat DESC
         LIMIT ? OFFSET ?
