@@ -2196,8 +2196,8 @@ const IGDTabs = () => {
   const navigate = useNavigate();
   const location = useLocation();
   const [searchParams, setSearchParams] = useSearchParams();
-  const igdTabOptions = ['triase', 'observasi', 'tindakan'] as const;
-  const emptyIgdTabCounts = { triase: 0, observasi: 0, tindakan: 0 };
+  const igdTabOptions = ['triase', 'belum_triase', 'observasi', 'tindakan'] as const;
+  const emptyIgdTabCounts = { triase: 0, belum_triase: 0, observasi: 0, tindakan: 0 };
   const normalizeIgdTriaseFilter = (value: string | null) => {
     const normalized = String(value || '').trim().toUpperCase();
     const legacyMap: Record<string, string> = {
@@ -2306,6 +2306,7 @@ const IGDTabs = () => {
         setTotal(data.total || 0);
         setTabCounts({
           triase: Number(data?.tabCounts?.triase || 0),
+          belum_triase: Number(data?.tabCounts?.belum_triase || 0),
           observasi: Number(data?.tabCounts?.observasi || 0),
           tindakan: Number(data?.tabCounts?.tindakan || 0)
         });
@@ -2752,13 +2753,17 @@ const IGDTabs = () => {
       setCurrentPage(1);
       setActiveTab(value as typeof igdTabOptions[number]);
     }}>
-      <TabsList className="mb-4">
+      <TabsList className="mb-4 flex-wrap">
         <TabsTrigger value="triase">
           <List className="mr-2 h-4 w-4" />
           <span>Triase ({tabCounts.triase})</span>
         </TabsTrigger>
-        <TabsTrigger value="observasi">
+        <TabsTrigger value="belum_triase">
           <Clock className="mr-2 h-4 w-4" />
+          <span>Belum Triase ({tabCounts.belum_triase})</span>
+        </TabsTrigger>
+        <TabsTrigger value="observasi">
+          <Search className="mr-2 h-4 w-4" />
           <span>Observasi ({tabCounts.observasi})</span>
         </TabsTrigger>
         <TabsTrigger value="tindakan">
@@ -2767,12 +2772,13 @@ const IGDTabs = () => {
         </TabsTrigger>
       </TabsList>
 
-      {['triase', 'observasi', 'tindakan'].map((tabValue) => (
+      {['triase', 'belum_triase', 'observasi', 'tindakan'].map((tabValue) => (
         <TabsContent key={tabValue} value={tabValue} className="space-y-4">
           <Card>
             <CardHeader className="pb-2">
               <CardTitle>
                 {tabValue === 'triase' && 'Triase IGD'}
+                {tabValue === 'belum_triase' && 'Belum Triase IGD'}
                 {tabValue === 'observasi' && 'Observasi IGD'}
                 {tabValue === 'tindakan' && 'Tindakan IGD'}
               </CardTitle>

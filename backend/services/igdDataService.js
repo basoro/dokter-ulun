@@ -128,6 +128,7 @@ class IgdDataService {
 
       const getTabCondition = (tabKey) => {
         if (tabKey === 'triase') return `mt.no_rawat IS NOT NULL`;
+        if (tabKey === 'belum_triase') return `mt.no_rawat IS NULL`;
         if (tabKey === 'observasi') return `mt.no_rawat IS NOT NULL AND triase_summary.no_rawat IS NULL`;
         if (tabKey === 'tindakan') return `triase_summary.no_rawat IS NOT NULL`;
         return '';
@@ -168,14 +169,16 @@ class IgdDataService {
       
       console.log('Total count result:', total);
 
-      const [triaseCountResult, observasiCountResult, tindakanCountResult] = await Promise.all([
+      const [triaseCountResult, belumTriaseCountResult, observasiCountResult, tindakanCountResult] = await Promise.all([
         db.execute(buildCountQuery('triase'), baseQueryParams),
+        db.execute(buildCountQuery('belum_triase'), baseQueryParams),
         db.execute(buildCountQuery('observasi'), baseQueryParams),
         db.execute(buildCountQuery('tindakan'), baseQueryParams)
       ]);
 
       const tabCounts = {
         triase: Number(triaseCountResult?.[0]?.[0]?.total || 0),
+        belum_triase: Number(belumTriaseCountResult?.[0]?.[0]?.total || 0),
         observasi: Number(observasiCountResult?.[0]?.[0]?.total || 0),
         tindakan: Number(tindakanCountResult?.[0]?.[0]?.total || 0)
       };
