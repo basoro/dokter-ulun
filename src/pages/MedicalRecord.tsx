@@ -1175,6 +1175,16 @@ const isCtRadiologyCandidate = (rad: {
   );
 };
 
+const getPrescriptionItemPrice = (item?: { harga?: unknown; jumlah?: unknown } | null) => {
+  const unitPrice = Number(item?.harga) || 0;
+  const quantity = Number(item?.jumlah) || 0;
+  return unitPrice * quantity;
+};
+
+const sumPrescriptionPrice = (
+  items?: Array<{ harga?: unknown; jumlah?: unknown }> | null
+) => (items || []).reduce((total, item) => total + getPrescriptionItemPrice(item), 0);
+
 const mergeVisitsByNoRawat = (existingVisits: any[] = [], incomingVisits: any[] = []) => {
   const existingNoRawat = new Set(existingVisits.map((visit) => visit.no_rawat));
   return [
@@ -5113,7 +5123,7 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
             </div>
           ) : null}
           {medicationItems.map((obat: any, i: number) => (
-            <div key={i} className="grid grid-cols-1 md:grid-cols-3 gap-4 border-l-2 border-secondary pl-4">
+            <div key={i} className="grid grid-cols-1 md:grid-cols-4 gap-4 border-l-2 border-secondary pl-4">
               <div>
                 <p className="text-sm text-muted-foreground">Nama</p>
                 <p className="font-medium">{obat.nama}</p>
@@ -5126,8 +5136,22 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
                 <p className="text-sm text-muted-foreground">Aturan Pakai</p>
                 <p className="font-medium">{obat.aturan_pakai}</p>
               </div>
+              <div>
+                <p className="text-sm text-muted-foreground">Harga</p>
+                <p className="font-medium">
+                  Rp {getPrescriptionItemPrice(obat).toLocaleString('id-ID')}
+                </p>
+              </div>
             </div>
           ))}
+          {hasMedicationItems ? (
+            <div className="flex justify-end border-t pt-2 text-sm font-semibold">
+              Total Harga:
+              <span className="ml-2">
+                Rp {sumPrescriptionPrice(medicationItems).toLocaleString('id-ID')}
+              </span>
+            </div>
+          ) : null}
           {hasCompoundItems ? (
             <div className="space-y-3 pt-2">
               <h4 className="font-medium text-blue-700 dark:text-blue-300">Racikan:</h4>
@@ -11976,7 +12000,7 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
                                 </div>
                                 <div className="space-y-2">
                                   {med.obat.map((obat, obatIndex) => (
-                                    <div key={obatIndex} className="grid grid-cols-1 md:grid-cols-3 gap-2 text-sm">
+                                    <div key={obatIndex} className="grid grid-cols-1 md:grid-cols-4 gap-2 text-sm">
                                       <div>
                                         <span className="text-muted-foreground">Nama:</span>
                                         <span className="ml-2 font-medium">{obat.nama}</span>
@@ -11989,8 +12013,20 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
                                         <span className="text-muted-foreground">Aturan:</span>
                                         <span className="ml-2">{obat.aturan_pakai}</span>
                                       </div>
+                                      <div>
+                                        <span className="text-muted-foreground">Harga:</span>
+                                        <span className="ml-2">
+                                          Rp {getPrescriptionItemPrice(obat).toLocaleString('id-ID')}
+                                        </span>
+                                      </div>
                                     </div>
                                   ))}
+                                </div>
+                                <div className="mt-3 flex justify-end border-t pt-2 text-sm font-semibold">
+                                  Total Harga:
+                                  <span className="ml-2">
+                                    Rp {sumPrescriptionPrice(med.obat).toLocaleString('id-ID')}
+                                  </span>
                                 </div>
                               </div>
                             ))}
@@ -12316,7 +12352,7 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
                                 </div>
                                 <div className="space-y-2">
                                   {med.obat.map((obat, obatIndex) => (
-                                    <div key={obatIndex} className="grid grid-cols-1 md:grid-cols-3 gap-2 text-sm">
+                                    <div key={obatIndex} className="grid grid-cols-1 md:grid-cols-4 gap-2 text-sm">
                                       <div>
                                         <span className="text-muted-foreground">Nama:</span>
                                         <span className="ml-2 font-medium">{obat.nama}</span>
@@ -12329,8 +12365,20 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
                                         <span className="text-muted-foreground">Aturan:</span>
                                         <span className="ml-2">{obat.aturan_pakai}</span>
                                       </div>
+                                      <div>
+                                        <span className="text-muted-foreground">Harga:</span>
+                                        <span className="ml-2">
+                                          Rp {getPrescriptionItemPrice(obat).toLocaleString('id-ID')}
+                                        </span>
+                                      </div>
                                     </div>
                                   ))}
+                                </div>
+                                <div className="mt-3 flex justify-end border-t pt-2 text-sm font-semibold">
+                                  Total Harga:
+                                  <span className="ml-2">
+                                    Rp {sumPrescriptionPrice(med.obat).toLocaleString('id-ID')}
+                                  </span>
                                 </div>
                               </div>
                             ))}

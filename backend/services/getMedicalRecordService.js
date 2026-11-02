@@ -1693,7 +1693,7 @@ class GetMedicalRecordService {
       }
       
       const detailQuery = `
-        SELECT dro.kode_brng, dro.jml, ap.aturan, ob.nama_brng
+        SELECT dro.kode_brng, dro.jml, dro.biaya_obat, ap.aturan, ob.nama_brng
         FROM detail_pemberian_obat dro
         LEFT JOIN databarang ob ON dro.kode_brng = ob.kode_brng
         LEFT JOIN aturan_pakai ap ON dro.no_rawat = ap.no_rawat AND dro.kode_brng = ap.kode_brng AND ap.tgl_perawatan = ? AND ap.jam = ? 
@@ -1714,7 +1714,8 @@ class GetMedicalRecordService {
         kode_brng: row.kode_brng || '',
         nama: row.nama_brng || '-',
         jumlah: row.jml || '-',
-        aturan_pakai: row.aturan || '-'
+        aturan_pakai: row.aturan || '-',
+        harga: Number(row.biaya_obat) || 0
       }));
       
       if (obatList.length > 0) {
@@ -1787,12 +1788,13 @@ class GetMedicalRecordService {
               rp.dosis AS aturan_pakai,
               ob.nama_brng,
               ob.kode_sat AS satuan,
+              ob.kelas1 AS harga,
               COALESCE(SUM(gb.stok), 0) AS stok
             FROM resep_pulang rp
             LEFT JOIN databarang ob ON rp.kode_brng = ob.kode_brng
             LEFT JOIN gudangbarang gb ON gb.kode_brng = rp.kode_brng AND gb.kd_bangsal = ?
             WHERE rp.no_resep = ?
-            GROUP BY rp.kode_brng, rp.jml_barang, rp.dosis, ob.nama_brng, ob.kode_sat
+            GROUP BY rp.kode_brng, rp.jml_barang, rp.dosis, ob.nama_brng, ob.kode_sat, ob.kelas1
             ORDER BY ob.nama_brng
           `
         : `
@@ -1802,12 +1804,13 @@ class GetMedicalRecordService {
               dro.aturan_pakai,
               ob.nama_brng,
               ob.kode_sat AS satuan,
+              ob.kelas1 AS harga,
               COALESCE(SUM(gb.stok), 0) AS stok
             FROM resep_dokter dro
             LEFT JOIN databarang ob ON dro.kode_brng = ob.kode_brng
             LEFT JOIN gudangbarang gb ON gb.kode_brng = dro.kode_brng AND gb.kd_bangsal = ?
             WHERE dro.no_resep = ?
-            GROUP BY dro.kode_brng, dro.jml, dro.aturan_pakai, ob.nama_brng, ob.kode_sat
+            GROUP BY dro.kode_brng, dro.jml, dro.aturan_pakai, ob.nama_brng, ob.kode_sat, ob.kelas1
             ORDER BY ob.nama_brng
           `;
       const compoundQuery = `
@@ -1837,6 +1840,7 @@ class GetMedicalRecordService {
         jumlah: row.jml || '-',
         aturan_pakai: row.aturan_pakai || '-',
         satuan: row.satuan || '',
+        harga: Number(row.harga) || 0,
         stok: Number(row.stok) || 0
       }));
 
@@ -2093,12 +2097,13 @@ class GetMedicalRecordService {
               rp.dosis AS aturan_pakai,
               ob.nama_brng,
               ob.kode_sat AS satuan,
+              ob.kelas1 AS harga,
               COALESCE(SUM(gb.stok), 0) AS stok
             FROM resep_pulang rp
             LEFT JOIN databarang ob ON rp.kode_brng = ob.kode_brng
             LEFT JOIN gudangbarang gb ON gb.kode_brng = rp.kode_brng AND gb.kd_bangsal = ?
             WHERE rp.no_resep = ?
-            GROUP BY rp.kode_brng, rp.jml_barang, rp.dosis, ob.nama_brng, ob.kode_sat
+            GROUP BY rp.kode_brng, rp.jml_barang, rp.dosis, ob.nama_brng, ob.kode_sat, ob.kelas1
             ORDER BY ob.nama_brng
           `
         : `
@@ -2108,12 +2113,13 @@ class GetMedicalRecordService {
               dro.aturan_pakai,
               ob.nama_brng,
               ob.kode_sat AS satuan,
+              ob.kelas1 AS harga,
               COALESCE(SUM(gb.stok), 0) AS stok
             FROM resep_dokter dro
             LEFT JOIN databarang ob ON dro.kode_brng = ob.kode_brng
             LEFT JOIN gudangbarang gb ON gb.kode_brng = dro.kode_brng AND gb.kd_bangsal = ?
             WHERE dro.no_resep = ?
-            GROUP BY dro.kode_brng, dro.jml, dro.aturan_pakai, ob.nama_brng, ob.kode_sat
+            GROUP BY dro.kode_brng, dro.jml, dro.aturan_pakai, ob.nama_brng, ob.kode_sat, ob.kelas1
             ORDER BY ob.nama_brng
           `;
       const compoundQuery = `
@@ -2144,6 +2150,7 @@ class GetMedicalRecordService {
         jumlah: row.jml || '-',
         aturan_pakai: row.aturan_pakai || '-',
         satuan: row.satuan || '',
+        harga: Number(row.harga) || 0,
         stok: Number(row.stok) || 0
       }));
 
