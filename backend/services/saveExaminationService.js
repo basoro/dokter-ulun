@@ -293,6 +293,151 @@ class SaveExaminationService {
       connection.release();
     }
   }
+
+  /**
+   * Simpan catatan Konsul Terapi ke pemeriksaan_ralan.
+   * Hanya no_rawat, rtl (catatan), penilaian ('Konsul Terapi'), nip, dan waktu yang diisi;
+   * kolom lain diisi '-'.
+   */
+  static async saveKonsulTerapi(payload = {}) {
+    const noRawat = String(payload.no_rawat || '').trim();
+    const catatan = String(payload.catatan ?? payload.rtl ?? '').trim();
+    const nip = String(payload.nip || '').trim();
+
+    if (!noRawat) {
+      throw new Error('Missing required field: no_rawat');
+    }
+
+    if (!nip) {
+      throw new Error('Missing required field: nip');
+    }
+
+    if (!catatan) {
+      throw new Error('Catatan konsul terapi tidak boleh kosong');
+    }
+
+    const connection = await pool.getConnection();
+
+    try {
+      const query = `
+        INSERT INTO pemeriksaan_ralan (
+          no_rawat, tgl_perawatan, jam_rawat, suhu_tubuh, tensi, nadi, respirasi,
+          tinggi, berat, gcs, keluhan, pemeriksaan, alergi, imun_ke, rtl, penilaian, nip, created_at
+        ) VALUES (?, CURDATE(), CURTIME(), '-', '-', '-', '-', '-', '-', '-', '-', '-', '-', '-', ?, 'Konsul Terapi', ?, NOW())
+      `;
+
+      const [result] = await connection.execute(query, [noRawat, catatan, nip]);
+
+      return {
+        success: true,
+        message: 'Konsul terapi berhasil disimpan',
+        table: 'pemeriksaan_ralan',
+        data: {
+          no_rawat: noRawat,
+          affectedRows: result.affectedRows
+        }
+      };
+    } catch (error) {
+      console.error('Error saving konsul terapi:', error);
+      throw error;
+    } finally {
+      connection.release();
+    }
+  }
+
+  /**
+   * Riwayat catatan Konsul Terapi pada pemeriksaan_ralan untuk satu kunjungan.
+   */
+  static async getKonsulTerapiHistory(noRawat) {
+    const normalizedNoRawat = String(noRawat || '').trim();
+
+    if (!normalizedNoRawat) {
+      throw new Error('Missing required field: no_rawat');
+    }
+
+    const connection = await pool.getConnection();
+
+    try {
+      const query = `
+        SELECT
+          DATE_FORMAT(pr.tgl_perawatan, '%Y-%m-%d') AS tgl_perawatan,
+          TIME_FORMAT(pr.jam_rawat, '%H:%i:%s') AS jam_rawat,
+          pr.rtl,
+          pr.penilaian,
+          pr.nip,
+          d.nm_dokter,
+          pr.created_at
+        FROM pemeriksaan_ralan pr
+        LEFT JOIN dokter d ON pr.nip = d.kd_dokter
+        WHERE pr.no_rawat = ?
+        AND pr.penilaian = 'Konsul Terapi'
+        ORDER BY pr.tgl_perawatan DESC, pr.jam_rawat DESC, pr.created_at DESC
+      `;
+
+      const [rows] = await connection.execute(query, [normalizedNoRawat]);
+
+      return {
+        success: true,
+        data: rows
+      };
+    } catch (error) {
+      console.error('Error getting konsul terapi history:', error);
+      throw error;
+    } finally {
+      connection.release();
+    }
+  }
+
+  /**
+   * Hapus satu catatan Konsul Terapi berdasarkan kunci pemeriksaan_ralan.
+   * Hanya baris dengan penilaian 'Konsul Terapi' yang boleh dihapus dari endpoint ini.
+   */
+  static async deleteKonsulTerapi({ no_rawat, tgl_perawatan, jam_rawat } = {}) {
+    const normalizedNoRawat = String(no_rawat || '').trim();
+    const normalizedTglPerawatan = String(tgl_perawatan || '').trim();
+    const normalizedJamRawat = String(jam_rawat || '').trim();
+
+    if (!normalizedNoRawat || !normalizedTglPerawatan || !normalizedJamRawat) {
+      throw new Error('Missing required fields: no_rawat, tgl_perawatan, jam_rawat');
+    }
+
+    const connection = await pool.getConnection();
+
+    try {
+      const query = `
+        DELETE FROM pemeriksaan_ralan
+        WHERE no_rawat = ?
+        AND tgl_perawatan = ?
+        AND jam_rawat = ?
+        AND penilaian = 'Konsul Terapi'
+      `;
+
+      const [result] = await connection.execute(query, [
+        normalizedNoRawat,
+        normalizedTglPerawatan,
+        normalizedJamRawat
+      ]);
+
+      if (result.affectedRows === 0) {
+        throw new Error('Data konsul terapi tidak ditemukan');
+      }
+
+      return {
+        success: true,
+        message: 'Konsul terapi berhasil dihapus',
+        table: 'pemeriksaan_ralan',
+        data: {
+          no_rawat: normalizedNoRawat,
+          affectedRows: result.affectedRows
+        }
+      };
+    } catch (error) {
+      console.error('Error deleting konsul terapi:', error);
+      throw error;
+    } finally {
+      connection.release();
+    }
+  }
 }
 
 export default SaveExaminationService;
