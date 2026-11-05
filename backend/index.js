@@ -350,6 +350,74 @@ app.post('/api/save-examination', async (req, res) => {
   }
 });
 
+// Konsul Terapi (khusus IGD) - menyimpan catatan bebas ke pemeriksaan_ralan
+app.post('/api/konsul-terapi', async (req, res) => {
+  try {
+    const result = await SaveExaminationService.saveKonsulTerapi(req.body || {});
+    await auditCrudSuccess(req, 'konsul_terapi', 'create', result);
+    res.json(result);
+  } catch (error) {
+    await auditCrudFailure(req, 'konsul_terapi', 'create', error);
+    console.error('Save konsul terapi error:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message
+    });
+  }
+});
+
+// Konsul Terapi (khusus IGD) - riwayat catatan konsul pada pemeriksaan_ralan
+app.get('/api/konsul-terapi/history', async (req, res) => {
+  try {
+    const { no_rawat: noRawat } = req.query;
+
+    if (!noRawat) {
+      return res.status(400).json({
+        success: false,
+        error: 'no_rawat is required'
+      });
+    }
+
+    const result = await SaveExaminationService.getKonsulTerapiHistory(noRawat);
+    res.json(result);
+  } catch (error) {
+    console.error('Get konsul terapi history error:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message
+    });
+  }
+});
+
+// Konsul Terapi (khusus IGD) - hapus satu catatan konsul
+app.delete('/api/konsul-terapi/:no_rawat/:tgl_perawatan/:jam_rawat', async (req, res) => {
+  const { no_rawat: noRawat, tgl_perawatan: tglPerawatan, jam_rawat: jamRawat } = req.params;
+
+  try {
+    if (!noRawat || !tglPerawatan || !jamRawat) {
+      return res.status(400).json({
+        success: false,
+        error: 'no_rawat, tgl_perawatan, and jam_rawat are required'
+      });
+    }
+
+    const result = await SaveExaminationService.deleteKonsulTerapi({
+      no_rawat: noRawat,
+      tgl_perawatan: tglPerawatan,
+      jam_rawat: jamRawat
+    });
+    await auditCrudSuccess(req, 'konsul_terapi', 'delete', result, { no_rawat: noRawat, reference_id: noRawat });
+    res.json(result);
+  } catch (error) {
+    await auditCrudFailure(req, 'konsul_terapi', 'delete', error, { no_rawat: noRawat, reference_id: noRawat });
+    console.error('Delete konsul terapi error:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message
+    });
+  }
+});
+
 app.get('/api/triase-igd/master', async (_req, res) => {
   try {
     const result = await TriageIgdService.getMasterOptions();

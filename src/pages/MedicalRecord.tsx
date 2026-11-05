@@ -408,7 +408,16 @@ interface ProcedureOption {
 type ProcedureStatusRawat = 'Ralan' | 'Ranap';
 type LabStatusRawat = 'Ralan' | 'Ranap' | 'IGD';
 type RadiologyStatusRawat = 'Ralan' | 'Ranap' | 'IGD';
-type OutpatientExaminationSectionTabValue = 'examinations' | 'asmed-ralan' | 'echo-echocardiography' | 'rehab-medik';
+type OutpatientExaminationSectionTabValue = 'examinations' | 'asmed-ralan' | 'echo-echocardiography' | 'rehab-medik' | 'konsul-terapi';
+type KonsulTerapiHistoryItem = {
+  tgl_perawatan: string;
+  jam_rawat: string;
+  rtl: string | null;
+  penilaian: string | null;
+  nip: string | null;
+  nm_dokter: string | null;
+  created_at: string | null;
+};
 type InpatientExaminationSectionTabValue = 'examinations' | 'asmed-ralan' | 'balance-cairan' | 'sbar' | 'ventilator' | 'ekstrapiramidal' | 'echo-echocardiography' | 'rehab-medik';
 type VisitDetailSectionFilterValue = 'all' | 'triase' | 'catatan' | 'pemeriksaan' | 'diagnosa' | 'tindakan' | 'resep' | 'laboratorium' | 'radiologi' | 'pemeriksaan-jantung';
 
@@ -1989,6 +1998,11 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
   const [isLabFormOpen, setIsLabFormOpen] = useState(false);
   const [isRadiologyFormOpen, setIsRadiologyFormOpen] = useState(false);
   const [isIgdTriageFormOpen, setIsIgdTriageFormOpen] = useState(false);
+  const [konsulTerapiCatatan, setKonsulTerapiCatatan] = useState('');
+  const [isSavingKonsulTerapi, setIsSavingKonsulTerapi] = useState(false);
+  const [konsulTerapiHistory, setKonsulTerapiHistory] = useState<KonsulTerapiHistoryItem[]>([]);
+  const [isLoadingKonsulTerapiHistory, setIsLoadingKonsulTerapiHistory] = useState(false);
+  const [deletingKonsulTerapiKey, setDeletingKonsulTerapiKey] = useState('');
   const effectiveLabFormNoRawat = useMemo(
     () => String(labFormNoRawat || formattedNoRawat || '').trim(),
     [formattedNoRawat, labFormNoRawat]
@@ -3503,6 +3517,248 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
   const canEditPrescription = canDeletePrescription;
   const canEditLabRequest = canDeleteLabRequest;
   const canEditRadiologyRequest = canDeleteRadiologyRequest;
+  const isIgdVisit = Boolean(focusedVisit?.is_igd_visit);
+  const handleSaveKonsulTerapi = async () => {
+    if (!formattedNoRawat) {
+      toast({
+        title: 'Kunjungan belum dipilih',
+        description: 'Pilih kunjungan pasien terlebih dahulu sebelum menyimpan konsul terapi.',
+        variant: 'destructive'
+      });
+      return;
+    }
+
+    const catatan = konsulTerapiCatatan.trim();
+
+    if (!catatan) {
+      toast({
+        title: 'Catatan kosong',
+        description: 'Tulis catatan konsul terapi terlebih dahulu.',
+        variant: 'destructive'
+      });
+      return;
+    }
+
+    try {
+      setIsSavingKonsulTerapi(true);
+
+      const response = await fetch(API_URLS.KONSUL_TERAPI, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          no_rawat: formattedNoRawat,
+          catatan,
+          nip: String(user?.kd_dokter || currentUsername).trim()
+        })
+      });
+
+      const responseJson = await response.json().catch(() => null);
+
+      if (!response.ok || !responseJson?.success) {
+        throw new Error(responseJson?.error || `HTTP error! status: ${response.status}`);
+      }
+
+      toast({
+        title: 'Berhasil',
+        description: responseJson?.message || 'Konsul terapi berhasil disimpan'
+      });
+      setKonsulTerapiCatatan('');
+      void fetchKonsulTerapiHistory();
+      fetchMedicalRecord({ reset: true, outpatientPage: 1, inpatientPage: 1 });
+    } catch (error) {
+      console.error('Error saving konsul terapi:', error);
+      toast({
+        title: 'Gagal menyimpan',
+        description: error instanceof Error ? error.message : 'Gagal menyimpan konsul terapi',
+        variant: 'destructive'
+      });
+    } finally {
+      setIsSavingKonsulTerapi(false);
+    }
+  };
+
+  const fetchKonsulTerapiHistory = async () => {
+    if (!formattedNoRawat) {
+      setKonsulTerapiHistory([]);
+      return;
+    }
+
+    try {
+      setIsLoadingKonsulTerapiHistory(true);
+
+      const response = await fetch(
+        `${API_URLS.KONSUL_TERAPI}/history?no_rawat=${encodeURIComponent(formattedNoRawat)}`
+      );
+
+      const responseJson = await response.json().catch(() => null);
+
+      if (!response.ok || !responseJson?.success) {
+        throw new Error(responseJson?.error || `HTTP error! status: ${response.status}`);
+      }
+
+      setKonsulTerapiHistory(Array.isArray(responseJson?.data) ? responseJson.data : []);
+    } catch (error) {
+      console.error('Error fetching konsul terapi history:', error);
+      setKonsulTerapiHistory([]);
+      toast({
+        title: 'Gagal memuat riwayat konsul',
+        description: error instanceof Error ? error.message : 'Gagal memuat riwayat konsul terapi',
+        variant: 'destructive'
+      });
+    } finally {
+      setIsLoadingKonsulTerapiHistory(false);
+    }
+  };
+
+  const handleDeleteKonsulTerapi = async (item: KonsulTerapiHistoryItem) => {
+    const itemKey = `${item.tgl_perawatan}-${item.jam_rawat}`;
+
+    const confirmed = window.confirm(
+      `Hapus catatan konsul terapi tanggal ${formatDateSafe(item.tgl_perawatan)} jam ${item.jam_rawat}?`
+    );
+
+    if (!confirmed) {
+      return;
+    }
+
+    try {
+      setDeletingKonsulTerapiKey(itemKey);
+
+      const response = await fetch(
+        `${API_URLS.KONSUL_TERAPI}/${encodeURIComponent(formattedNoRawat)}/${encodeURIComponent(item.tgl_perawatan)}/${encodeURIComponent(item.jam_rawat)}`,
+        { method: 'DELETE' }
+      );
+
+      const responseJson = await response.json().catch(() => null);
+
+      if (!response.ok || !responseJson?.success) {
+        throw new Error(responseJson?.error || `HTTP error! status: ${response.status}`);
+      }
+
+      toast({
+        title: 'Berhasil',
+        description: responseJson?.message || 'Konsul terapi berhasil dihapus'
+      });
+      void fetchKonsulTerapiHistory();
+      fetchMedicalRecord({ reset: true, outpatientPage: 1, inpatientPage: 1 });
+    } catch (error) {
+      console.error('Error deleting konsul terapi:', error);
+      toast({
+        title: 'Gagal menghapus',
+        description: error instanceof Error ? error.message : 'Gagal menghapus konsul terapi',
+        variant: 'destructive'
+      });
+    } finally {
+      setDeletingKonsulTerapiKey('');
+    }
+  };
+
+  const renderKonsulTerapiHistory = () => {
+    if (isLoadingKonsulTerapiHistory) {
+      return (
+        <div className="flex items-center gap-2 text-sm text-muted-foreground">
+          <Loader2 className="h-4 w-4 animate-spin" />
+          Memuat riwayat konsul...
+        </div>
+      );
+    }
+
+    if (konsulTerapiHistory.length === 0) {
+      return (
+        <div className="border border-dashed rounded-lg p-6 text-sm text-muted-foreground bg-muted/20">
+          Belum ada riwayat konsul terapi pada kunjungan ini.
+        </div>
+      );
+    }
+
+    return (
+      <div className="space-y-3">
+        {konsulTerapiHistory.map((item, index) => {
+          const itemKey = `${item.tgl_perawatan}-${item.jam_rawat}`;
+
+          return (
+            <div key={`${itemKey}-${index}`} className="rounded-lg border p-3">
+              <div className="flex items-start justify-between gap-3">
+                <div className="text-sm">
+                  <span className="text-muted-foreground">Tanggal:</span>
+                  <span className="ml-2 font-medium">{formatDateSafe(item.tgl_perawatan)}</span>
+                  <span className="ml-4 text-muted-foreground">Jam:</span>
+                  <span className="ml-2 font-medium">{item.jam_rawat}</span>
+                </div>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  className="text-destructive hover:text-destructive"
+                  onClick={() => void handleDeleteKonsulTerapi(item)}
+                  disabled={deletingKonsulTerapiKey === itemKey}
+                >
+                  {deletingKonsulTerapiKey === itemKey ? (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  ) : (
+                    <Trash2 className="h-4 w-4" />
+                  )}
+                  Hapus
+                </Button>
+              </div>
+              <p className="mt-2 whitespace-pre-wrap text-sm">{item.rtl || '-'}</p>
+              {item.nm_dokter || item.nip ? (
+                <p className="mt-2 text-xs text-muted-foreground">Oleh: {item.nm_dokter || item.nip}</p>
+              ) : null}
+            </div>
+          );
+        })}
+      </div>
+    );
+  };
+
+  const renderKonsulTerapiSection = () => {
+    if (!formattedNoRawat) {
+      return (
+        <div className="border border-dashed rounded-lg p-6 text-sm text-muted-foreground bg-muted/20">
+          Pilih kunjungan pasien IGD terlebih dahulu untuk mengisi konsul terapi.
+        </div>
+      );
+    }
+
+    return (
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base">Konsul Terapi</CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div>
+            <Label htmlFor="konsul_terapi_catatan">Catatan Konsul Terapi</Label>
+            <Textarea
+              id="konsul_terapi_catatan"
+              rows={8}
+              value={konsulTerapiCatatan}
+              onChange={(event) => setKonsulTerapiCatatan(event.target.value)}
+              placeholder="Tulis catatan konsul terapi..."
+            />
+          </div>
+          <div className="flex justify-end gap-2">
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => setKonsulTerapiCatatan('')}
+              disabled={isSavingKonsulTerapi || !konsulTerapiCatatan}
+            >
+              Bersihkan
+            </Button>
+            <Button type="button" onClick={() => void handleSaveKonsulTerapi()} disabled={isSavingKonsulTerapi}>
+              {isSavingKonsulTerapi ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+              Simpan
+            </Button>
+          </div>
+          <div className="border-t pt-4">
+            <p className="mb-3 text-sm font-medium">Riwayat Konsul Terapi</p>
+            {renderKonsulTerapiHistory()}
+          </div>
+        </CardContent>
+      </Card>
+    );
+  };
   const renderExaminationRoleFilter = () => (
     <div className="rounded-lg border bg-muted/20 p-3">
       <div className="mb-2">
@@ -8711,7 +8967,20 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
     if (!echoCardiographyAccess && outpatientExaminationSectionTab === 'echo-echocardiography') {
       setOutpatientExaminationSectionTab('examinations');
     }
-  }, [echoCardiographyAccess, inpatientExaminationSectionTab, outpatientExaminationSectionTab]);
+    if (!isIgdVisit && outpatientExaminationSectionTab === 'konsul-terapi') {
+      setOutpatientExaminationSectionTab('examinations');
+    }
+  }, [echoCardiographyAccess, inpatientExaminationSectionTab, outpatientExaminationSectionTab, isIgdVisit]);
+
+  useEffect(() => {
+    if (!isIgdVisit) {
+      setKonsulTerapiHistory([]);
+      return;
+    }
+
+    void fetchKonsulTerapiHistory();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [formattedNoRawat, isIgdVisit]);
 
   useEffect(() => {
     if (!formattedNoRawat) {
@@ -13436,6 +13705,9 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
                         <TabsList>
                           <TabsTrigger value="examinations">Pemeriksaan</TabsTrigger>
                           <TabsTrigger value="asmed-ralan">Assesmen Medis</TabsTrigger>
+                          {isIgdVisit && (
+                            <TabsTrigger value="konsul-terapi">Konsul Terapi</TabsTrigger>
+                          )}
                           {echoCardiographyAccess && (
                             <TabsTrigger value="echo-echocardiography">Pemeriksaan Jantung</TabsTrigger>
                           )}
@@ -13452,6 +13724,12 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
                         <TabsContent value="asmed-ralan" className="space-y-4">
                           {renderAsmedRalanSection('ralan')}
                         </TabsContent>
+
+                        {isIgdVisit && (
+                          <TabsContent value="konsul-terapi" className="space-y-4">
+                            {renderKonsulTerapiSection()}
+                          </TabsContent>
+                        )}
 
                         {echoCardiographyAccess && (
                           <TabsContent value="echo-echocardiography" className="space-y-4">
