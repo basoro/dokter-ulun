@@ -1869,6 +1869,46 @@ export const MedicalResumeModal: React.FC<MedicalResumeModalProps> = ({
       }));
   };
 
+  const renderResumeActions = () => (
+    <div className="grid w-full grid-cols-1 gap-2 sm:flex sm:w-auto sm:flex-wrap">
+      {formData.has_resume ? (
+        <Button className="w-full sm:w-auto" variant="destructive" onClick={handleDelete} disabled={deleting || saving || verifying || isRanapVerified}>
+          {deleting ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Trash2 className="h-4 w-4 mr-2" />}
+          Hapus
+        </Button>
+      ) : null}
+      <Button className="w-full sm:w-auto" onClick={handleSave} disabled={saving || deleting || verifying}>
+        {saving ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : null}
+        {formData.has_resume ? 'Update' : 'Simpan'}
+      </Button>
+      <Button
+        type="button"
+        className="w-full sm:w-auto"
+        variant="outline"
+        onClick={() => {
+          setHistoryOpen(true);
+          void fetchResumeHistory();
+        }}
+        disabled={saving || deleting || verifying || !noRawat}
+      >
+        <History className="h-4 w-4 mr-2" />
+        Riwayat Resume
+      </Button>
+      {canVerifyRanap ? (
+        <Button
+          type="button"
+          className="w-full sm:w-auto"
+          variant={isRanapVerified ? 'outline' : 'default'}
+          onClick={handleToggleVerification}
+          disabled={saving || deleting || verifying || !formData.has_resume}
+        >
+          {verifying ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : null}
+          {isRanapVerified ? 'Batal Verifikasi' : 'Verifikasi'}
+        </Button>
+      ) : null}
+    </div>
+  );
+
   return (
     <Dialog open={isOpen} onOpenChange={onClose}>
       <DialogContent className="max-h-[90vh] w-[calc(100vw-1rem)] max-w-6xl overflow-y-auto p-4 sm:p-6">
@@ -1946,43 +1986,7 @@ export const MedicalResumeModal: React.FC<MedicalResumeModalProps> = ({
               <CardHeader>
                 <CardTitle className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                   <span>{formData.has_resume ? 'Edit Resume Pasien' : 'Tambah Resume Pasien'}</span>
-                  <div className="grid w-full grid-cols-1 gap-2 sm:flex sm:w-auto sm:flex-wrap">
-                    {formData.has_resume ? (
-                      <Button className="w-full sm:w-auto" variant="destructive" onClick={handleDelete} disabled={deleting || saving || verifying || isRanapVerified}>
-                        {deleting ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Trash2 className="h-4 w-4 mr-2" />}
-                        Hapus
-                      </Button>
-                    ) : null}
-                    <Button className="w-full sm:w-auto" onClick={handleSave} disabled={saving || deleting || verifying}>
-                      {saving ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : null}
-                      {formData.has_resume ? 'Update' : 'Simpan'}
-                    </Button>
-                    <Button
-                      type="button"
-                      className="w-full sm:w-auto"
-                      variant="outline"
-                      onClick={() => {
-                        setHistoryOpen(true);
-                        void fetchResumeHistory();
-                      }}
-                      disabled={saving || deleting || verifying || !noRawat}
-                    >
-                      <History className="h-4 w-4 mr-2" />
-                      Riwayat Resume
-                    </Button>
-                    {canVerifyRanap ? (
-                      <Button
-                        type="button"
-                        className="w-full sm:w-auto"
-                        variant={isRanapVerified ? 'outline' : 'default'}
-                        onClick={handleToggleVerification}
-                        disabled={saving || deleting || verifying || !formData.has_resume}
-                      >
-                        {verifying ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : null}
-                        {isRanapVerified ? 'Batal Verifikasi' : 'Verifikasi'}
-                      </Button>
-                    ) : null}
-                  </div>
+                  {isRalan ? renderResumeActions() : null}
                 </CardTitle>
               </CardHeader>
               <CardContent className="space-y-6">
@@ -2205,6 +2209,12 @@ export const MedicalResumeModal: React.FC<MedicalResumeModalProps> = ({
                     </div>
                   )}
                 </div>
+
+                {!isRalan ? (
+                  <div className="flex justify-end">
+                    {renderResumeActions()}
+                  </div>
+                ) : null}
               </CardContent>
             </Card>
           )}
