@@ -1,6 +1,6 @@
 import React from 'react';
 import { format } from 'date-fns';
-import { CalendarDays, ChevronLeft, ChevronRight, Download, ExternalLink, FileText, FlaskConical, ImageIcon, Loader2, Pause, Play, RotateCcw, Search, ScanLine, Save, X, ZoomIn, ZoomOut } from 'lucide-react';
+import { CalendarDays, ChevronLeft, ChevronRight, Download, ExternalLink, FileText, FlaskConical, History, ImageIcon, Loader2, Pause, Play, RotateCcw, Search, ScanLine, Save, X, ZoomIn, ZoomOut } from 'lucide-react';
 import { useSearchParams } from 'react-router-dom';
 import { DateRange } from 'react-day-picker';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -243,6 +243,495 @@ const formatLabSheetStatus = (value?: string) => {
   return String(value || '-').trim() || '-';
 };
 
+interface VisitHistoryExamination {
+  tanggal?: string;
+  nip?: string;
+  role?: string;
+  tekanan_darah?: string;
+  nadi?: string;
+  respirasi?: string;
+  suhu?: string;
+  tinggi?: string;
+  berat?: string;
+  spo2?: string;
+  gcs?: string;
+  s?: string;
+  o?: string;
+  a?: string;
+  p?: string;
+  i?: string;
+  e?: string;
+  verification_note?: string;
+}
+
+interface VisitHistoryProcedure {
+  tanggal?: string;
+  nm_perawatan?: string;
+  nama?: string;
+  nama_pelaksana?: string;
+  biaya_rawat?: number;
+  status_rawat?: string;
+}
+
+interface VisitHistoryIcd10 {
+  kd_penyakit?: string;
+  nm_penyakit?: string;
+  prioritas?: number;
+  status_penyakit?: string;
+}
+
+interface VisitHistoryIcd9 {
+  kode?: string;
+  deskripsi_panjang?: string;
+  deskripsi_pendek?: string;
+  prioritas?: number;
+}
+
+interface VisitHistoryMedicineItem {
+  kode_brng?: string;
+  nama?: string;
+  jumlah?: number;
+  aturan_pakai?: string;
+  satuan?: string;
+  harga?: number;
+}
+
+interface VisitHistoryCompound {
+  nama_racik?: string;
+  nm_racik?: string;
+  jml_dr?: number;
+  aturan_pakai?: string;
+  keterangan?: string;
+  details?: Array<{ nama_brng?: string; kandungan?: string; jml?: number; satuan?: string }>;
+}
+
+interface VisitHistoryPrescription {
+  tanggal?: string;
+  no_resep?: string;
+  nm_dokter?: string;
+  status_layanan?: string;
+  obat?: VisitHistoryMedicineItem[];
+  compounds?: VisitHistoryCompound[];
+}
+
+interface VisitHistoryLabItem {
+  pemeriksaan?: string;
+  hasil?: string;
+  rujukan?: string;
+  satuan?: string;
+  keterangan?: string;
+}
+
+interface VisitHistoryLaboratory {
+  tanggal?: string;
+  nm_perawatan?: string;
+  pemeriksaan?: string;
+  dokter?: string;
+  petugas?: string;
+  lab_responsible_doctor_name?: string;
+  hasil?: string | VisitHistoryLabItem[];
+}
+
+interface VisitHistoryRadiology {
+  tanggal?: string;
+  nm_perawatan?: string;
+  pemeriksaan?: string;
+  judul?: string;
+  hasil?: string;
+  kesan?: string;
+  saran?: string;
+}
+
+interface VisitHistoryNote {
+  tanggal?: string;
+  jam?: string;
+  catatan?: string;
+  petugas?: string;
+}
+
+interface VisitHistoryOperationReport {
+  id?: number;
+  tanggal_op?: string;
+  nm_op?: string;
+  dokter_operator?: string;
+  dokter_anestesi?: string;
+  dokter_laporan?: string;
+  pre_op?: string;
+  post_op?: string;
+  hasil_op?: string;
+  implan?: string;
+  kirim_pa?: string;
+}
+
+interface VisitHistoryDetail {
+  no_rawat?: string;
+  poliklinik?: string;
+  dokter?: string;
+  status_lanjut?: string;
+  examinations?: VisitHistoryExamination[];
+  procedures?: VisitHistoryProcedure[];
+  icd_details?: { icd10?: VisitHistoryIcd10[]; icd9?: VisitHistoryIcd9[] };
+  medications?: VisitHistoryPrescription[];
+  medicationsRequest?: VisitHistoryPrescription[];
+  laboratory?: VisitHistoryLaboratory[];
+  radiology?: VisitHistoryRadiology[];
+  patient_notes?: VisitHistoryNote[];
+  operationReports?: VisitHistoryOperationReport[];
+}
+
+const VisitHistorySection = ({
+  title,
+  count,
+  children
+}: {
+  title: string;
+  count: number;
+  children?: React.ReactNode;
+}) => (
+  <div className="border-t py-3 first:border-t-0 first:pt-0 first:pb-3">
+    <p className="mb-2 text-sm font-semibold">
+      {title}
+      <span className="ml-2 font-normal text-muted-foreground">({count})</span>
+    </p>
+    {count === 0 ? <p className="text-xs text-muted-foreground">Belum ada data.</p> : children}
+  </div>
+);
+
+const VisitHistoryText = ({ label, value }: { label: string; value?: string }) => {
+  const text = String(value || '').trim();
+  if (!text || text === '-') {
+    return null;
+  }
+
+  return (
+    <div className="text-xs">
+      <span className="text-muted-foreground">{label}: </span>
+      <span className="whitespace-pre-wrap">{text}</span>
+    </div>
+  );
+};
+
+type VisitHistorySectionKey =
+  | 'all'
+  | 'pemeriksaan'
+  | 'tindakan'
+  | 'icd10'
+  | 'icd9'
+  | 'resep'
+  | 'laboratorium'
+  | 'radiologi'
+  | 'catatan'
+  | 'operasi';
+
+const VisitHistoryPanel = ({
+  detail,
+  loading,
+  error
+}: {
+  detail: VisitHistoryDetail | null;
+  loading: boolean;
+  error: string;
+}) => {
+  const [activeSection, setActiveSection] = React.useState<VisitHistorySectionKey>('all');
+
+  if (loading) {
+    return (
+      <div className="flex items-center gap-2 rounded-md border p-4 text-sm text-muted-foreground">
+        <Loader2 className="h-4 w-4 animate-spin" />
+        Memuat riwayat pemeriksaan pasien...
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="rounded-md border border-destructive/40 bg-destructive/5 px-3 py-2 text-sm text-destructive">
+        {error}
+      </div>
+    );
+  }
+
+  if (!detail) {
+    return null;
+  }
+
+  const examinations = Array.isArray(detail.examinations) ? detail.examinations : [];
+  const procedures = Array.isArray(detail.procedures) ? detail.procedures : [];
+  const icd10 = Array.isArray(detail.icd_details?.icd10) ? detail.icd_details?.icd10 || [] : [];
+  const icd9 = Array.isArray(detail.icd_details?.icd9) ? detail.icd_details?.icd9 || [] : [];
+  const prescriptionSource = (detail.medicationsRequest?.length ? detail.medicationsRequest : detail.medications) || [];
+  const laboratory = Array.isArray(detail.laboratory) ? detail.laboratory : [];
+  const radiology = Array.isArray(detail.radiology) ? detail.radiology : [];
+  const patientNotes = Array.isArray(detail.patient_notes) ? detail.patient_notes : [];
+  const operationReports = Array.isArray(detail.operationReports) ? detail.operationReports : [];
+
+  const sectionOptions: Array<{ value: VisitHistorySectionKey; label: string }> = [
+    { value: 'all', label: 'Semua' },
+    ...(examinations.length ? [{ value: 'pemeriksaan' as const, label: 'Pemeriksaan' }] : []),
+    ...(procedures.length ? [{ value: 'tindakan' as const, label: 'Tindakan' }] : []),
+    ...(icd10.length ? [{ value: 'icd10' as const, label: 'ICD 10' }] : []),
+    ...(icd9.length ? [{ value: 'icd9' as const, label: 'ICD 9' }] : []),
+    ...(prescriptionSource.length ? [{ value: 'resep' as const, label: 'Resep' }] : []),
+    ...(laboratory.length ? [{ value: 'laboratorium' as const, label: 'Laboratorium' }] : []),
+    ...(radiology.length ? [{ value: 'radiologi' as const, label: 'Radiologi' }] : []),
+    ...(patientNotes.length ? [{ value: 'catatan' as const, label: 'Catatan Perawatan' }] : []),
+    ...(operationReports.length ? [{ value: 'operasi' as const, label: 'Laporan Operasi' }] : [])
+  ];
+
+  const isSectionVisible = (key: VisitHistorySectionKey) => activeSection === 'all' || activeSection === key;
+
+  return (
+    <div className="max-h-[60vh] overflow-y-auto rounded-md border bg-muted/20 p-4">
+      <div className="sticky top-0 z-10 -mx-4 -mt-4 mb-3 flex flex-wrap gap-2 border-b bg-muted/80 px-4 py-3 backdrop-blur">
+        {sectionOptions.map((option) => (
+          <Button
+            key={option.value}
+            type="button"
+            variant={activeSection === option.value ? 'default' : 'outline'}
+            size="sm"
+            onClick={() => setActiveSection(option.value)}
+          >
+            {option.label}
+          </Button>
+        ))}
+      </div>
+
+      {isSectionVisible('pemeriksaan') ? (
+      <VisitHistorySection title="Pemeriksaan" count={examinations.length}>
+        <div className="space-y-2">
+          {examinations.map((item, index) => (
+            <div key={`exam-${index}`} className="rounded-md border bg-background p-3 space-y-1">
+              <p className="text-xs font-medium">
+                {item.tanggal || '-'}
+                {item.role ? <span className="ml-2 font-normal text-muted-foreground">({item.role})</span> : null}
+              </p>
+              <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted-foreground">
+                {item.tekanan_darah ? <span>TD: {item.tekanan_darah}</span> : null}
+                {item.nadi ? <span>Nadi: {item.nadi}</span> : null}
+                {item.respirasi ? <span>RR: {item.respirasi}</span> : null}
+                {item.suhu ? <span>Suhu: {item.suhu}</span> : null}
+                {item.spo2 ? <span>SpO2: {item.spo2}</span> : null}
+                {item.gcs ? <span>GCS: {item.gcs}</span> : null}
+                {item.berat ? <span>BB: {item.berat}</span> : null}
+                {item.tinggi ? <span>TB: {item.tinggi}</span> : null}
+              </div>
+              <VisitHistoryText label="S" value={item.s} />
+              <VisitHistoryText label="O" value={item.o} />
+              <VisitHistoryText label="A" value={item.a} />
+              <VisitHistoryText label="P" value={item.p} />
+              <VisitHistoryText label="I" value={item.i} />
+              <VisitHistoryText label="E" value={item.e} />
+              <VisitHistoryText label="Catatan verifikasi" value={item.verification_note} />
+            </div>
+          ))}
+        </div>
+      </VisitHistorySection>
+      ) : null}
+
+      {isSectionVisible('tindakan') ? (
+      <VisitHistorySection title="Tindakan" count={procedures.length}>
+        <div className="space-y-1">
+          {procedures.map((item, index) => (
+            <div key={`procedure-${index}`} className="flex flex-wrap items-baseline justify-between gap-2 text-xs">
+              <div>
+                <span className="font-medium">{item.nm_perawatan || item.nama || '-'}</span>
+                {item.nama_pelaksana ? <span className="ml-2 text-muted-foreground">{item.nama_pelaksana}</span> : null}
+              </div>
+              <div className="text-muted-foreground">
+                <span>{item.tanggal || '-'}</span>
+                {typeof item.biaya_rawat === 'number' && item.biaya_rawat > 0 ? (
+                  <span className="ml-2">Rp {item.biaya_rawat.toLocaleString('id-ID')}</span>
+                ) : null}
+              </div>
+            </div>
+          ))}
+        </div>
+      </VisitHistorySection>
+      ) : null}
+
+      {isSectionVisible('icd10') ? (
+      <VisitHistorySection title="ICD 10" count={icd10.length}>
+        <div className="space-y-1">
+          {icd10.map((item, index) => (
+            <div key={`icd10-${index}`} className="text-xs">
+              <span className="font-medium">{item.kd_penyakit || '-'}</span>
+              <span className="ml-2">{item.nm_penyakit || '-'}</span>
+              {item.status_penyakit ? (
+                <span className="ml-2 text-muted-foreground">({item.status_penyakit})</span>
+              ) : null}
+            </div>
+          ))}
+        </div>
+      </VisitHistorySection>
+      ) : null}
+
+      {isSectionVisible('icd9') ? (
+      <VisitHistorySection title="ICD 9" count={icd9.length}>
+        <div className="space-y-1">
+          {icd9.map((item, index) => (
+            <div key={`icd9-${index}`} className="text-xs">
+              <span className="font-medium">{item.kode || '-'}</span>
+              <span className="ml-2">{item.deskripsi_panjang || item.deskripsi_pendek || '-'}</span>
+            </div>
+          ))}
+        </div>
+      </VisitHistorySection>
+      ) : null}
+
+      {isSectionVisible('resep') ? (
+      <VisitHistorySection title="Resep" count={prescriptionSource.length}>
+        <div className="space-y-2">
+          {prescriptionSource.map((item, index) => (
+            <div key={`prescription-${index}`} className="rounded-md border bg-background p-3 space-y-1">
+              <p className="text-xs font-medium">
+                {item.no_resep || '-'}
+                <span className="ml-2 font-normal text-muted-foreground">{item.tanggal || '-'}</span>
+              </p>
+              <p className="text-xs text-muted-foreground">
+                {item.nm_dokter || '-'}
+                {item.status_layanan ? ` • ${item.status_layanan}` : ''}
+              </p>
+              {(item.obat || []).map((obat, obatIndex) => (
+                <div key={`obat-${obatIndex}`} className="flex flex-wrap items-baseline justify-between gap-2 text-xs">
+                  <span className="font-medium">{obat.nama || obat.kode_brng || '-'}</span>
+                  <span className="text-muted-foreground">
+                    {obat.jumlah ?? '-'} {obat.satuan || ''}
+                    {obat.aturan_pakai ? ` • ${obat.aturan_pakai}` : ''}
+                  </span>
+                </div>
+              ))}
+              {(item.compounds || []).map((compound, compoundIndex) => (
+                <div key={`compound-${compoundIndex}`} className="rounded border border-dashed p-2 text-xs">
+                  <p className="font-medium">
+                    Racikan: {compound.nama_racik || '-'}
+                    {compound.nm_racik ? ` (${compound.nm_racik})` : ''}
+                  </p>
+                  <p className="text-muted-foreground">
+                    Jumlah: {compound.jml_dr ?? '-'}
+                    {compound.aturan_pakai ? ` • ${compound.aturan_pakai}` : ''}
+                  </p>
+                  {(compound.details || []).map((detailItem, detailIndex) => (
+                    <p key={`compound-detail-${detailIndex}`} className="text-muted-foreground">
+                      - {detailItem.nama_brng || '-'}: {detailItem.jml ?? '-'} {detailItem.satuan || ''}
+                    </p>
+                  ))}
+                </div>
+              ))}
+            </div>
+          ))}
+        </div>
+      </VisitHistorySection>
+      ) : null}
+
+      {isSectionVisible('laboratorium') ? (
+      <VisitHistorySection title="Hasil Laboratorium" count={laboratory.length}>
+        <div className="space-y-2">
+          {laboratory.map((item, index) => {
+            const labItems = Array.isArray(item.pemeriksaan) ? item.pemeriksaan : [];
+            return (
+              <div key={`lab-${index}`} className="rounded-md border bg-background p-3 space-y-1">
+                <p className="text-xs font-medium">
+                  {item.nm_perawatan || '-'}
+                  <span className="ml-2 font-normal text-muted-foreground">{item.tanggal || '-'}</span>
+                </p>
+                <p className="text-xs text-muted-foreground">
+                  {item.dokter || '-'}
+                  {item.petugas ? ` • ${item.petugas}` : ''}
+                </p>
+                {labItems.length > 0 ? (
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-xs">
+                      <thead>
+                        <tr className="text-left text-muted-foreground">
+                          <th className="py-1 pr-3 font-normal">Pemeriksaan</th>
+                          <th className="py-1 pr-3 font-normal">Hasil</th>
+                          <th className="py-1 pr-3 font-normal">Satuan</th>
+                          <th className="py-1 pr-3 font-normal">Rujukan</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {labItems.map((labItem, labIndex) => (
+                          <tr key={`lab-item-${labIndex}`} className="border-t">
+                            <td className="py-1 pr-3">{labItem.pemeriksaan || '-'}</td>
+                            <td className={cn('py-1 pr-3', getLabResultRowTone(labItem.keterangan) === 'high' && 'text-red-600', getLabResultRowTone(labItem.keterangan) === 'low' && 'text-blue-600')}>
+                              {labItem.hasil || '-'}
+                            </td>
+                            <td className="py-1 pr-3 text-muted-foreground">{labItem.satuan || '-'}</td>
+                            <td className="py-1 pr-3 text-muted-foreground">{labItem.rujukan || '-'}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                ) : (
+                  <p className="whitespace-pre-wrap text-xs">{typeof item.hasil === 'string' ? item.hasil : '-'}</p>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      </VisitHistorySection>
+      ) : null}
+
+      {isSectionVisible('radiologi') ? (
+      <VisitHistorySection title="Radiologi" count={radiology.length}>
+        <div className="space-y-2">
+          {radiology.map((item, index) => (
+            <div key={`radiology-${index}`} className="rounded-md border bg-background p-3 space-y-1">
+              <p className="text-xs font-medium">
+                {item.pemeriksaan || item.nm_perawatan || item.judul || '-'}
+                <span className="ml-2 font-normal text-muted-foreground">{item.tanggal || '-'}</span>
+              </p>
+              <VisitHistoryText label="Hasil" value={item.hasil} />
+              <VisitHistoryText label="Kesan" value={item.kesan} />
+              <VisitHistoryText label="Saran" value={item.saran} />
+            </div>
+          ))}
+        </div>
+      </VisitHistorySection>
+      ) : null}
+
+      {isSectionVisible('catatan') ? (
+      <VisitHistorySection title="Catatan Perawatan" count={patientNotes.length}>
+        <div className="space-y-2">
+          {patientNotes.map((item, index) => (
+            <div key={`note-${index}`} className="rounded-md border bg-background p-3 space-y-1">
+              <p className="text-xs font-medium">
+                {item.tanggal || '-'} {item.jam || ''}
+                {item.petugas ? <span className="ml-2 font-normal text-muted-foreground">{item.petugas}</span> : null}
+              </p>
+              <p className="whitespace-pre-wrap text-xs">{item.catatan || '-'}</p>
+            </div>
+          ))}
+        </div>
+      </VisitHistorySection>
+      ) : null}
+
+      {isSectionVisible('operasi') ? (
+      <VisitHistorySection title="Laporan Operasi" count={operationReports.length}>
+        <div className="space-y-2">
+          {operationReports.map((item, index) => (
+            <div key={`operation-${index}`} className="rounded-md border bg-background p-3 space-y-1">
+              <p className="text-xs font-medium">
+                {item.nm_op || 'Laporan Operasi'}
+                <span className="ml-2 font-normal text-muted-foreground">{item.tanggal_op || '-'}</span>
+              </p>
+              <VisitHistoryText label="Operator" value={item.dokter_operator} />
+              <VisitHistoryText label="Anestesi" value={item.dokter_anestesi} />
+              <VisitHistoryText label="Pre Op" value={item.pre_op} />
+              <VisitHistoryText label="Post Op" value={item.post_op} />
+              <VisitHistoryText label="Hasil Op" value={item.hasil_op} />
+              <VisitHistoryText label="Implan" value={item.implan} />
+              <VisitHistoryText label="Kirim PA" value={item.kirim_pa} />
+            </div>
+          ))}
+        </div>
+      </VisitHistorySection>
+      ) : null}
+    </div>
+  );
+};
+
 const DiagnosticHubPage: React.FC<DiagnosticHubPageProps> = ({ mode }) => {
   const config = pageConfig[mode];
   const { user } = useAuth();
@@ -256,6 +745,10 @@ const DiagnosticHubPage: React.FC<DiagnosticHubPageProps> = ({ mode }) => {
   const [loadingList, setLoadingList] = React.useState(false);
   const [loadingDetail, setLoadingDetail] = React.useState(false);
   const [savingReview, setSavingReview] = React.useState(false);
+  const [visitHistoryDetail, setVisitHistoryDetail] = React.useState<VisitHistoryDetail | null>(null);
+  const [visitHistoryLoading, setVisitHistoryLoading] = React.useState(false);
+  const [visitHistoryError, setVisitHistoryError] = React.useState('');
+  const [isVisitHistoryOpen, setIsVisitHistoryOpen] = React.useState(false);
   const [labDetail, setLabDetail] = React.useState<LaboratoryDetail | null>(null);
   const [radiologyDetail, setRadiologyDetail] = React.useState<RadiologyDetail | null>(null);
   const [labReviewForm, setLabReviewForm] = React.useState({
@@ -535,6 +1028,13 @@ const DiagnosticHubPage: React.FC<DiagnosticHubPageProps> = ({ mode }) => {
     }
     void fetchList();
   }, [canAccess, fetchList]);
+
+  React.useEffect(() => {
+    setIsVisitHistoryOpen(false);
+    setVisitHistoryDetail(null);
+    setVisitHistoryError('');
+    setVisitHistoryLoading(false);
+  }, [selectedNoRawat]);
 
   React.useEffect(() => {
     if (!selectedNoRawat || !canAccess) {
@@ -960,6 +1460,51 @@ const DiagnosticHubPage: React.FC<DiagnosticHubPageProps> = ({ mode }) => {
       });
     } finally {
       setSavingReview(false);
+    }
+  };
+
+  const handleToggleVisitHistory = async () => {
+    if (isVisitHistoryOpen) {
+      setIsVisitHistoryOpen(false);
+      return;
+    }
+
+    setIsVisitHistoryOpen(true);
+
+    if (!selectedNoRawat) {
+      setVisitHistoryError('Nomor rawat pasien tidak tersedia');
+      return;
+    }
+
+    setVisitHistoryLoading(true);
+    setVisitHistoryError('');
+
+    try {
+      const response = await fetch(API_URLS.GET_MEDICAL_RECORD_VISIT_DETAILS, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        credentials: 'include',
+        body: JSON.stringify({
+          no_rawat: selectedNoRawat
+        })
+      });
+      const result = await response.json();
+
+      if (!response.ok || result?.error) {
+        throw new Error(result?.error || 'Gagal memuat riwayat pemeriksaan pasien');
+      }
+
+      setVisitHistoryDetail(result?.data || null);
+    } catch (error) {
+      console.error('Error fetching visit history:', error);
+      setVisitHistoryDetail(null);
+      setVisitHistoryError(
+        error instanceof Error ? error.message : 'Riwayat pemeriksaan pasien gagal dimuat'
+      );
+    } finally {
+      setVisitHistoryLoading(false);
     }
   };
 
@@ -1596,10 +2141,24 @@ const DiagnosticHubPage: React.FC<DiagnosticHubPageProps> = ({ mode }) => {
                             />
                           </div>
                         </div>
-                        <Button onClick={handleSaveReview} disabled={savingReview}>
-                          {savingReview ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />}
-                          Simpan
-                        </Button>
+                        <div className="flex flex-wrap items-center gap-2">
+                          <Button onClick={handleSaveReview} disabled={savingReview}>
+                            {savingReview ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />}
+                            Simpan
+                          </Button>
+                          <Button variant="outline" onClick={handleToggleVisitHistory}>
+                            <History className="mr-2 h-4 w-4" />
+                            Lihat Riwayat
+                          </Button>
+                        </div>
+                        {isVisitHistoryOpen ? (
+                          <VisitHistoryPanel
+                            key={selectedNoRawat}
+                            detail={visitHistoryDetail}
+                            loading={visitHistoryLoading}
+                            error={visitHistoryError}
+                          />
+                        ) : null}
                       </CardContent>
                     </Card>
                   </>
@@ -1799,10 +2358,24 @@ const DiagnosticHubPage: React.FC<DiagnosticHubPageProps> = ({ mode }) => {
                             />
                           </div>
                         </div>
-                        <Button onClick={handleSaveReview} disabled={savingReview}>
-                          {savingReview ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />}
-                          Simpan
-                        </Button>
+                        <div className="flex flex-wrap items-center gap-2">
+                          <Button onClick={handleSaveReview} disabled={savingReview}>
+                            {savingReview ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />}
+                            Simpan
+                          </Button>
+                          <Button variant="outline" onClick={handleToggleVisitHistory}>
+                            <History className="mr-2 h-4 w-4" />
+                            Lihat Riwayat
+                          </Button>
+                        </div>
+                        {isVisitHistoryOpen ? (
+                          <VisitHistoryPanel
+                            key={selectedNoRawat}
+                            detail={visitHistoryDetail}
+                            loading={visitHistoryLoading}
+                            error={visitHistoryError}
+                          />
+                        ) : null}
                       </CardContent>
                     </Card>
                   </>
