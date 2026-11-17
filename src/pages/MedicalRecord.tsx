@@ -7232,9 +7232,16 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
       medications[0].obat.length === 1 && 
       medications[0].obat[0].nama === '';
 
+    const copiedStatus = (med?.status || mapPrescriptionSourceToStatus(med?.source)) as PrescriptionStatus;
+    // Status rawat hasil salinan mengikuti konteks perawatan yang sedang dibuka,
+    // kecuali resep khusus (Obat Pulang / IBS) yang tetap dipertahankan.
+    const targetStatus: PrescriptionStatus = copiedStatus === 'Pulang' || copiedStatus === 'IBS'
+      ? copiedStatus
+      : (effectiveStatusRawat === 'Ranap' ? 'Ranap' : 'Ralan');
+
     const newMedication: Medication = {
       tanggal: getCurrentPrescriptionDate(),
-      status: med.status || (effectiveStatusRawat === 'Ranap' ? 'Ranap' : 'Ralan'),
+      status: targetStatus,
       set_kronis: false,
       set_prb: false,
       obat: (Array.isArray(med?.obat) ? med.obat : []).map((o: any) => ({
@@ -7283,10 +7290,14 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
           void checkChronicMedicineLimit(targetMedIndex, index, kodeBrng, '');
         }
       });
+
+      // Stok obat disesuaikan dengan status rawat tujuan (depo/bangsal yang aktif).
+      void refreshMedicationStocksForStatus(targetMedIndex, targetStatus, newMedication);
     }
 
     if (compoundItems.length > 0) {
       setCompoundPrescriptions(compoundItems);
+      void refreshCompoundMedicineStocksForStatus(targetStatus, compoundItems);
       setIsCompoundFormOpen(true);
     }
 
@@ -7649,9 +7660,10 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
 
   const refreshMedicationStocksForStatus = useCallback(async (
     medIndex: number,
-    prescriptionStatus: PrescriptionStatus
+    prescriptionStatus: PrescriptionStatus,
+    medicationOverride?: Medication
   ) => {
-    const medication = medications[medIndex];
+    const medication = medicationOverride || medications[medIndex];
     if (!medication) {
       return;
     }
@@ -7703,9 +7715,11 @@ const MedicalRecord: React.FC<MedicalRecordProps> = ({
   }, [findMedicineStockByCode, medications]);
 
   const refreshCompoundMedicineStocksForStatus = useCallback(async (
-    prescriptionStatus: PrescriptionStatus
+    prescriptionStatus: PrescriptionStatus,
+    compoundsOverride?: CompoundPrescription[]
   ) => {
-    const selectedItems = compoundPrescriptions.flatMap((compound, compoundIndex) => (
+    const sourceCompounds = compoundsOverride || compoundPrescriptions;
+    const selectedItems = sourceCompounds.flatMap((compound, compoundIndex) => (
       compound.komposisi
         .map((item, racikanIndex) => ({
           compoundIndex,
