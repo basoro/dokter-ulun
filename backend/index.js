@@ -2553,7 +2553,8 @@ app.post('/api/radiology-data', async (req, res) => {
           req.body?.kesan,
           req.body?.saran,
           review_date,
-          review_time
+          review_time,
+          req.body?.is_update === true
         );
         break;
 
@@ -2561,7 +2562,8 @@ app.post('/api/radiology-data', async (req, res) => {
         return res.status(400).json({ error: 'Invalid action' });
     }
     if (action === 'save_radiology_report') {
-      await auditCrudSuccess(req, 'radiology_report', 'create', result, { reference_id: no_rawat });
+      const radiologyReportAction = req.body?.is_update === true ? 'update' : 'create';
+      await auditCrudSuccess(req, 'radiology_report', radiologyReportAction, result, { reference_id: no_rawat });
     } else {
       await auditCrudSuccess(req, 'radiology_request', action === 'update_radiology_request' ? 'update' : 'create', result);
     }
@@ -2569,7 +2571,8 @@ app.post('/api/radiology-data', async (req, res) => {
   } catch (error) {
     const action = String(req.query?.action || '').trim();
     if (action === 'save_radiology_report') {
-      await auditCrudFailure(req, 'radiology_report', 'create', error, { reference_id: req.body?.no_rawat });
+      const radiologyReportAction = req.body?.is_update === true ? 'update' : 'create';
+      await auditCrudFailure(req, 'radiology_report', radiologyReportAction, error, { reference_id: req.body?.no_rawat });
     } else {
       const auditAction = action === 'update_radiology_request' ? 'update' : 'create';
       await auditCrudFailure(req, 'radiology_request', auditAction, error);

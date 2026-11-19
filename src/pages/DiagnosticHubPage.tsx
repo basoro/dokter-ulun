@@ -1402,6 +1402,20 @@ const DiagnosticHubPage: React.FC<DiagnosticHubPageProps> = ({ mode }) => {
     }));
   };
 
+  const hasSavedRadiologyReview = React.useMemo(() => {
+    if (mode !== 'radiologi') {
+      return false;
+    }
+
+    const review = radiologyDetail?.review;
+    if (!review) {
+      return false;
+    }
+
+    return [review.judul, review.hasil, review.kesan, review.saran]
+      .some((value) => String(value || '').trim().length > 0);
+  }, [mode, radiologyDetail]);
+
   const handleSaveReview = async () => {
     if (!selectedNoRawat) {
       return;
@@ -1423,6 +1437,7 @@ const DiagnosticHubPage: React.FC<DiagnosticHubPageProps> = ({ mode }) => {
             hasil: radiologyReviewForm.hasil,
             kesan: radiologyReviewForm.kesan,
             saran: radiologyReviewForm.saran,
+            is_update: hasSavedRadiologyReview,
             review_date: getCurrentRequestDate(),
             review_time: getCurrentRequestTime()
           };
@@ -1444,9 +1459,12 @@ const DiagnosticHubPage: React.FC<DiagnosticHubPageProps> = ({ mode }) => {
         throw new Error(result?.error || `Gagal menyimpan ${config.title.toLowerCase()}`);
       }
 
+      const isUpdate = mode === 'radiologi' && hasSavedRadiologyReview;
       toast({
-        title: 'Berhasil disimpan',
-        description: `Catatan ${config.title.toLowerCase()} berhasil disimpan`
+        title: isUpdate ? 'Berhasil diperbarui' : 'Berhasil disimpan',
+        description: isUpdate
+          ? `Catatan ${config.title.toLowerCase()} berhasil diperbarui`
+          : `Catatan ${config.title.toLowerCase()} berhasil disimpan`
       });
 
       await fetchDetail(selectedNoRawat);
@@ -2361,7 +2379,7 @@ const DiagnosticHubPage: React.FC<DiagnosticHubPageProps> = ({ mode }) => {
                         <div className="flex flex-wrap items-center gap-2">
                           <Button onClick={handleSaveReview} disabled={savingReview}>
                             {savingReview ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />}
-                            Simpan
+                            {hasSavedRadiologyReview ? 'Update' : 'Simpan'}
                           </Button>
                           <Button variant="outline" onClick={handleToggleVisitHistory}>
                             <History className="mr-2 h-4 w-4" />
