@@ -469,7 +469,7 @@ class RadiologyDataService {
     };
   }
 
-  async saveRadiologyReport(no_rawat, judul = '', hasil = '', kesan = '', saran = '', reportDate, reportTime) {
+  async saveRadiologyReport(no_rawat, judul = '', hasil = '', kesan = '', saran = '', reportDate, reportTime, isUpdate = false) {
     const connection = await this.getConnection();
     try {
       await connection.beginTransaction();
@@ -492,23 +492,76 @@ class RadiologyDataService {
       const normalizedReportDate = this.normalizeDate(reportDate) || currentSystemDateTime.date;
       const normalizedReportTime = this.normalizeTime(reportTime) || currentSystemDateTime.time;
 
-      if (normalizedHasil) {
-        await connection.execute(
+      let targetDate = normalizedReportDate;
+      let targetTime = normalizedReportTime;
+      let shouldUpdate = false;
+
+      if (isUpdate) {
+        const [existingRows] = await connection.execute(
           `
-            INSERT INTO hasil_radiologi (no_rawat, tgl_periksa, jam, hasil)
-            VALUES (?, ?, ?, ?)
+            SELECT tgl_periksa, jam
+            FROM saran_kesan_rad
+            WHERE no_rawat = ?
+            ORDER BY tgl_periksa DESC, jam DESC
+            LIMIT 1
           `,
-          [normalizedNoRawat, normalizedReportDate, normalizedReportTime, normalizedHasil]
+          [normalizedNoRawat]
         );
+
+        const existing = existingRows?.[0];
+        if (existing) {
+          shouldUpdate = true;
+          targetDate = existing.tgl_periksa;
+          targetTime = existing.jam;
+        }
       }
 
-      await connection.execute(
-        `
-          INSERT INTO saran_kesan_rad (no_rawat, tgl_periksa, jam, judul, saran, kesan)
-          VALUES (?, ?, ?, ?, ?, ?)
-        `,
-        [normalizedNoRawat, normalizedReportDate, normalizedReportTime, normalizedJudul, normalizedSaran, normalizedKesan]
-      );
+      if (shouldUpdate) {
+        await connection.execute(
+          `
+            UPDATE saran_kesan_rad
+            SET judul = ?, saran = ?, kesan = ?
+            WHERE no_rawat = ? AND tgl_periksa = ? AND jam = ?
+          `,
+          [normalizedJudul, normalizedSaran, normalizedKesan, normalizedNoRawat, targetDate, targetTime]
+        );
+
+        await connection.execute(
+          `
+            DELETE FROM hasil_radiologi
+            WHERE no_rawat = ? AND tgl_periksa = ? AND jam = ?
+          `,
+          [normalizedNoRawat, targetDate, targetTime]
+        );
+
+        if (normalizedHasil) {
+          await connection.execute(
+            `
+              INSERT INTO hasil_radiologi (no_rawat, tgl_periksa, jam, hasil)
+              VALUES (?, ?, ?, ?)
+            `,
+            [normalizedNoRawat, targetDate, targetTime, normalizedHasil]
+          );
+        }
+      } else {
+        if (normalizedHasil) {
+          await connection.execute(
+            `
+              INSERT INTO hasil_radiologi (no_rawat, tgl_periksa, jam, hasil)
+              VALUES (?, ?, ?, ?)
+            `,
+            [normalizedNoRawat, normalizedReportDate, normalizedReportTime, normalizedHasil]
+          );
+        }
+
+        await connection.execute(
+          `
+            INSERT INTO saran_kesan_rad (no_rawat, tgl_periksa, jam, judul, saran, kesan)
+            VALUES (?, ?, ?, ?, ?, ?)
+          `,
+          [normalizedNoRawat, normalizedReportDate, normalizedReportTime, normalizedJudul, normalizedSaran, normalizedKesan]
+        );
+      }
 
       await connection.commit();
       return {
