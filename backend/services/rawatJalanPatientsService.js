@@ -83,6 +83,42 @@ class RawatJalanPatientsService {
     return [formatDate(dateMinus1), formatDate(dateMinus2)];
   }
 
+  static parseAccessList(envKey) {
+    const rawValue = String(process.env[envKey] || '').trim();
+
+    if (!rawValue) {
+      return [];
+    }
+
+    try {
+      const parsedValue = JSON.parse(rawValue);
+      if (!Array.isArray(parsedValue)) {
+        return [];
+      }
+
+      return parsedValue
+        .map((item) => String(item || '').trim())
+        .filter(Boolean);
+    } catch (error) {
+      console.error(`Failed to parse ${envKey}:`, error);
+      return [];
+    }
+  }
+
+  static canViewAssesmenColumn(username) {
+    const normalizedUsername = String(username || '').trim();
+    if (!normalizedUsername) {
+      return false;
+    }
+
+    const allowedUsernames = [
+      ...this.parseAccessList('ASSESMEN_REHAB_MEDIK_ACCESS'),
+      ...this.parseAccessList('ECHOCARDIO_ACCESS')
+    ];
+
+    return allowedUsernames.includes(normalizedUsername);
+  }
+
   static async getRawatJalanPatients({
     kd_poli,
     jenis_poli,
@@ -137,7 +173,8 @@ class RawatJalanPatientsService {
           limit: parseInt(itemsPerPage || '10', 10),
           offset: 0,
           page: parseInt(page || '1', 10),
-          totalPages: 0
+          totalPages: 0,
+          show_assesmen_column: this.canViewAssesmenColumn(username)
         };
       }
 
@@ -173,7 +210,8 @@ class RawatJalanPatientsService {
           limit: parseInt(itemsPerPage || '10', 10),
           offset: 0,
           page: parseInt(page || '1', 10),
-          totalPages: 0
+          totalPages: 0,
+          show_assesmen_column: this.canViewAssesmenColumn(username)
         };
       }
 
@@ -348,6 +386,10 @@ class RawatJalanPatientsService {
       
       console.log('Pagination - Page:', page, 'Items per page:', limit, 'Offset:', offset);
 
+      // Only doctors listed in ASSESMEN_REHAB_MEDIK_ACCESS / ECHOCARDIO_ACCESS
+      // may see the Asesmen column (whether a form_assesment_terapi row exists).
+      const showAssesmenColumn = this.canViewAssesmenColumn(username);
+
       // Count query
       const countSql = `
         SELECT COUNT(*) as total
@@ -395,7 +437,12 @@ class RawatJalanPatientsService {
           ) AS prb_program,
           ${doctorNameColumn} as nm_dokter,
           ${poliNameColumn} as nm_poli,
-          COALESCE(pj.png_jawab, 'Umum') as png_jawab
+          COALESCE(pj.png_jawab, 'Umum') as png_jawab${showAssesmenColumn ? `,
+          EXISTS (
+            SELECT 1
+            FROM form_assesment_terapi fat
+            WHERE fat.no_rawat = rp.no_rawat
+          ) AS has_assesmen` : ''}
         ${fromClause}
         WHERE ${conditions.join(' AND ')}
         ORDER BY rp.no_reg ASC
@@ -474,7 +521,8 @@ class RawatJalanPatientsService {
         nm_dokter: row.nm_dokter,
         nm_poli: row.nm_poli,
         png_jawab: row.png_jawab,
-        payment_status: row.status_bayar || 'Belum Bayar'
+        payment_status: row.status_bayar || 'Belum Bayar',
+        has_assesmen: showAssesmenColumn ? Boolean(row.has_assesmen) : false
       })) || [];
 
       const responseData = {
@@ -488,7 +536,8 @@ class RawatJalanPatientsService {
         limit,
         offset,
         page: parseInt(page || "1"),
-        totalPages: Math.ceil(total / limit)
+        totalPages: Math.ceil(total / limit),
+        show_assesmen_column: showAssesmenColumn
       };
 
       console.log('Rawat jalan patients retrieved successfully:', patients.length, 'records');
