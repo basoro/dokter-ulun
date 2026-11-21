@@ -15,7 +15,9 @@ import {
   X,
   FileText,
   ExternalLink,
-  PanelRightOpen
+  PanelRightOpen,
+  CircleCheck,
+  XCircle
 } from 'lucide-react';
 import { 
   Select,
@@ -117,6 +119,7 @@ const RawatJalanTabs = () => {
   const [total, setTotal] = useState(0);
   const [itemsPerPage, setItemsPerPage] = useState(parsePositiveInt(searchParams.get('itemsPerPage'), 10));
   const [tabCounts, setTabCounts] = useState<Record<RawatJalanTab, number>>(emptyTabCounts);
+  const [showAssesmenColumn, setShowAssesmenColumn] = useState(false);
   const debouncedSearchQuery = useDebouncedValue(searchQuery.trim(), 300);
   const effectiveDoctorFilter = doctorFilter || "all";
   const requestDoctorFilter = doctorFilter || "all";
@@ -189,6 +192,17 @@ const RawatJalanTabs = () => {
     { accessor: 'doctor', header: 'Dokter' },
     { accessor: 'poliklinik', header: 'Poliklinik' },
     { accessor: 'status', header: 'Status' },
+    ...(showAssesmenColumn
+      ? [{
+          accessor: 'has_assesmen',
+          header: 'Asesmen',
+          render: (row: any) => (
+            row.has_assesmen
+              ? <CircleCheck className="h-4 w-4 text-green-600 dark:text-green-400" />
+              : <XCircle className="h-4 w-4 text-red-500 dark:text-red-400" />
+          )
+        }]
+      : []),
     { accessor: 'insurance', header: 'Asuransi' },
     { accessor: 'tgl_registrasi', header: 'Tanggal Registrasi' },
     { accessor: 'paymentStatus', header: 'Status Bayar' }
@@ -304,18 +318,21 @@ const RawatJalanTabs = () => {
         setRawatJalanPatients(Array.isArray(data.data) ? data.data : []);
         setDoctorOptions(Array.isArray(data.doctors) ? data.doctors : []);
         setTotal(data.total || 0);
+        setShowAssesmenColumn(Boolean(data.show_assesmen_column));
         void fetchRawatJalanTabCounts();
       } else {
         console.error('Failed to fetch patients:', data);
         setRawatJalanPatients([]);
         setDoctorOptions([]);
         setTotal(0);
+        setShowAssesmenColumn(false);
       }
     } catch (error) {
       console.error('Error fetching rawat jalan patients:', error);
       setRawatJalanPatients([]);
       setDoctorOptions([]);
       setTotal(0);
+      setShowAssesmenColumn(false);
       setTabCounts(emptyTabCounts);
     } finally {
       setLoading(false);
@@ -498,7 +515,8 @@ const RawatJalanTabs = () => {
     })(),
     phone: patient.no_tlp,
     address: patient.alamat,
-    paymentStatus: patient.payment_status || 'Belum Bayar'
+    paymentStatus: patient.payment_status || 'Belum Bayar',
+    has_assesmen: Boolean(patient.has_assesmen)
   }));
 
   return (
