@@ -15,22 +15,34 @@ export class AuthService {
 
     const rows = await executeQuery(sql, [username]);
     const poliRows = Array.isArray(rows) ? rows : [];
-    const firstPoli = poliRows[0] || null;
-    const secondPoli = poliRows[1] || null;
-    const firstPoliName = String(firstPoli?.nm_poli || '').toUpperCase();
-    const firstPoliIsSore = firstPoliName.includes('SORE');
 
-    if (!firstPoli) {
+    if (poliRows.length === 0) {
       return {
         jenis_poli: '',
         jenis_poli_sore: '',
+        jenis_poli_list: [],
+        jenis_poli_sore_list: [],
         jadwal_poli: []
       };
     }
 
+    // Tentukan poli pagi dan sore berdasarkan nama poli (konvensi RS: "PAGI"/"SORE"),
+    // bukan berdasarkan urutan baris, agar sesi tidak tertukar saat urutan tidak stabil.
+    // Semua poli non-sore dijadikan sesi pagi (mis. POLI PARU PAGI + POLI MCU).
+    const getPoliName = (row) => String(row?.nm_poli || '').toUpperCase();
+    const sorePolis = poliRows.filter((row) => getPoliName(row).includes('SORE'));
+    const pagiPolis = poliRows.filter((row) => !getPoliName(row).includes('SORE'));
+    const sorePoli = sorePolis[0] || null;
+    const pagiPoli = poliRows.find((row) => getPoliName(row).includes('PAGI'))
+      || pagiPolis[0]
+      || sorePoli
+      || null;
+
     return {
-      jenis_poli: firstPoli.kd_poli || '',
-      jenis_poli_sore: firstPoliIsSore ? '' : (secondPoli?.kd_poli || ''),
+      jenis_poli: pagiPoli?.kd_poli || '',
+      jenis_poli_sore: sorePoli?.kd_poli || '',
+      jenis_poli_list: pagiPolis.map((row) => row.kd_poli),
+      jenis_poli_sore_list: sorePolis.map((row) => row.kd_poli),
       jadwal_poli: poliRows.map((row) => ({
         kd_poli: row.kd_poli,
         nm_poli: row.nm_poli

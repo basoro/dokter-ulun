@@ -180,22 +180,24 @@ class RawatJalanPatientsService {
 
       const normalizedTabFilter = this.normalizeTabFilter(tabFilter);
       const serverPoliAssignments = await AuthService.getSessionPoliAssignments(username);
-      const normalizedJenisPoliCandidate = String(jenis_poli || serverPoliAssignments.jenis_poli || '').trim();
-      const normalizedJenisPoliSoreCandidate = String(jenis_poli_sore || serverPoliAssignments.jenis_poli_sore || '').trim();
-      const normalizedJenisPoli = igdPoliCodes.has(normalizedJenisPoliCandidate) ? '' : normalizedJenisPoliCandidate;
-      const normalizedJenisPoliSore = igdPoliCodes.has(normalizedJenisPoliSoreCandidate) ? '' : normalizedJenisPoliSoreCandidate;
       const sessionPoliGroups = await this.getSessionPoliGroups(nonIgdPoliCodes);
       const soreScopedTabs = ['sore', 'rujukan_internal_sore', 'pasien_lanjutan_sore', 'internal_lanjutan_sore'];
       const pagiScopedTabs = ['pagi', 'rujukan_internal', 'pasien_lanjutan', 'internal_lanjutan'];
-      const selectedPoliCodes = normalizedTabFilter === 'pagi'
-        ? (normalizedJenisPoli ? [normalizedJenisPoli] : sessionPoliGroups.pagi)
-        : normalizedTabFilter === 'sore'
-          ? (normalizedJenisPoliSore ? [normalizedJenisPoliSore] : sessionPoliGroups.sore)
-          : pagiScopedTabs.includes(normalizedTabFilter)
-            ? (normalizedJenisPoli ? [normalizedJenisPoli] : sessionPoliGroups.pagi)
-            : soreScopedTabs.includes(normalizedTabFilter)
-              ? (normalizedJenisPoliSore ? [normalizedJenisPoliSore] : sessionPoliGroups.sore)
-            : sessionPoliGroups.hariIni;
+
+      // Penugasan poli pagi/sore dihitung ulang di server dari jadwal dokter, agar data sesi
+      // lama di klien tidak membuat pasien muncul di sesi yang salah. Bila dokter punya
+      // beberapa poli non-sore (mis. POLI PARU PAGI + POLI MCU), semuanya masuk sesi pagi.
+      const pagiPoliCodes = (Array.isArray(serverPoliAssignments.jenis_poli_list)
+        ? serverPoliAssignments.jenis_poli_list
+        : []).filter((code) => code && !igdPoliCodes.has(code));
+      const sorePoliCodes = (Array.isArray(serverPoliAssignments.jenis_poli_sore_list)
+        ? serverPoliAssignments.jenis_poli_sore_list
+        : []).filter((code) => code && !igdPoliCodes.has(code));
+      const selectedPoliCodes = pagiScopedTabs.includes(normalizedTabFilter)
+        ? (pagiPoliCodes.length > 0 ? pagiPoliCodes : sessionPoliGroups.pagi)
+        : soreScopedTabs.includes(normalizedTabFilter)
+          ? (sorePoliCodes.length > 0 ? sorePoliCodes : sessionPoliGroups.sore)
+          : sessionPoliGroups.hariIni;
       const sessionScopedTabs = [...pagiScopedTabs, ...soreScopedTabs];
       const effectivePoliCodes = selectedPoliCodes.length > 0 || !sessionScopedTabs.includes(normalizedTabFilter)
         ? selectedPoliCodes
